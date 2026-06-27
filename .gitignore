@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# Secrets / local env
+.env.local
+.env
+credentials.json
+apis.txt
+
+# Real survey sample data (may contain respondent data) — kept locally, not tracked
+*.xlsx
+*.xls
+*.docx
+استبيانات/
