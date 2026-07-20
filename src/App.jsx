@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { SCHEMAS, analyze, analyzeRows, prepareData, readExcel, detectSurveyType, buildComparison } from "./engine/analyze.js";
+import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from "./engine/analyze.js";
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
 import EnhancedReportView from "./EnhancedReportView.jsx";
+import SurveyManagement from "./SurveyManagement.jsx";
+import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -365,7 +367,7 @@ function detectYearFromFilename(filename) {
 function detectTypeHintFromFilename(filename) {
   const n = String(filename ?? "")
     .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").toLowerCase();
-  for (const s of Object.values(SCHEMAS)) {
+  for (const s of Object.values(allSchemas())) {
     if (s.fileHints?.some(h =>
       n.includes(h.replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").toLowerCase())
     )) return s.id;
@@ -661,7 +663,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
           يُملأ حقل "أعده" تلقائياً عند اكتشاف نوع الاستبيان
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {Object.values(SCHEMAS).map(sc => (
+          {Object.values(allSchemas()).map(sc => (
             <div key={sc.id} style={{ display: "grid", gridTemplateColumns: "190px 1fr", gap: 12, alignItems: "center" }}>
               <div style={{ color: "#e8f0fe", fontSize: 13, fontWeight: 600 }}>
                 {sc.icon ?? "📋"} {sc.label}
@@ -796,7 +798,7 @@ function BatchItem({ item, year, settings }) {
       };
       const blob = await buildAnnualDocx(item.result, meta, settings);
       const prog  = item.program ? `_${item.program}` : "";
-      const label = SCHEMAS[item.type]?.label ?? "تقرير";
+      const label = allSchemas()[item.type]?.label ?? "تقرير";
       downloadBlob(blob, `تقرير_${label}${prog}_${year}.docx`);
     } catch (e) { console.error(e); }
     finally    { setDownloading(false); }
@@ -838,7 +840,7 @@ function BatchItem({ item, year, settings }) {
           {item.status === "done" && (
             <span style={{ display: "flex", gap: 10, flexWrap: "wrap", color: "rgba(255,255,255,.5)" }}>
               <span style={{ color: "#1abc9c", fontWeight: 700 }}>
-                {SCHEMAS[item.type]?.icon} {SCHEMAS[item.type]?.label}
+                {allSchemas()[item.type]?.icon} {allSchemas()[item.type]?.label}
               </span>
               <span>·</span><span>{item.result.n} استجابة</span>
               {item.program && <><span>·</span><span>{item.program}</span></>}
@@ -889,7 +891,7 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
         const buf          = await readFileAsBuffer(files[idx]);
         const rows         = readExcel(buf);
         const detectedType = detectSurveyType(files[idx].name, rows[0]) ?? "faculty";
-        const s            = SCHEMAS[detectedType];
+        const s            = allSchemas()[detectedType];
         const result       = analyze(rows, s);
         const program      = detectProgramFromFilename(files[idx].name);
         setItems(prev => prev.map((it, i) => i === idx
@@ -915,7 +917,7 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
           const meta  = { year, program: it.program ?? "", preparedBy: settings.surveyResponsible?.[it.type] ?? "" };
           const blob  = await buildAnnualDocx(it.result, meta, settings);
           const prog  = it.program ? `_${it.program}` : "";
-          const label = SCHEMAS[it.type]?.label ?? "تقرير";
+          const label = allSchemas()[it.type]?.label ?? "تقرير";
           downloadBlob(blob, `تقرير_${label}${prog}_${year}.docx`);
           await new Promise(r => setTimeout(r, 450));
         } catch (e) { console.error(e); }
@@ -1142,7 +1144,7 @@ function DriveDashboard({ files, token, onSelectFile }) {
         </div>
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
           {Object.entries(byType).map(([tid, d]) => {
-            const sc = SCHEMAS[tid];
+            const sc = allSchemas()[tid];
             return (
               <div key={tid} style={{
                 background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)",
@@ -1240,7 +1242,7 @@ function DriveDashboard({ files, token, onSelectFile }) {
                 <td style={{ padding: "7px 10px", textAlign: "center" }}>
                   {s.type
                     ? <span style={{ fontSize: 10, color: "#1abc9c", background: "rgba(26,188,156,.12)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" }}>
-                        {SCHEMAS[s.type]?.label ?? s.type}
+                        {allSchemas()[s.type]?.label ?? s.type}
                       </span>
                     : <span style={{ color: "rgba(255,255,255,.2)" }}>—</span>}
                 </td>
@@ -1661,7 +1663,7 @@ function StepBar({ step }) {
 
 // ── SurveyTypePicker ──────────────────────────────────────────────────────────
 function SurveyTypePicker({ value, onChange }) {
-  const TYPES = Object.values(SCHEMAS).map(s => {
+  const TYPES = Object.values(allSchemas()).map(s => {
     const isL5 = s.scale.type === "likert-5";
     const scaleLabel = isL5 ? "مقياس 5 درجات" : "مقياس 3 درجات";
     const autoDesc = s.axes.length === 1
@@ -1801,9 +1803,9 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
             {slot._file && (
               <div style={{ marginTop: 6 }}>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center", marginBottom: slot._file ? 5 : 0 }}>
-                  {slot._type && SCHEMAS[slot._type] ? (
+                  {slot._type && allSchemas()[slot._type] ? (
                     <span style={{ fontSize: 10, color: "#1abc9c", background: "rgba(26,188,156,.15)", borderRadius: 6, padding: "2px 7px", fontWeight: 700 }}>
-                      {SCHEMAS[slot._type].icon} {SCHEMAS[slot._type].label}
+                      {allSchemas()[slot._type].icon} {allSchemas()[slot._type].label}
                     </span>
                   ) : (
                     <span style={{ fontSize: 10, color: "#ffd54f", background: "rgba(255,193,7,.12)", borderRadius: 6, padding: "2px 7px", fontWeight: 700 }}>
@@ -1839,7 +1841,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
                 النوع غير صحيح؟ اختر:
               </div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
-                {Object.values(SCHEMAS).map(sc => (
+                {Object.values(allSchemas()).map(sc => (
                   <button key={sc.id} onClick={e => { e.stopPropagation(); onChange({ ...slot, _type: sc.id }); }}
                     style={{
                       padding: "3px 9px", borderRadius: 8, cursor: "pointer",
@@ -1922,7 +1924,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
                   النوع غير صحيح؟ اختر:
                 </div>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
-                  {Object.values(SCHEMAS).map(sc => (
+                  {Object.values(allSchemas()).map(sc => (
                     <button key={sc.id} onClick={() => onChange({ ...slot, _type: sc.id })}
                       style={{
                         padding: "3px 9px", borderRadius: 8, cursor: "pointer",
@@ -2249,6 +2251,7 @@ export default function App() {
   const [processing, setProcessing] = useState(false);
   const [error, setError]       = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showSurveyManagement, setShowSurveyManagement] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [settings, setSettings]         = useState(loadSettings);
   const [aiSettings, setAiSettings]     = useState(loadAiSettings);
@@ -2323,12 +2326,12 @@ export default function App() {
   const [slots, setSlots]       = useState(defaultSlots());
   const [comparison, setComparison] = useState(null);
 
-  const schema = SCHEMAS[surveyType];
+  const schema = allSchemas()[surveyType];
 
   const processBuffer = useCallback((buf, filename) => {
     const rows = readExcel(buf);
     const type = detectSurveyType(filename, rows[0]) ?? surveyType;
-    const s = SCHEMAS[type] ?? schema;
+    const s = allSchemas()[type] ?? schema;
     return analyze(rows, s);
   }, [surveyType, schema]);
 
@@ -2443,7 +2446,7 @@ export default function App() {
     if (!rawRows || !surveyType) return;
     setProcessing(true); setError("");
     try {
-      const s = SCHEMAS[surveyType];
+      const s = allSchemas()[surveyType];
       const { headers, dataRows, metaCols } = prepareData(rawRows, s);
       setSingleHeaders(headers);
       setSingleAllRows(dataRows);
@@ -2471,7 +2474,7 @@ export default function App() {
       try {
         const rows = readExcel(e.target.result);
         const type = detectSurveyType(singleFile.name, rows[0]) ?? surveyType;
-        const s = SCHEMAS[type] ?? schema;
+        const s = allSchemas()[type] ?? schema;
         const { headers, dataRows, metaCols } = prepareData(rows, s);
         setSingleHeaders(headers);
         setSingleAllRows(dataRows);
@@ -2506,7 +2509,7 @@ export default function App() {
     if (slotTypes.length === activeSlots.length) {
       const uniqueTypes = new Set(slotTypes);
       if (uniqueTypes.size > 1) {
-        setError(`الملفات لأنواع استبيانات مختلفة: ${[...uniqueTypes].map(t => SCHEMAS[t]?.label ?? t).join(" / ")} — تأكد أن جميع الملفات لنفس نوع الاستبيان.`);
+        setError(`الملفات لأنواع استبيانات مختلفة: ${[...uniqueTypes].map(t => allSchemas()[t]?.label ?? t).join(" / ")} — تأكد أن جميع الملفات لنفس نوع الاستبيان.`);
         return;
       }
     }
@@ -2524,7 +2527,7 @@ export default function App() {
           const rows = readExcel(e.target.result);
           const type = detectSurveyType(slot._file.name, rows[0]) ?? surveyType;
           if (!firstDetectedType) firstDetectedType = type;
-          const s = SCHEMAS[type] ?? schema;
+          const s = allSchemas()[type] ?? schema;
           const result = analyze(rows, s);
           results[idx] = { year: slot.year, result };
         } catch (err) {
@@ -2624,21 +2627,29 @@ export default function App() {
             onMouseOut={e  => { e.currentTarget.style.background = "rgba(255,255,255,.08)"; e.currentTarget.style.borderColor = "rgba(255,255,255,.18)"; e.currentTarget.style.color = "rgba(255,255,255,.7)"; }}
           >?</button>
           <button
+            className={`btn btn-sm ${showSurveyManagement ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => { setShowSurveyManagement(v => !v); setShowSettings(false); }}
+          >
+            🗂️ إدارة الاستبيانات
+          </button>
+          <button
             className={`btn btn-sm ${showSettings ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setShowSettings(v => !v)}
+            onClick={() => { setShowSettings(v => !v); setShowSurveyManagement(false); }}
           >
             ⚙ الإعدادات
           </button>
-          {(step > 0 || showSettings) && (
-            <button className="btn btn-ghost btn-sm" onClick={reset}>↩ بدء جديد</button>
+          {(step > 0 || showSettings || showSurveyManagement) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setShowSurveyManagement(false); reset(); }}>↩ بدء جديد</button>
           )}
         </div>
       </div>
 
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
 
-        {/* ── Settings view ── */}
-        {showSettings ? (
+        {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
+        {showSurveyManagement ? (
+          <SurveyManagement />
+        ) : showSettings ? (
           <div className="card" style={{ padding: 32 }}>
             <SettingsPanel
               settings={settings} onChange={setSettings}
@@ -2859,7 +2870,7 @@ export default function App() {
                                 onChange={e => { setDriveFilterType(e.target.value); setDriveSelected(null); }}
                                 style={selStyle(!!driveFilterType)}>
                                 <option value="">كل الاستبيانات</option>
-                                {Object.values(SCHEMAS).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                {Object.values(allSchemas()).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                               </select>
                               <select value={driveFilterYear}
                                 onChange={e => { setDriveFilterYear(e.target.value); setDriveSelected(null); }}
@@ -2938,7 +2949,7 @@ export default function App() {
                                             const yr   = detectYearFromFilename(f.name);
                                             const type = detectTypeHintFromFilename(f.name);
                                             const tags = [
-                                              type && SCHEMAS[type]?.label,
+                                              type && allSchemas()[type]?.label,
                                               yr,
                                               prog,
                                             ].filter(Boolean);
@@ -3030,7 +3041,7 @@ export default function App() {
                     warnings.push("⚠ بعض الملفات لها نفس السنة الدراسية — يجب أن تكون السنوات مختلفة.");
                   const types = active.map(s => s._type).filter(Boolean);
                   if (types.length === active.length && new Set(types).size > 1)
-                    warnings.push(`⚠ أنواع استبيانات مختلفة: ${[...new Set(types)].map(t => SCHEMAS[t]?.label).join(" / ")} — يجب أن تكون الملفات لنفس نوع الاستبيان.`);
+                    warnings.push(`⚠ أنواع استبيانات مختلفة: ${[...new Set(types)].map(t => allSchemas()[t]?.label).join(" / ")} — يجب أن تكون الملفات لنفس نوع الاستبيان.`);
                   const progs = active.map(s => s._program).filter(Boolean);
                   if (progs.length > 1 && new Set(progs).size > 1)
                     warnings.push(`⚠ برامج مختلفة محتملة: ${[...new Set(progs)].join(" / ")} — تأكد أن الملفات لنفس البرنامج.`);
@@ -3068,7 +3079,7 @@ export default function App() {
 
             {/* ══ STEP 2 — Validation (annual only) ══ */}
             {step === 2 && rawRows && (() => {
-              const s = SCHEMAS[surveyType];
+              const s = allSchemas()[surveyType];
               const totalQ = s?.axes.reduce((acc, ax) => acc + ax.questions.length, 0) ?? 0;
               const dataRowCount = rawRows.length - 1;
               const colHeaders = rawRows[0] ?? [];
@@ -3169,7 +3180,7 @@ export default function App() {
                       النوع غير صحيح؟ اختر يدوياً:
                     </div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      {Object.values(SCHEMAS).map(sc => (
+                      {Object.values(allSchemas()).map(sc => (
                         <button key={sc.id}
                           onClick={() => setSurveyType(sc.id)}
                           style={{

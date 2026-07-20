@@ -18,16 +18,26 @@ src/
 ├── App.jsx                   # Full UI (step wizard, settings, survey picker)
 ├── AiChat.jsx                # Floating AI assistant panel
 ├── EnhancedReportView.jsx    # Standalone enhanced report view overlay
+├── SurveyManagement.jsx      # "إدارة الاستبيانات" tab — custom survey CRUD/editor (see dedicated section below)
 ├── engine/
 │   ├── analyze.js            # Excel parsing, column mapping, statistics
-│   └── buildDocx.js          # Word document generation (docx library)
+│   ├── buildDocx.js          # Word document generation (docx library)
+│   └── customSurveyModel.js  # Custom-survey data model/storage + analysis-engine bridge (see below)
 └── schemas/
-    ├── student.json          # رضا الطلاب         — likert-5, 25 axes
-    ├── faculty.json          # هيئة التدريس        — likert-3, 17 axes
-    ├── assistant.json        # الهيئة المعاونة     — likert-3, 17 axes
-    ├── graduates.json        # آراء الخريجين       — likert-3, 11 questions
-    └── coordinator.json      # تقييم أداء منسقي البرامج — likert-5, 2 axes, 23 questions
+    ├── index.js               # Loads + compiles all *.yaml files at build time into SCHEMAS
+    ├── compileSchema.js        # Expands the minimal YAML format into the full runtime schema shape
+    ├── student.yaml           # رضا الطلاب         — likert-5, 25 axes
+    ├── faculty.yaml           # هيئة التدريس        — likert-3, 17 axes
+    ├── assistant.yaml         # الهيئة المعاونة     — likert-3, 17 axes
+    ├── graduates.yaml         # آراء الخريجين       — likert-3, 11 questions (flat)
+    └── coordinator.yaml       # تقييم أداء منسقي البرامج — likert-5, 2 axes, 23 questions
 ```
+
+> The schema system was migrated from hand-written `*.json` files to compact `*.yaml` files
+> compiled at build time (`src/schemas/index.js` + `compileSchema.js`). The legacy `*.json`
+> files have been deleted — they were unused duplicates. See "Schema System" below for the
+> YAML format and "How to Add a New Survey Type" for the no-code path via the Survey
+> Management UI.
 
 `vite.config.js` also exposes three dev-only API routes (`/api/chat`, `/api/list-files`, `/api/read-file`) for the AI assistant feature.
 
@@ -79,6 +89,21 @@ const DRIVE_STEPS  = ["تحميل الملف من Drive", "قراءة البيا
 const PROGRAMS     = ["محاسبة", "اقتصاد", "إدارة", "علوم سياسية", "تكنولوجيا أعمال"];
 ```
 
+### `SCHEMAS` is no longer a static import in `App.jsx`
+
+```javascript
+import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType }
+  from "./engine/customSurveyModel.js";
+```
+
+Every place that used to read the static `SCHEMAS` object now calls `allSchemas()` instead —
+a function (from `customSurveyModel.js`) that returns `{ ...the 5 built-in YAML schemas,
+...active custom surveys from Survey Management }`, recomputed fresh on every call (cheap
+localStorage read, no caching/memoization needed). `detectSurveyType(...)` calls in `App.jsx`
+are unchanged textually — the import alias quietly swaps the implementation for one that also
+checks active custom surveys; behavior for the 5 built-in schemas is identical to before. See
+"Survey Management System → Wiring into the analysis engine" below for the full mechanism.
+
 ---
 
 ## Wizard Step Flow
@@ -108,29 +133,63 @@ const PROGRAMS     = ["محاسبة", "اقتصاد", "إدارة", "علوم س
 
 ---
 
-## Schema System (`src/schemas/*.json`)
+## Schema System (`src/schemas/*.yaml`)
 
-Every survey is defined by a JSON schema. Key fields:
+Every built-in survey is defined by a compact YAML file, compiled at build time into the full
+runtime schema shape consumed by `analyze.js`. `src/schemas/index.js` uses
+`import.meta.glob("./*.yaml", { eager: true })` (via the `yaml-loader` Vite plugin in
+`vite.config.js`) to load every `*.yaml` file and run it through `compileSchema.js`, producing
+the `SCHEMAS` object keyed by `id`.
+
+### YAML source format
+
+```yaml
+id: mysurvey
+name: اسم الاستبيان بالعربي
+nameEn: English Name
+icon: "📋"
+scale: 5            # or 3 — selects likert-5 vs likert-3
+hints: [keyword1, keyword2]   # substrings matched against filename for auto-detection
+
+meta:
+  email:   [Email, البريد]      # → metadata.emailCol
+  degree:  [الوظيفة, الدرجة]    # → metadata.degreeCol
+  dept:    [القسم]              # → metadata.departmentCol
+  program: [الإدارة]            # → metadata.programCol (likert-3 questionStartIndex count only)
+  level:   [المستوى]            # → metadata.levelCol (likert-5 only)
+  freetext: [مقترحات]           # → metadata.freeTextCols
+
+axes:
+  - name: "المحور الأول: ..."
+    recommendation: "optional text used in التوصيات section"
+    questions:
+      - "نص العبارة الأولى"
+      - { text: "عبارة بعمود محدد", col: 4 }   # optional explicit colIndex override (likert-5)
+```
+
+A flat (no-axes) survey like `graduates.yaml` omits `axes:` and uses a top-level `questions:`
+list instead — `compileSchema.js` wraps it into a single anonymous axis.
+
+### What `compileSchema.js` expands this into
 
 ```jsonc
 {
-  "id": "unique_key",           // must match key in SCHEMAS object in analyze.js
-  "label": "Arabic display name",
-  "labelEn": "English name",
-  "fileHints": ["keyword1"],    // substrings matched against filename for auto-detection
+  "id": "mysurvey",
+  "label": "اسم الاستبيان بالعربي",
+  "fileHints": ["keyword1", "keyword2"],
   "scale": {
     "type": "likert-5" | "likert-3",
     "values": [{ "code": "1", "label": "...", "score": 1 }, ...],
-    "agreementCodes": ["4", "5"],   // codes counted as "agreement"
-    "tokenPattern": "\\((\\d)\\)"  // regex for likert-5 cell values like "(4)"
+    "agreementCodes": ["4", "5"]   // codes counted as "agreement"
   },
   "metadata": {
-    "timestampCol":  ["Timestamp"],      // columns to exclude from question mapping
-    "levelCol":      ["المستوى"],        // excluded for likert-5 colIndex mapping
-    "degreeCol":     ["الوظيفة"],        // → byDegree in result + excluded from qs
-    "departmentCol": ["التخصص"],         // → byDepartment in result + excluded from qs
-    "freeTextCols":  ["مقترحات"]         // excluded from question mapping
+    "timestampCol":  ["Timestamp"],
+    "levelCol":      ["المستوى"],        // likert-5 only
+    "degreeCol":     ["الوظيفة"],
+    "departmentCol": ["التخصص"],
+    "freeTextCols":  ["مقترحات"]
   },
+  "questionStartIndex": 5,   // likert-3 only — computed from how many meta.* fields are set
   "interpretation": [
     { "min": 4.5, "label": "أوافق بشدة", "tier": "excellent", "color": "0d6e3a" },
     ...
@@ -143,9 +202,7 @@ Every survey is defined by a JSON schema. Key fields:
       "questions": [
         { "id": "q01", "seq": 1, "text": "نص العبارة", "colIndex": 0 }
         // colIndex: 0-based index into the FILTERED question columns
-        // (after removing all metadata columns)
-        // Only used for likert-5 schemas.
-        // likert-3 schemas use fuzzy header matching instead (set questionStartIndex).
+        // (after removing all metadata columns). Only used for likert-5.
       ]
     }
   ]
@@ -156,8 +213,35 @@ Every survey is defined by a JSON schema. Key fields:
 
 | Scale | Detection method | Schema field |
 |---|---|---|
-| `likert-5` | Filter out metadata cols → use `colIndex` | `colIndex` per question |
+| `likert-5` | Filter out metadata cols → use `colIndex` (positional, in axis/question order) | `colIndex` per question |
 | `likert-3` | Fuzzy text similarity between header and `q.text` | `questionStartIndex` (skip first N cols) |
+
+This same shape (and the same positional-vs-fuzzy distinction) is what
+`customSurveyModel.js`'s `toAnalysisSchema()` produces for custom surveys built through the
+Survey Management UI — see that section below.
+
+---
+
+## Response Value Parsing (`analyze.js`)
+
+`parseResponse(v, schema)` dispatches to `parseResponse5` or `parseResponse3` based on
+`schema.scale.type`. Both must return a code matching one of `schema.scale.values[].code` (or
+`null` if the cell doesn't match anything, which excludes that response from all counts).
+
+**`parseResponse5`** (likert-5) recognizes, in order:
+1. A parenthesized digit, e.g. `"(5) أوافق بشدة"` → `"5"` — the format used by all 5 built-in
+   YAML surveys' real Google Forms exports.
+2. A bare digit `"1"`–`"5"`.
+3. **(Added for custom surveys)** Plain Arabic 5-point labels with no leading code at all —
+   `"أوافق بشدة"`, `"أوافق"`, `"محايد"`, `"لا أوافق"`, `"لا أوافق بشدة"` — mapped to codes
+   `"5"`–`"1"` respectively. Some Google Forms exports write the label only, no `(digit)`
+   prefix; this came up with a real custom survey (likert-5) created through Survey
+   Management whose responses were all plain text, which made every count/percentage compute
+   to `0` until this fallback was added. **This branch only runs if neither of the first two
+   patterns matched**, so the 5 built-in surveys' parsing is byte-for-byte unchanged.
+
+**`parseResponse3`** (likert-3) already worked purely off plain Arabic/English keywords
+(`أوافق`/`موافق`/`agree`, `محايد`/`neutral`, `لا أوافق`/`disagree`) — no change needed there.
 
 ---
 
@@ -229,46 +313,52 @@ After each axis: a merged summary row showing `متوسط الرضا للمحو�
 
 ## How to Add a New Survey Type
 
-### Step 1 — Create the schema file
+There are now **two** ways to add a survey type. Which one to use depends on whether it needs
+to be a permanent, built-in survey or just usable without touching code.
+
+### Option A — No-code, via the Survey Management UI (recommended for most new surveys)
+
+Use the **🗂️ إدارة الاستبيانات** tab (`SurveyManagement.jsx`) to define the survey through the
+UI (or by importing an Excel template/real response file — see "Survey Management System"
+below), set its status to **نشط**, and it becomes immediately selectable/auto-detectable in
+the normal upload wizard — no file changes, no rebuild. This is the path for one-off or
+frequently-changing surveys. See the dedicated section below for the full data model,
+storage, and analysis-engine integration details, and its current limitations (open-ended/
+numeric questions aren't analyzed; likert-5 column mapping is positional).
+
+### Option B — Built-in, via a new YAML schema file (for permanent additions to the codebase)
+
+#### Step 1 — Create the schema file
 
 ```bash
-# Create src/schemas/<id>.json
+# Create src/schemas/<id>.yaml
 ```
 
-Minimum required fields: `id`, `label`, `fileHints`, `scale`, `metadata`, `interpretation`, `axes`.
+Minimum required fields: `id`, `name`, `scale`, `axes` (or flat `questions:`). See "Schema
+System" above for the full YAML format. `compileSchema.js` derives `colIndex` (likert-5) /
+`questionStartIndex` (likert-3) and default `interpretation` automatically — no need to write
+those by hand.
 
-**For likert-5:** add `colIndex` to every question (0-based after excluding metadata columns).  
-**For likert-3:** omit `colIndex`, set `questionStartIndex` (number of non-question columns at the start).
-
-If the survey has demographic cross-tabulation (job × specialization), set:
-```json
-"degreeCol":     ["column header keyword for rows"],
-"departmentCol": ["column header keyword for cols"]
+If the survey has demographic cross-tabulation (job × specialization), set under `meta:`:
+```yaml
+meta:
+  degree: [column header keyword for rows]
+  dept:   [column header keyword for cols]
 ```
 The cross-tab appears automatically in ثالثاً when both columns are detected.
 
-### Step 2 — Register the schema in `analyze.js`
+#### Step 2 — Nothing to register
 
-```javascript
-// src/engine/analyze.js
-import mySchema from "../schemas/mysurvey.json";
+`src/schemas/index.js` picks up every `*.yaml` file automatically via `import.meta.glob` —
+there is no manual import/registration step (unlike the old `*.json` system this replaced).
 
-export const SCHEMAS = {
-  student: studentSchema,
-  // ... existing ...
-  mysurvey: mySchema,   // ← add here, key must match schema "id"
-};
-```
+#### Step 3 — Add to the survey picker in `App.jsx`
 
-### Step 3 — Add to the survey picker in `App.jsx`
-
-```javascript
-// src/App.jsx — inside SurveyTypePicker component
-const TYPES = [
-  // ... existing entries ...
-  { id: "mysurvey", icon: "📋", label: "اسم الاستبيان", desc: "X محاور – مقياس Y درجات" },
-];
-```
+The actual manual-override button list at step 2 of the wizard (`Object.values(allSchemas())`,
+see `App.jsx` around the "النوع غير صحيح؟" block) already iterates every schema automatically
+— a new YAML file appears there with no further change needed. (`SurveyTypePicker`, the
+component literally named for this, is currently unused/dead code — left as-is since it's
+pre-existing and out of scope.)
 
 ### Step 4 — Word report customization (optional)
 
@@ -296,6 +386,123 @@ Standard surveys (likert-3 or likert-5 with no special layout) require **no chan
 ```bash
 npx vite build   # must complete with no errors
 ```
+
+---
+
+## Survey Management System (Dynamic Custom Surveys)
+
+A second, fully independent survey-definition system, added alongside the 5 built-in YAML
+surveys. Accessed via the **🗂️ إدارة الاستبيانات** header button (`showSurveyManagement`
+state in `App`), which renders `SurveyManagement.jsx` in place of the wizard.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `src/engine/customSurveyModel.js` | Data model, factories (`createSurvey`/`createSection`/`createQuestion`/`createMetadata`), `localStorage` CRUD, Excel data-import detection, Excel template build/import, JSON backup export/import, and the bridge into the real analysis engine (`toAnalysisSchema`, `getAllAnalysisSchemas`, `detectAnySurveyType`) |
+| `src/SurveyManagement.jsx` | All UI: survey list (CRUD/duplicate/activate-deactivate), step-by-step editor (عام → المحاور → معاينة), section/question add/edit/delete/reorder, cross-section question move, Excel-template & data-import panels, backup import/export buttons |
+
+### Data model
+
+```javascript
+// customSurveyModel.js
+{
+  id, name, description, version, status: "draft" | "active",
+  surveyType, scaleType: "likert-3" | "likert-5",
+  metadata: { timestampCol, emailCol, nameCol, degreeCol, departmentCol, freeTextCols },  // each: string[]
+  sections: [{
+    id, name, description,
+    questions: [{ id, text, excelColumn, type: "likert" | "text" | "numeric", required, category, weight }]
+  }],
+  createdAt, updatedAt,
+}
+```
+
+`excelColumn` defaults to the question's own `text` if left blank — applied once, in
+`saveCustomSurvey()`, so it applies regardless of whether the survey was built by hand,
+imported from a data file, or imported from a template.
+
+### Storage
+
+`localStorage` key **`eruQA_customSurveys_v1`** (separate from `eruQA_settings_v1` /
+`eruQA_ai_v1`). `localStorage` is scoped per browser **origin including port** — running the
+dev server on a different `--port` each time makes saved surveys look like they vanished
+(they're really just in a different bucket). Always use the same port (`npm run dev` /
+`npx vite`, default port 3000 per `vite.config.js`) for surveys to persist across reopens.
+
+As a backup/portability mechanism independent of browser storage: **⬇ تصدير نسخة احتياطية
+(JSON)** downloads all custom surveys as one file; **⬆ استيراد نسخة احتياطية** merges a
+backup file back in by survey `id` (`buildSurveysBackupBlob` / `importSurveysBackup`).
+
+### Building a survey — three ways
+
+1. **Manual, step-by-step**: the editor is a 3-step wizard (عام → المحاور → معاينة) with a
+   "التالي ←" button after each step (step 1 is gated on a non-empty survey name) and a
+   distinct "💾 حفظ الاستبيان" button on the final step, plus a quick "💾 حفظ" in the header
+   usable from any step. Sections and questions each support add/edit/delete/reorder
+   (↑/↓ buttons); questions can also be **moved to a different section** via a per-question
+   "نقل هذا السؤال إلى محور آخر..." dropdown + "➡ نقل" button (`moveQuestionToSection` in
+   `SurveyEditorView`).
+
+2. **Import a real response-data file** (📥 panel inside step 1 of the editor,
+   `importSurveyStructureFromRows`): reads an actual Excel export and auto-detects which
+   columns are questions vs. general info (name/email/degree/department/free-text), via
+   `classifyHeader()`. Detected questions all land in **one new section** — a flat header row
+   carries no axis/section information (verified against real survey exports: single header
+   row, no merged section markers), so multi-axis surveys need manual splitting afterward
+   using the section/question tools above. Classification is guarded against misclassifying
+   real long Likert questions that happen to mention a metadata keyword mid-sentence: a column
+   is only treated as metadata if its header is a short label (≤ 5 words) **and** its actual
+   sample answers aren't Likert-scaled (`isShortLabel` + `isLikertColumn` check in
+   `classifyHeader`/`importSurveyStructureFromRows`).
+
+3. **Import a structured Excel template** (list-view toolbar, ⬇ تحميل القالب / 📤 استيراد
+   استبيان من قالب, `buildSurveyTemplateBlob` / `importSurveyFromTemplateArrayBuffer`): a
+   2-sheet workbook — **معلومات الاستبيان** (name/description/version/survey type/scale, as
+   label/value rows) and **المحاور والأسئلة** (محور | السؤال | اسم العمود | النوع | إلزامي |
+   الفئة | الوزن). Rows are grouped into sections by their المحور value, preserving order;
+   rows with a **blank المحور are grouped into one fallback section** (named "الأسئلة"), so
+   surveys with no axes at all (e.g. like `graduates.yaml`) are supported directly. This is
+   the fastest path for defining a brand-new survey with multiple real axes without using the
+   UI's add-section/add-question buttons one at a time.
+
+### Wiring into the analysis engine
+
+`customSurveyModel.js`'s `toAnalysisSchema(survey)` converts a custom survey into the exact
+schema shape `compileSchema.js` produces for the built-in YAML surveys (see "Schema System"
+above), so `analyze()`/`analyzeRows()` — fully schema-driven, no knowledge of where a schema
+came from — works on it completely unmodified:
+
+- `getActiveCustomAnalysisSchemas()` — all `status: "active"` custom surveys, converted, keyed
+  by id (surveys with zero Likert questions are skipped — nothing for `analyze()` to compute).
+- `getAllAnalysisSchemas()` — `{ ...the 5 built-in YAML schemas, ...active custom surveys }`.
+  Used in `App.jsx` as `allSchemas()` (see "`SCHEMAS` is no longer a static import" above) —
+  a drop-in superset, so every existing built-in-schema lookup is unaffected.
+- `detectAnySurveyType(filename, headers)` — duplicates `analyze.js`'s own
+  hint-match-then-fuzzy-similarity algorithm, parameterized over the merged schema set instead
+  of `analyze.js`'s closed-over static `SCHEMAS`. Imported in `App.jsx` as `detectSurveyType`
+  (import alias) — every existing call site is unchanged textually.
+
+**Two limitations, both consequences of reusing `analyze()` unmodified (by design — it was
+never changed for this feature):**
+
+1. **Only `type: "likert"` questions are analyzed.** `analyze.js` has no concept of "text" or
+   "numeric" questions — they're filtered out of the schema handed to `analyze()` entirely, the
+   same way open-ended `freeTextCols` in the built-in surveys are already excluded from
+   quantitative analysis. A custom survey's text/numeric questions simply won't appear in the
+   generated statistics or Word report.
+2. **For `likert-5` custom surveys, column mapping is positional**, exactly like the built-in
+   YAML surveys: `colIndex` is assigned in current section/question order inside
+   `toAnalysisSchema`. Reordering questions/sections in the editor changes which file column
+   each question reads from. **`likert-3` custom surveys are unaffected by reordering** —
+   `analyze.js` fuzzy-matches likert-3 questions against the actual header text, not position.
+
+### Excel template format (reference)
+
+| Sheet | Columns |
+|---|---|
+| معلومات الاستبيان | الحقل \| القيمة — rows: اسم الاستبيان, وصف الاستبيان, الإصدار, نوع الاستبيان, نوع المقياس (`"...ثلاثي..."` → `likert-3`, anything else → `likert-5`) |
+| المحاور والأسئلة | المحور \| السؤال \| اسم العمود في Excel \| نوع السؤال (مقياس/نص/رقمي) \| إلزامي (نعم/لا) \| الفئة \| الوزن |
 
 ---
 
@@ -384,7 +591,7 @@ Years come from `comparison.slots.map(s => s.year).join("_و_")` — not from `m
 
 ### Drive filters (client-side, no extra API calls)
 Three `<select>` dropdowns filter the `driveFiles` array already in memory:
-- **نوع الاستبيان** — populated from `Object.values(SCHEMAS)` labels
+- **نوع الاستبيان** — populated from `Object.values(allSchemas())` labels (built-in + active custom surveys)
 - **السنة الدراسية** — dynamically built from filenames via `detectYearFromFilename()`
 - **البرنامج** — static list in `PROGRAMS` constant: محاسبة، اقتصاد، إدارة، علوم سياسية، تكنولوجيا أعمال
 
@@ -414,6 +621,7 @@ On-demand analysis: clicking "📊 تحليل الملفات (N)" downloads file
 | `processing` | Spinner for Word generation / data preparation |
 | `error` | Error message string |
 | `showSettings` | Settings panel visible |
+| `showSurveyManagement` | Survey Management tab visible (mutually exclusive with `showSettings`; see Survey Management System section) |
 | `showTutorial` | Tutorial overlay visible |
 
 **File & detection:**

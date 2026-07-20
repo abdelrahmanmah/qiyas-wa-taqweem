@@ -215,6 +215,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
     }
 
     if (name === "list_survey_files") {
+      if (import.meta.env.PROD) return "استعراض مجلد محلي غير متاح في النسخة المنشورة. من فضلك ارفع الملف مباشرة.";
       const folder = aiSettingsRef.current?.surveysFolder;
       if (!folder) return "مجلد الاستبيانات غير مُعيَّن. أضفه من إعدادات المساعد الذكي.";
       addMsg({ type: "action", text: "📂 جاري استعراض الملفات..." });
@@ -235,6 +236,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
     }
 
     if (name === "analyze_file_from_folder") {
+      if (import.meta.env.PROD) return "استعراض مجلد محلي غير متاح في النسخة المنشورة. من فضلك ارفع الملف مباشرة.";
       const folder = aiSettingsRef.current?.surveysFolder;
       if (!folder) return "مجلد الاستبيانات غير مُعيَّن.";
       if (!args.file_path) return "يجب تحديد مسار الملف.";

@@ -109,6 +109,17 @@ function parseResponse5(v) {
   const m = s.match(/\((\d)\)/);
   if (m) return String(m[1]);
   if (/^[1-5]$/.test(s)) return s;
+  // Fallback: plain Arabic 5-point labels with no leading "(digit)" code —
+  // some Google Forms exports (and custom surveys built from them) write
+  // "أوافق بشدة" instead of "(5) أوافق بشدة". Order matters: check the
+  // "بشدة" (strongly) and "لا" (negation) variants before the bare ones.
+  const t = normalize(s);
+  if (!t) return null;
+  if (t.includes("لا") && t.includes("بشده")) return "1";
+  if (t.includes("لا") && (t.includes("اوافق") || t.includes("agree"))) return "2";
+  if (t.includes("محايد") || t.includes("neutral")) return "3";
+  if (t.includes("بشده") && (t.includes("اوافق") || t.includes("موافق"))) return "5";
+  if (t.includes("اوافق") || t.includes("موافق") || t === "agree") return "4";
   return null;
 }
 
