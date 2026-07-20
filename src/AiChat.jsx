@@ -385,7 +385,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
         title="المساعد الذكي"
         onClick={() => setIsOpen(v => !v)}
         style={{
-          position: "fixed", bottom: 28, left: 28, zIndex: 1100,
+          position: "fixed", bottom: "max(20px, env(safe-area-inset-bottom))", left: 20, zIndex: 1100,
           width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer",
           background: `linear-gradient(135deg,${prov.color},#1a3a5c)`,
           boxShadow: "0 4px 20px rgba(0,0,0,.45)",
@@ -400,8 +400,9 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
       {/* Chat panel */}
       {isOpen && (
         <div style={{
-          position: "fixed", bottom: 94, left: 28, zIndex: 1099,
-          width: 420, height: 565,
+          position: "fixed", bottom: "max(86px, calc(env(safe-area-inset-bottom) + 86px))", left: 20, right: 20, zIndex: 1099,
+          width: "auto", maxWidth: 420, height: "min(565px, calc(100dvh - 120px))",
+          margin: "0 auto",
           background: "linear-gradient(180deg,#0e1f32 0%,#0b1a28 100%)",
           border: "1px solid rgba(255,255,255,.13)",
           borderRadius: 20, boxShadow: "0 12px 48px rgba(0,0,0,.55)",

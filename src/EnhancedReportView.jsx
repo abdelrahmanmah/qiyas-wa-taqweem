@@ -452,6 +452,24 @@ const PRINT_CSS = `
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   MOBILE STYLES (screen only)
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .erv-screen-wrap { padding: 16px 10px 40px !important; }
+  .erv-cover { padding: 32px 20px 28px !important; min-height: 0 !important; }
+  .erv-cover-title { font-size: 21px !important; }
+  .erv-cover-sub { font-size: 13px !important; }
+  .erv-section { padding: 18px 16px !important; }
+  .erv-stats-row { grid-template-columns: repeat(2, 1fr) !important; }
+  .erv-stat-value { font-size: 22px !important; }
+  .erv-print-btn { width: 100%; justify-content: center; }
+}
+@media (max-width: 420px) {
+  .erv-stats-row { grid-template-columns: 1fr !important; }
+  .erv-demo-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
    PRINT STYLES
    ══════════════════════════════════════════════════════════════════════════════ */
 @media print {
@@ -934,40 +952,42 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
             <div className="erv-section">
               <SectionHeading number="ثانياً" title="المشاركون" subtitle="توزيع المستجيبين حسب المتغيرات الديموغرافية" />
 
-              <div style={{ display: "grid", gridTemplateColumns: hasDegree && hasDept ? "1fr 1fr" : "1fr", gap: 20 }}>
+              <div className="erv-demo-grid" style={{ display: "grid", gridTemplateColumns: hasDegree && hasDept ? "1fr 1fr" : "1fr", gap: 20 }}>
                 {/* By degree */}
                 {hasDegree && (
                   <div>
                     <div style={{ fontWeight: 700, color: T.navy, fontSize: 13, marginBottom: 10 }}>
                       التوزيع حسب الدرجة / المسمى الوظيفي
                     </div>
-                    <table className="erv-table">
-                      <thead>
-                        <tr>
-                          <th>العدد</th>
-                          <th>النسبة</th>
-                          <th className="erv-th-right">المسمى</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(byDegree)
-                          .sort((a, b) => b[1] - a[1])
-                          .map(([k, v], i) => (
-                            <tr key={i}>
-                              <td style={{ fontWeight: 700 }}>{v}</td>
-                              <td style={{ color: T.accent, fontWeight: 700 }}>
-                                {((v / n) * 100).toFixed(1)}%
-                              </td>
-                              <td className="erv-td-right">{k}</td>
-                            </tr>
-                          ))}
-                        <tr className="erv-total-row">
-                          <td>{n}</td>
-                          <td>100%</td>
-                          <td className="erv-td-right">الإجمالي</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div className="erv-q-table-scroll">
+                      <table className="erv-table">
+                        <thead>
+                          <tr>
+                            <th>العدد</th>
+                            <th>النسبة</th>
+                            <th className="erv-th-right">المسمى</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(byDegree)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([k, v], i) => (
+                              <tr key={i}>
+                                <td style={{ fontWeight: 700 }}>{v}</td>
+                                <td style={{ color: T.accent, fontWeight: 700 }}>
+                                  {((v / n) * 100).toFixed(1)}%
+                                </td>
+                                <td className="erv-td-right">{k}</td>
+                              </tr>
+                            ))}
+                          <tr className="erv-total-row">
+                            <td>{n}</td>
+                            <td>100%</td>
+                            <td className="erv-td-right">الإجمالي</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -977,6 +997,7 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
                     <div style={{ fontWeight: 700, color: T.navy, fontSize: 13, marginBottom: 10 }}>
                       التوزيع حسب التخصص / القسم
                     </div>
+                    <div className="erv-q-table-scroll">
                     <table className="erv-table">
                       <thead>
                         <tr>
@@ -1004,6 +1025,7 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>

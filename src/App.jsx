@@ -169,6 +169,25 @@ select.input option:checked{background:#1a5276;color:#fff}
 ::-webkit-scrollbar-track{background:rgba(255,255,255,.04)}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.35)}
+
+/* ── Mobile responsiveness ── */
+html,body{overflow-x:hidden;width:100%}
+.table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:640px){
+  .app-header{padding:14px 16px !important;gap:10px !important}
+  .app-header-actions{gap:8px !important}
+  .app-header-actions .btn{padding:8px 14px !important;font-size:12.5px !important}
+  .app-main{padding:16px !important}
+  .card{padding:18px !important}
+  .proc-overlay{padding:24px 20px !important}
+  .settings-section{padding:16px 14px !important}
+  .type-card-row{flex-direction:column !important}
+  .type-card{padding:16px 18px !important}
+  .step-bar{flex-wrap:wrap}
+  .step-item{font-size:10px;padding:9px 4px;flex-basis:33%}
+  .mini-table{font-size:11.5px}
+  .mini-table th,.mini-table td{padding:6px 6px}
+}
 `;
 
 const STEPS = ["نوع التقرير", "رفع الملف", "التحقق", "معاينة البيانات", "بيانات التقرير", "النتائج"];
@@ -489,7 +508,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
       {/* Section 1 — Institutional Identity */}
       <div className="settings-section">
         <div className="settings-section-title">🏛 هوية المؤسسة (ترويسة التقرير)</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
           {F("uniName",       "اسم الجامعة",   "Egyptian Russian University")}
           {F("facultyName",   "اسم الكلية",    "Faculty of Management...")}
           {F("unitName",      "اسم الوحدة",    "Quality Assurance unit (QAU)")}
@@ -526,7 +545,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
       {/* Section 2 — Signature Block */}
       <div className="settings-section">
         <div className="settings-section-title">✍ كتلة التوقيع (نهاية التقرير)</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
           {F("qmName", "رئيس وحدة القياس والتقويم", "د/ ...")}
           {F("quName", "رئيس وحدة الجودة",           "د/ ...")}
         </div>
@@ -603,7 +622,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
         </div>
 
         {/* Table text & number alignment */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 16 }}>
           <div>
             <label className="label">محاذاة نص الجداول</label>
             <select className="input" value={settings.textAlign ?? "right"}
@@ -664,7 +683,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {Object.values(allSchemas()).map(sc => (
-            <div key={sc.id} style={{ display: "grid", gridTemplateColumns: "190px 1fr", gap: 12, alignItems: "center" }}>
+            <div key={sc.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, alignItems: "center" }}>
               <div style={{ color: "#e8f0fe", fontSize: 13, fontWeight: 600 }}>
                 {sc.icon ?? "📋"} {sc.label}
               </div>
@@ -1172,7 +1191,7 @@ function DriveDashboard({ files, token, onSelectFile }) {
       </div>
 
       {/* Bar charts */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 16 }}>
         {/* By program */}
         <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 12, padding: "12px 14px", border: "1px solid rgba(255,255,255,.07)" }}>
           <div style={{ color: "rgba(255,255,255,.45)", fontSize: 11, fontWeight: 700, marginBottom: 10, letterSpacing: .4 }}>البرامج</div>
@@ -1526,7 +1545,7 @@ function ProcessingOverlay({ steps, filename }) {
         background: "linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.03))",
         border: "1px solid rgba(255,255,255,.13)",
         borderRadius: 24, padding: "36px 44px",
-        minWidth: 380, maxWidth: 460,
+        width: "min(460px, calc(100vw - 32px))", maxWidth: 460,
         boxShadow: "0 40px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(26,188,156,.08)",
       }}>
         {/* Header */}
@@ -1682,7 +1701,7 @@ function SurveyTypePicker({ value, onChange }) {
       <div style={{ color: "rgba(255,255,255,.45)", fontSize: 13, marginBottom: 28, textAlign: "center" }}>
         يمكن اكتشاف النوع تلقائياً من الملف أيضاً
       </div>
-      <div style={{ display: "flex", gap: 16 }}>
+      <div className="type-card-row" style={{ display: "flex", gap: 16 }}>
         {TYPES.map(t => (
           <div key={t.id} className={`type-card ${value === t.id ? "selected" : ""}`} onClick={() => onChange(t.id)}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>{t.icon}</div>
@@ -1705,7 +1724,7 @@ function ReportModePicker({ value, onChange }) {
   return (
     <div className="card" style={{ padding: 36 }}>
       <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, marginBottom: 28, textAlign: "center" }}>نوع التقرير</div>
-      <div style={{ display: "flex", gap: 16 }}>
+      <div className="type-card-row" style={{ display: "flex", gap: 16 }}>
         {MODES.map(m => (
           <div key={m.id} className={`type-card ${value === m.id ? "selected" : ""}`} onClick={() => onChange(m.id)}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>{m.icon}</div>
@@ -1959,7 +1978,7 @@ function MetadataForm({ meta, onChange }) {
   return (
     <div className="card" style={{ padding: 32 }}>
       <div style={{ color: "#fff", fontSize: 20, fontWeight: 900, marginBottom: 20, textAlign: "center" }}>بيانات التقرير</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
         <div>
           <label className="label">اسم البرنامج / القسم</label>
           <ProgramPicker value={meta.program ?? ""}
@@ -2104,7 +2123,7 @@ function ResultsPreview({ result }) {
   const is5 = result.scaleType === "likert-5";
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 14, marginBottom: 24 }}>
         {[
           { n: result.n,                    l: "عدد المستجيبين",   icon: "👥" },
           { n: result.axes.length,          l: "عدد المحاور",      icon: "📋" },
@@ -2124,18 +2143,20 @@ function ResultsPreview({ result }) {
           <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.1)", paddingBottom: 8 }}>
             توزيع المشاركين
           </div>
-          <table className="mini-table">
-            <thead><tr><th>العدد</th><th>النسبة</th><th style={{ textAlign: "right" }}>الدرجة / الوظيفة</th></tr></thead>
-            <tbody>
-              {Object.entries(result.byDegree).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
-                <tr key={i}>
-                  <td>{v}</td>
-                  <td style={{ color: "#1abc9c", fontWeight: 700 }}>{(v / result.n * 100).toFixed(1)}%</td>
-                  <td className="rtl-td" style={{ color: "#e8f0fe" }}>{k}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="mini-table">
+              <thead><tr><th>العدد</th><th>النسبة</th><th style={{ textAlign: "right" }}>الدرجة / الوظيفة</th></tr></thead>
+              <tbody>
+                {Object.entries(result.byDegree).sort((a, b) => b[1] - a[1]).map(([k, v], i) => (
+                  <tr key={i}>
+                    <td>{v}</td>
+                    <td style={{ color: "#1abc9c", fontWeight: 700 }}>{(v / result.n * 100).toFixed(1)}%</td>
+                    <td className="rtl-td" style={{ color: "#e8f0fe" }}>{k}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -2143,46 +2164,48 @@ function ResultsPreview({ result }) {
         <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.1)", paddingBottom: 8 }}>
           ملخص المحاور
         </div>
-        <table className="mini-table">
-          <thead>
-            <tr>
-              <th style={{ width: 36 }}>م</th>
-              <th style={{ textAlign: "right" }}>المحور</th>
-              {is5 && <th>المتوسط</th>}
-              <th>نسبة الموافقة</th>
-              <th>الاتجاه</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.axes.map((ax, i) => (
-              <tr key={i}>
-                <td style={{ color: "#1abc9c", fontWeight: 700 }}>{i + 1}</td>
-                <td className="rtl-td" style={{ fontSize: 12 }}>{ax.name}</td>
-                {is5 && <td style={{ fontWeight: 700, color: "#d6eaf8" }}>{ax.axisMean}</td>}
-                <td style={{ fontWeight: 700, color: "#1abc9c" }}>{ax.axisAgreePct}%</td>
-                <td>
-                  <span className="badge" style={{ background: `${dirColor(ax.tier)}22`, color: dirColor(ax.tier) }}>
-                    {ax.direction}
+        <div className="table-scroll">
+          <table className="mini-table">
+            <thead>
+              <tr>
+                <th style={{ width: 36 }}>م</th>
+                <th style={{ textAlign: "right" }}>المحور</th>
+                {is5 && <th>المتوسط</th>}
+                <th>نسبة الموافقة</th>
+                <th>الاتجاه</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.axes.map((ax, i) => (
+                <tr key={i}>
+                  <td style={{ color: "#1abc9c", fontWeight: 700 }}>{i + 1}</td>
+                  <td className="rtl-td" style={{ fontSize: 12 }}>{ax.name}</td>
+                  {is5 && <td style={{ fontWeight: 700, color: "#d6eaf8" }}>{ax.axisMean}</td>}
+                  <td style={{ fontWeight: 700, color: "#1abc9c" }}>{ax.axisAgreePct}%</td>
+                  <td>
+                    <span className="badge" style={{ background: `${dirColor(ax.tier)}22`, color: dirColor(ax.tier) }}>
+                      {ax.direction}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={is5 ? 2 : 2} style={{ textAlign: "right", fontWeight: 900, color: "#fff", background: "rgba(26,188,156,.18)", padding: "10px" }}>
+                  الإجمالي
+                </td>
+                {is5 && <td style={{ fontWeight: 900, color: "#1abc9c", background: "rgba(26,188,156,.18)" }}>{result.overallMean}</td>}
+                <td style={{ fontWeight: 900, color: "#1abc9c", fontSize: 15, background: "rgba(26,188,156,.18)" }}>
+                  {result.overallAgreePct}%
+                </td>
+                <td style={{ background: "rgba(26,188,156,.18)" }}>
+                  <span className="badge" style={{ background: "rgba(13,110,58,.35)", color: "#1abc9c" }}>
+                    {result.overallDirection}
                   </span>
                 </td>
               </tr>
-            ))}
-            <tr>
-              <td colSpan={is5 ? 2 : 2} style={{ textAlign: "right", fontWeight: 900, color: "#fff", background: "rgba(26,188,156,.18)", padding: "10px" }}>
-                الإجمالي
-              </td>
-              {is5 && <td style={{ fontWeight: 900, color: "#1abc9c", background: "rgba(26,188,156,.18)" }}>{result.overallMean}</td>}
-              <td style={{ fontWeight: 900, color: "#1abc9c", fontSize: 15, background: "rgba(26,188,156,.18)" }}>
-                {result.overallAgreePct}%
-              </td>
-              <td style={{ background: "rgba(26,188,156,.18)" }}>
-                <span className="badge" style={{ background: "rgba(13,110,58,.35)", color: "#1abc9c" }}>
-                  {result.overallDirection}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -2601,15 +2624,15 @@ export default function App() {
       <style>{CSS}</style>
 
       {/* Header */}
-      <div style={{ padding: "18px 32px", borderBottom: "1px solid rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="app-header" style={{ padding: "18px 32px", borderBottom: "1px solid rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(135deg,#1abc9c,#2874a6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📊</div>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(135deg,#1abc9c,#2874a6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>📊</div>
           <div>
             <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>محلل الاستبيانات الأكاديمية</div>
             <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11 }}>ERU – وحدة ضمان الجودة</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div className="app-header-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {/* Help button */}
           <button
             onClick={() => setShowTutorial(true)}
@@ -2644,7 +2667,7 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
+      <div className="app-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
 
         {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
         {showSurveyManagement ? (
@@ -3016,7 +3039,7 @@ export default function App() {
                   {mode === "compare2" ? "حدد ملف لكل سنة من السنتين" : "حدد ملف لكل سنة من السنوات الثلاث"}
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${slotCount}, 1fr)`, gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
                   {slots.slice(0, slotCount).map((slot, idx) => (
                     <FileSlot
                       key={idx}
@@ -3126,7 +3149,7 @@ export default function App() {
 
                   {/* File stats */}
                   <div style={{
-                    display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24,
+                    display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24,
                   }}>
                     {[
                       { icon: "📄", label: "الملف", value: singleFile?.name ?? "—" },
