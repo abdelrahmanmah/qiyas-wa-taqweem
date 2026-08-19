@@ -379,9 +379,42 @@ function buildCrosstabTable(cross, rowHeaderLabel = "المسمى الوظيفي
   });
 }
 
+// Fixed-category headcount table (degree × department) shown near the top of
+// the report, before أولاً, for faculty/assistant/coordinator surveys — see
+// FIXED_PARTICIPANT_CONFIG in analyze.js for the category lists. Unlike
+// buildParticipantsSection below (dynamic, whatever values appear in the
+// file), every category always shows here, in a fixed order, even with 0.
+const FIXED_PARTICIPANTS_TITLE = {
+  faculty:     "بيان بعدد أعضاء هيئة التدريس المشاركين بالاستبيان",
+  assistant:   "بيان بعدد أعضاء الهيئة المعاونة المشاركين بالاستبيان",
+  coordinator: "بيان بعدد المشاركين بالاستبيان",
+};
+const FIXED_PARTICIPANTS_ROW_LABEL = {
+  faculty:     "الدرجة العلمية / القسم",
+  assistant:   "الدرجة العلمية / القسم",
+  coordinator: "الوظيفة / القسم",
+};
+
+function buildFixedParticipantsSection(result) {
+  const { fixedParticipants, schemaId, n } = result;
+  if (!fixedParticipants) return [];
+  return [
+    sectionHeading(`  ${FIXED_PARTICIPANTS_TITLE[schemaId] ?? "بيان بعدد المشاركين بالاستبيان"}  `),
+    spacer(),
+    bodyPara(`بلغ إجمالي المشاركين في الاستبيان (${n}) مشاركاً.`, { bold: true }),
+    spacer(),
+    buildCrosstabTable(fixedParticipants, FIXED_PARTICIPANTS_ROW_LABEL[schemaId] ?? "الدرجة العلمية / القسم"),
+    spacer(),
+  ];
+}
+
 function buildParticipantsSection(result) {
-  const { byDegree, byDepartment, crossDegreeByDept, n } = result;
+  const { byDegree, byDepartment, crossDegreeByDept, fixedParticipants, n } = result;
   const nodes = [];
+
+  // Covered earlier in the report by buildFixedParticipantsSection — skip
+  // the duplicate dynamic table for these schemas.
+  if (fixedParticipants) return nodes;
 
   if (crossDegreeByDept) {
     const isCoord = result.schemaId === "coordinator";
@@ -883,6 +916,7 @@ export async function buildAnnualDocx(result, meta, settings = {}) {
   const children = [
     ...buildCoverPage(result, meta),
     ...(s.includeEvaluatorsTable ? buildEvaluatorsSection(meta, s) : []),
+    ...(s.includeParticipants ? buildFixedParticipantsSection(result) : []), // قبل أولاً
     ...buildVariablesSection(result),                                       // أولاً
     ...buildMethodologySection(result),                                     // ثانياً
     ...(s.includeParticipants ? buildParticipantsSection(result) : []),     // ثالثاً

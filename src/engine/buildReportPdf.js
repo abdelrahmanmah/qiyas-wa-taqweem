@@ -167,6 +167,54 @@ function buildVisionPage(s, logoSrc) {
     ${pageClose}`;
 }
 
+// Same fixed degree×department headcount table as buildFixedParticipantsSection
+// in buildDocx.js (see analyze.js's FIXED_PARTICIPANT_CONFIG / fixedCrossTab) —
+// only rendered when result.fixedParticipants exists (faculty/assistant/
+// coordinator schemas), placed right before the methodology page (أولاً).
+const FIXED_PARTICIPANTS_TITLE = {
+  faculty:     "بيان بعدد أعضاء هيئة التدريس المشاركين بالاستبيان",
+  assistant:   "بيان بعدد أعضاء الهيئة المعاونة المشاركين بالاستبيان",
+  coordinator: "بيان بعدد المشاركين بالاستبيان",
+};
+const FIXED_PARTICIPANTS_ROW_LABEL = {
+  faculty:     "الدرجة العلمية / القسم",
+  assistant:   "الدرجة العلمية / القسم",
+  coordinator: "الوظيفة / القسم",
+};
+
+function buildFixedParticipantsBlock(result) {
+  const { fixedParticipants, schemaId, n } = result;
+  if (!fixedParticipants) return "";
+  const { rows, cols, matrix, rowTotals, colTotals, grandTotal } = fixedParticipants;
+  const rowLabel = FIXED_PARTICIPANTS_ROW_LABEL[schemaId] ?? "الدرجة العلمية / القسم";
+
+  return `
+    ${sectionHeading(FIXED_PARTICIPANTS_TITLE[schemaId] ?? "بيان بعدد المشاركين بالاستبيان")}
+    <p class="pdf-body-text">بلغ إجمالي المشاركين في الاستبيان (${esc(String(n))}) مشاركاً.</p>
+    <table class="pdf-table">
+      <thead>
+        <tr>
+          <th class="pdf-th-wide">${esc(rowLabel)}</th>
+          ${cols.map(c => `<th>${esc(c)}</th>`).join("")}
+          <th>الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r, i) => `
+          <tr class="${i % 2 === 0 ? "alt" : ""}">
+            <td class="pdf-td-right">${esc(r)}</td>
+            ${cols.map(c => `<td>${esc(String(matrix[r][c]))}</td>`).join("")}
+            <td class="pdf-td-strong">${esc(String(rowTotals[r]))}</td>
+          </tr>`).join("")}
+        <tr class="pdf-total-row">
+          <td class="pdf-td-right">الإجمالي</td>
+          ${cols.map(c => `<td>${esc(String(colTotals[c]))}</td>`).join("")}
+          <td>${esc(String(grandTotal))}</td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
 function buildMethodologyPage(result, s, logoSrc) {
   const { totalQuestions, axes, scaleType } = result;
   const is5 = scaleType === "likert-5";
@@ -198,6 +246,8 @@ function buildMethodologyPage(result, s, logoSrc) {
         <div class="pdf-formula">x&#772; = ( &Sigma; x<sub>i</sub> ) / n</div>
         <div class="pdf-formula-note">x&#772;: الوسط الحسابي للمحور &nbsp; | &nbsp; x<sub>i</sub>: درجة كل عبارة &nbsp; | &nbsp; n: عدد العبارات الخاصة بالمحور</div>
       </div>` : ""}
+
+      ${buildFixedParticipantsBlock(result)}
     ${pageClose}`;
 }
 

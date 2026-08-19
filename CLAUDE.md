@@ -289,12 +289,35 @@ All reports share the same header/footer/cover structure. Section content varies
 |---|---|---|
 | Cover | `buildCoverPage` | same |
 | Evaluators table | `buildEvaluatorsSection` | same (if setting enabled) |
+| بيان بعدد المشاركين (fixed) | `buildFixedParticipantsSection` — faculty/assistant/coordinator only, see below | same |
 | أولاً: متغيرات | `buildVariablesSection` | same |
 | ثانياً: معالجة إحصائية | `buildMethodologySection` | same |
-| ثالثاً: المشاركون | `buildParticipantsSection` | same (cross-tab auto from degreeCol×departmentCol) |
+| ثالثاً: المشاركون | `buildParticipantsSection` | same (cross-tab auto from degreeCol×departmentCol) — skipped when the fixed table above already covered it |
 | رابعاً: النتائج | `buildDetailedSection` | `buildCoordinatorDetailedSection` |
 | خامساً: الملخص | `buildSummarySection` | `buildCoordinatorSummarySection` |
 | التوصيات | `buildRecommendationsSection` | skipped |
+
+### Fixed-category participants headcount table (faculty / assistant / coordinator)
+
+Placed right after the evaluators table and **before** أولاً — unlike `buildParticipantsSection`'s
+cross-tab (ثالثاً, whatever degree/department values happen to appear in the uploaded file, sorted
+alphabetically), this table's rows and columns are a **fixed, known list per survey type**, always
+shown in the same order, with `0` for any category that had no respondents in this particular file:
+
+| Schema | Row categories (الدرجة/الوظيفة) | Columns (القسم) |
+|---|---|---|
+| `faculty` | مدرس، أستاذ مساعد | إدارة، اقتصاد، محاسبة، علوم سياسية، تكنولوجيا الأعمال |
+| `assistant` | معيد، مدرس مساعد | إدارة، اقتصاد، محاسبة، علوم سياسية، تكنولوجيا الأعمال |
+| `coordinator` | أستاذ، أستاذ مساعد، مدرس، مدرس مساعد، معيد، طالب | إدارة، اقتصاد، محاسبة، علوم سياسية، تكنولوجيا الأعمال |
+
+`FIXED_PARTICIPANT_CONFIG` (in `analyze.js`) holds these lists; `fixedCrossTab()` buckets each raw
+degree/department cell value against them via the same `bucketKey`/`normalize` Arabic-spelling-
+variant matching the rest of the file already uses (so `"أستاذ  مساعد"` / `"استاذ مساعد"` etc. all
+land in the same category) — a value that doesn't match any configured category is silently
+excluded from this table (but still counted in the survey's overall `n`). The result field is
+`result.fixedParticipants` (same `{ rows, cols, matrix, rowTotals, colTotals, grandTotal }` shape
+`crossTab()` produces, rendered through the same `buildCrosstabTable()` helper). Both this table
+and the old ثالثاً one are gated by the same `includeParticipants` setting.
 
 The switch in `buildAnnualDocx`:
 ```javascript
@@ -308,6 +331,31 @@ After each axis: a merged summary row showing `متوسط الرضا للمحو�
 
 ### Coordinator خامساً columns (4 columns)
 `نسبة الرضا | متوسط الرضا | المحور | م` + total row
+
+---
+
+## Branded PDF Report (`src/engine/buildReportPdf.js`)
+
+A second, independent report generator — `downloadBrandedReportPdf(result, meta, settings,
+onProgress)` — produces a print-styled `.pdf` (cover, vision/mission, methodology, per-axis
+detail pages, summary table, bar-chart pages, recommendations) from the exact same `result` /
+`meta` / `settings` objects `buildAnnualDocx()` consumes. It works by rendering plain HTML/CSS
+off-screen (one `.pdf-page-outer` at a time, matching `.pdf-page` classed template strings + the
+`PDF_CSS` string), then rasterizing each page with `html2canvas` and assembling the pages into a
+PDF with `jsPDF` — **not** `html2pdf.js`'s one-shot capture, and **not** `docx`'s RTL rendering
+path, so none of the `cellAlign`/bidi flipping described above applies here: this is a normal
+browser-rendered `direction: rtl` HTML table, so table cells are written in plain right-to-left
+reading order in the template strings with no left/right flip needed.
+
+`buildFixedParticipantsBlock(result)` renders the same fixed degree×department headcount table
+described above (`result.fixedParticipants`) as an HTML fragment (heading + intro line + table,
+no `pageOpen`/`pageClose` of its own) appended at the bottom of `buildMethodologyPage`, directly
+under its "المعالجة الإحصائية المستخدمة" section — sharing that page rather than getting a page
+of its own. If the combined content overflows one physical page, the existing slice-across-
+multiple-PDF-pages logic in `downloadBrandedReportPdf` (see the comment on `sliceCount` there)
+already handles it — `buildMethodologyPage`'s DOM node has no fixed height, so it grows to fit.
+Returns `""` (nothing appended) for schemas without a fixed-participants config (student,
+graduates).
 
 ---
 

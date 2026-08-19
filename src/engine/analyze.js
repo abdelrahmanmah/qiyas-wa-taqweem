@@ -224,6 +224,53 @@ function crossTab(rows, rowColIdx, colColIdx) {
   return { rows: rows_, cols: cols_, matrix: displayMatrix, rowTotals, colTotals, grandTotal };
 }
 
+// Fixed degree × department headcount table shown near the start of the
+// report for faculty/assistant/coordinator surveys — row/column categories
+// are a known, stable list (not whatever happens to appear in the file), so
+// every category always shows (0 if absent) and the order is deterministic.
+const FIXED_PARTICIPANT_CONFIG = {
+  faculty: {
+    degreeOrder: ["مدرس", "أستاذ مساعد"],
+    deptOrder: ["إدارة", "اقتصاد", "محاسبة", "علوم سياسية", "تكنولوجيا الأعمال"],
+  },
+  assistant: {
+    degreeOrder: ["معيد", "مدرس مساعد"],
+    deptOrder: ["إدارة", "اقتصاد", "محاسبة", "علوم سياسية", "تكنولوجيا الأعمال"],
+  },
+  coordinator: {
+    degreeOrder: ["أستاذ", "أستاذ مساعد", "مدرس", "مدرس مساعد", "معيد", "طالب"],
+    deptOrder: ["إدارة", "اقتصاد", "محاسبة", "علوم سياسية", "تكنولوجيا الأعمال"],
+  },
+};
+
+function fixedCrossTab(rows, rowColIdx, colColIdx, rowOrder, colOrder) {
+  if (rowColIdx == null || colColIdx == null) return null;
+  const rowKeyToLabel = {};
+  rowOrder.forEach(l => { rowKeyToLabel[bucketKey(l)] = l; });
+  const colKeyToLabel = {};
+  colOrder.forEach(l => { colKeyToLabel[bucketKey(l)] = l; });
+
+  const matrix = {};
+  rowOrder.forEach(r => { matrix[r] = {}; colOrder.forEach(c => { matrix[r][c] = 0; }); });
+
+  for (const row of rows) {
+    const rRaw = row[rowColIdx];
+    const cRaw = row[colColIdx];
+    if (rRaw == null || cRaw == null) continue;
+    const rLabel = rowKeyToLabel[bucketKey(String(rRaw).trim())];
+    const cLabel = colKeyToLabel[bucketKey(String(cRaw).trim())];
+    if (!rLabel || !cLabel) continue; // value isn't one of the known fixed categories
+    matrix[rLabel][cLabel] += 1;
+  }
+
+  const rowTotals = Object.fromEntries(rowOrder.map(r =>
+    [r, colOrder.reduce((s, c) => s + matrix[r][c], 0)]));
+  const colTotals = Object.fromEntries(colOrder.map(c =>
+    [c, rowOrder.reduce((s, r) => s + matrix[r][c], 0)]));
+  const grandTotal = rowOrder.reduce((s, r) => s + rowTotals[r], 0);
+  return { rows: rowOrder, cols: colOrder, matrix, rowTotals, colTotals, grandTotal };
+}
+
 // ── Deduplication ────────────────────────────────────────────────────────────
 function dedup(rows, emailIdx) {
   if (emailIdx == null) return rows;
@@ -375,6 +422,11 @@ export function analyzeRows(headers, dataRows, schema, metaCols) {
     byDegree: countByCol(dataRows, degreeIdx),
     byDepartment: countByCol(dataRows, deptIdx),
     crossDegreeByDept: crossTab(dataRows, degreeIdx, deptIdx),
+    fixedParticipants: FIXED_PARTICIPANT_CONFIG[schema.id]
+      ? fixedCrossTab(dataRows, degreeIdx, deptIdx,
+          FIXED_PARTICIPANT_CONFIG[schema.id].degreeOrder,
+          FIXED_PARTICIPANT_CONFIG[schema.id].deptOrder)
+      : null,
     totalQuestions: axes.reduce((s, a) => s + a.questions.length, 0),
   };
 }
