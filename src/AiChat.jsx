@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { readExcel, detectSurveyType, analyze, SCHEMAS } from "./engine/analyze.js";
 import { buildAnnualDocx } from "./engine/buildDocx.js";
+import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurveyModel.js";
+import {
+  loadGisScript, initSemesterTokenClient, SEMESTER_TOKEN_KEY, saveStoredToken, getStoredToken,
+  TEMPLATE_FOLDER_ID, ROOT_SURVEYS_FOLDER_ID, SEMESTERS, loadDepartments,
+  listFormsInFolder, findYearSemesterFolder, buildGenerationJobs, runGenerationJobs,
+  listSemesterSurveysWithStats, getForm, listAllResponses, responsesToRows,
+  departmentFromSurveyName, isValidAcademicYear,
+} from "./engine/semesterSurveyModel.js";
 
 // ── Provider catalog ──────────────────────────────────────────────────────────
 export const PROVIDERS = {
@@ -101,6 +109,64 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_semester_survey_templates",
+      description: "يسرد أنواع الاستبيانات (القوالب) المتاحة لإنشاء نسخ منها لفصل دراسي معين، من مجلد القوالب على Google Drive.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_semester_surveys",
+      description: "ينشئ نسخاً فعلية من استبيان(ات) لفصل دراسي وسنة معينة على Google Drive/Forms وينشرها لاستقبال الردود. عملية حقيقية غير سهلة التراجع — ستُعرض للمستخدم بطاقة تأكيد قبل التنفيذ الفعلي، فقط استدع الأداة عندما تكون السنة والفصل واضحين من كلام المستخدم.",
+      parameters: {
+        type: "object",
+        properties: {
+          templateNames: { type: "array", items: { type: "string" }, description: "أسماء أو أجزاء من أسماء القوالب المطلوب نسخها (استخدم list_semester_survey_templates أولاً). اتركه فارغاً لتحديد كل القوالب." },
+          year: { type: "string", description: "السنة الدراسية بصيغة 2026/2027" },
+          semester: { type: "string", description: `الفصل الدراسي: ${SEMESTERS.join(" أو ")}` },
+          mode: { type: "string", enum: ["general", "departments", "programs"], description: "general = نسخة عامة واحدة (الافتراضي)، departments = نسخة لكل قسم، programs = نسخة لكل قسم وبرنامج" },
+        },
+        required: ["year", "semester"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_semester_surveys",
+      description: "يسرد الاستبيانات التي تم إنشاؤها بالفعل لفصل دراسي وسنة معينة على Google Drive مع عدد الردود لكل استبيان.",
+      parameters: {
+        type: "object",
+        properties: {
+          year: { type: "string", description: "السنة الدراسية بصيغة 2026/2027" },
+          semester: { type: "string", description: `الفصل الدراسي: ${SEMESTERS.join(" أو ")}` },
+        },
+        required: ["year", "semester"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_semester_surveys",
+      description: "يحلل استبيانات فصل دراسي محدد (كلها أو استبيانات معينة بالاسم) وينشئ تقرير Word لكل واحد ويحمّله تلقائياً. ستُعرض للمستخدم بطاقة تأكيد قبل التنفيذ الفعلي.",
+      parameters: {
+        type: "object",
+        properties: {
+          year: { type: "string", description: "السنة الدراسية بصيغة 2026/2027" },
+          semester: { type: "string", description: `الفصل الدراسي: ${SEMESTERS.join(" أو ")}` },
+          surveyNames: { type: "array", items: { type: "string" }, description: "أسماء أو أجزاء من أسماء الاستبيانات المطلوب تحليلها فقط (اختياري — استخدم list_semester_surveys أولاً). اتركه فارغاً لتحليل كل استبيانات هذا الفصل." },
+          preparedBy: { type: "string", description: "اسم معد التقرير" },
+          reviewer: { type: "string", description: "اسم المراجع" },
+        },
+        required: ["year", "semester"],
+      },
+    },
+  },
 ];
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -113,6 +179,15 @@ function buildSystemPrompt(result, surveysFolder) {
     ? `\n## مجلد الاستبيانات\nالمسار: ${surveysFolder}\nيمكنك استخدام list_survey_files لاستعراض الملفات وanalyze_file_from_folder لتحليل ملف مباشرة دون رفع.`
     : "";
 
+  const semesterSection = `
+## استبيانات الفصل الدراسي (Google Drive/Forms)
+تُنشأ وتُدار في تبويب «📆 استبيانات الفصل الدراسي» بالتطبيق. الأدوات المتاحة لك:
+- list_semester_survey_templates: عرض القوالب المتاحة للنسخ
+- generate_semester_surveys: إنشاء نسخ فعلية من استبيان(ات) لسنة وفصل دراسي معينين — عملية حقيقية على Google Drive، ستظهر للمستخدم تلقائياً بطاقة تأكيد (نعم/إلغاء) قبل التنفيذ، فلا داعي أن تسأله في الرد النصي، فقط نفّذ الأداة مباشرة متى كانت السنة والفصل والنوع المطلوب واضحين
+- list_semester_surveys: عرض الاستبيانات الموجودة بالفعل لفصل دراسي مع عدد الردود
+- analyze_semester_surveys: تحليل استبيان أو أكثر من فصل دراسي معين وتحميل تقرير Word لكل واحد — تظهر بطاقة تأكيد أيضاً قبل التنفيذ
+هذه الأدوات تحتاج اتصال المستخدم بحساب Google من نفس التبويب مسبقاً؛ إن رجعت رسالة بضرورة الاتصال، أخبر المستخدم بذلك بوضوح بدل إعادة المحاولة.`;
+
   return `أنت مساعد ذكي متخصص في تحليل استبيانات ضمان الجودة الأكاديمية — وحدة ضمان الجودة، كلية الإدارة والاقتصاد، الجامعة المصرية الروسية.
 
 ## قدراتك:
@@ -120,7 +195,9 @@ function buildSystemPrompt(result, surveysFolder) {
 - تقديم توصيات تحسينية مبنية على الأرقام
 - إنشاء تقارير Word بأمر واحد
 - تحليل ملفات Excel من المجلد المحلي أو المرفوعة مباشرة
+- إنشاء وتحليل استبيانات الفصل الدراسي على Google Drive/Forms
 ${folderSection}
+${semesterSection}
 
 ${dataSection}
 
@@ -165,6 +242,8 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
   const currentResRef          = useRef(currentResult);
   const freshResRef            = useRef(null);
   const pendingUploadRef       = useRef(null);
+  const pendingConfirmRef      = useRef(null);
+  const semesterClientRef      = useRef(null);
   const aiSettingsRef          = useRef(aiSettings);
   const onAnalysisCompleteRef  = useRef(onAnalysisComplete);
   const fileInputRef           = useRef();
@@ -178,6 +257,44 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
 
   const addMsg = useCallback(msg =>
     setMsgs(prev => [...prev, { id: Date.now() + Math.random(), ...msg }]), []);
+
+  // ── Semester-survey Google token (reuses the stored token from the "📆 استبيانات
+  // الفصل الدراسي" tab; only tries a silent, no-popup refresh here — an explicit
+  // account-picker popup from inside a chat bubble would be surprising) ──────────
+  const ensureSemesterToken = useCallback(() => {
+    const cached = getStoredToken(SEMESTER_TOKEN_KEY);
+    if (cached) return Promise.resolve(cached);
+    if (!TEMPLATE_FOLDER_ID || !ROOT_SURVEYS_FOLDER_ID) return Promise.resolve(null);
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = v => { if (!settled) { settled = true; resolve(v); } };
+      loadGisScript().then(() => {
+        if (!semesterClientRef.current) {
+          semesterClientRef.current = initSemesterTokenClient({
+            onToken: (t, expiresIn) => { saveStoredToken(SEMESTER_TOKEN_KEY, t, expiresIn); finish(t); },
+            onError: () => finish(null),
+          });
+        }
+        semesterClientRef.current.requestAccessToken({ prompt: "" });
+        setTimeout(() => finish(null), 6000);
+      }).catch(() => finish(null));
+    });
+  }, []);
+
+  // ── Confirmation card (used before any real, hard-to-reverse Drive/Forms action) ─
+  const requestConfirm = useCallback(payload => {
+    const id = Date.now() + Math.random();
+    setMsgs(prev => [...prev, { id, type: "confirm_action", ...payload }]);
+    return new Promise(resolve => { pendingConfirmRef.current = { id, resolve }; });
+  }, []);
+
+  const handleConfirmChoice = useCallback((msgId, ok) => {
+    const pending = pendingConfirmRef.current;
+    if (!pending || pending.id !== msgId) return;
+    pendingConfirmRef.current = null;
+    setMsgs(prev => prev.map(m => m.id === msgId ? { ...m, resolved: ok ? "confirmed" : "cancelled" } : m));
+    pending.resolve(ok);
+  }, []);
 
   // ── Tool executor ─────────────────────────────────────────────────────────
   const executeTool = useCallback(async (name, args, toolCallId) => {
@@ -268,8 +385,145 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
       }
     }
 
+    if (name === "list_semester_survey_templates") {
+      const token = await ensureSemesterToken();
+      if (!token) return "يجب الاتصال بحساب Google أولاً من تبويب «📆 استبيانات الفصل الدراسي» بالتطبيق، ثم إعادة المحاولة.";
+      addMsg({ type: "action", text: "📂 جاري جلب القوالب المتاحة..." });
+      try {
+        const files = await listFormsInFolder(token, TEMPLATE_FOLDER_ID);
+        if (!files.length) return "لا توجد قوالب استبيانات داخل مجلد القوالب.";
+        return `القوالب المتاحة:\n${files.map(f => `- ${f.name}`).join("\n")}`;
+      } catch (e) {
+        return `فشل جلب القوالب: ${e.message}`;
+      }
+    }
+
+    if (name === "list_semester_surveys") {
+      const token = await ensureSemesterToken();
+      if (!token) return "يجب الاتصال بحساب Google أولاً من تبويب «📆 استبيانات الفصل الدراسي» بالتطبيق، ثم إعادة المحاولة.";
+      if (!isValidAcademicYear(args.year)) return "صيغة السنة الدراسية غير صحيحة، يجب أن تكون مثل 2026/2027.";
+      if (!SEMESTERS.includes(args.semester)) return `الفصل الدراسي يجب أن يكون واحداً من: ${SEMESTERS.join("، ")}`;
+      addMsg({ type: "action", text: "📂 جاري استعراض استبيانات الفصل الدراسي..." });
+      try {
+        const semFolder = await findYearSemesterFolder(token, args.year, args.semester);
+        if (!semFolder) return `لا يوجد مجلد استبيانات لسنة ${args.year} / ${args.semester}.`;
+        const surveys = await listSemesterSurveysWithStats(token, semFolder.id);
+        if (!surveys.length) return "لا توجد استبيانات لهذا الفصل بعد.";
+        return `استبيانات ${args.semester} ${args.year}:\n${surveys.map(s => `- ${s.name} (${s.surveyType}) — ${s.responses} رد`).join("\n")}`;
+      } catch (e) {
+        return `فشل استعراض الاستبيانات: ${e.message}`;
+      }
+    }
+
+    if (name === "generate_semester_surveys") {
+      const token = await ensureSemesterToken();
+      if (!token) return "يجب الاتصال بحساب Google أولاً من تبويب «📆 استبيانات الفصل الدراسي» بالتطبيق، ثم إعادة المحاولة.";
+      if (!isValidAcademicYear(args.year)) return "صيغة السنة الدراسية غير صحيحة، يجب أن تكون مثل 2026/2027.";
+      if (!SEMESTERS.includes(args.semester)) return `الفصل الدراسي يجب أن يكون واحداً من: ${SEMESTERS.join("، ")}`;
+
+      let matched, jobList;
+      try {
+        const allTemplates = await listFormsInFolder(token, TEMPLATE_FOLDER_ID);
+        const wantedNames = (args.templateNames || []).filter(Boolean);
+        matched = wantedNames.length
+          ? allTemplates.filter(t => wantedNames.some(n => t.name.includes(n)))
+          : allTemplates;
+        if (!matched.length) return "لم يتم العثور على أي قالب مطابق. استخدم list_semester_survey_templates لمعرفة الأسماء الصحيحة.";
+
+        const mode = ["general", "departments", "programs"].includes(args.mode) ? args.mode : "general";
+        const templates = matched.map(t => ({ ...t, mode }));
+        jobList = buildGenerationJobs(templates, loadDepartments());
+      } catch (e) {
+        return `فشل تجهيز القوالب: ${e.message}`;
+      }
+
+      const ok = await requestConfirm({
+        title: "تأكيد إنشاء استبيانات فصل دراسي",
+        lines: [
+          `السنة: ${args.year} — الفصل: ${args.semester}`,
+          `عدد النسخ التي سيتم إنشاؤها: ${jobList.length}`,
+          ...matched.map(t => `• ${t.name}`),
+        ],
+        confirmLabel: "✅ إنشاء الآن", cancelLabel: "✕ إلغاء",
+      });
+      if (!ok) return "تم إلغاء إنشاء الاستبيانات بناءً على طلب المستخدم.";
+
+      addMsg({ type: "action", text: `⚙ جاري إنشاء ${jobList.length} استبيان على Google Drive...` });
+      try {
+        const { successRows, failCount } = await runGenerationJobs(token, jobList, { year: args.year, semester: args.semester });
+        addMsg({ type: "success", text: `✅ تم إنشاء ${successRows.length} استبيان${failCount ? `، وفشل ${failCount}` : ""}.` });
+        const lines = successRows.map(r => `- ${r.name}: ${r.formUrl}`).join("\n");
+        return `تم إنشاء ${successRows.length} استبيان بنجاح${failCount ? ` (فشل ${failCount})` : ""}:\n${lines}`;
+      } catch (e) {
+        addMsg({ type: "error_inline", text: `❌ فشل: ${e.message}` });
+        return `فشل إنشاء الاستبيانات: ${e.message}`;
+      }
+    }
+
+    if (name === "analyze_semester_surveys") {
+      const token = await ensureSemesterToken();
+      if (!token) return "يجب الاتصال بحساب Google أولاً من تبويب «📆 استبيانات الفصل الدراسي» بالتطبيق، ثم إعادة المحاولة.";
+      if (!isValidAcademicYear(args.year)) return "صيغة السنة الدراسية غير صحيحة، يجب أن تكون مثل 2026/2027.";
+      if (!SEMESTERS.includes(args.semester)) return `الفصل الدراسي يجب أن يكون واحداً من: ${SEMESTERS.join("، ")}`;
+
+      let surveys;
+      try {
+        const semFolder = await findYearSemesterFolder(token, args.year, args.semester);
+        if (!semFolder) return `لا يوجد مجلد استبيانات لسنة ${args.year} / ${args.semester}.`;
+        const allSurveys = await listSemesterSurveysWithStats(token, semFolder.id);
+        const wantedNames = (args.surveyNames || []).filter(Boolean);
+        surveys = wantedNames.length
+          ? allSurveys.filter(s => wantedNames.some(n => s.name.includes(n)))
+          : allSurveys;
+        if (!surveys.length) return "لم يتم العثور على أي استبيان مطابق. استخدم list_semester_surveys لمعرفة الأسماء المتاحة.";
+      } catch (e) {
+        return `فشل جلب الاستبيانات: ${e.message}`;
+      }
+
+      const ok = await requestConfirm({
+        title: "تأكيد تحليل وتحميل التقارير",
+        lines: [
+          `السنة: ${args.year} — الفصل: ${args.semester}`,
+          `عدد الاستبيانات: ${surveys.length}`,
+          ...surveys.map(s => `• ${s.name} (${s.responses} رد)`),
+        ],
+        confirmLabel: "✅ تحليل وتحميل", cancelLabel: "✕ إلغاء",
+      });
+      if (!ok) return "تم إلغاء التحليل بناءً على طلب المستخدم.";
+
+      addMsg({ type: "action", text: `⏳ جاري تحليل ${surveys.length} استبيان وتحميل التقارير...` });
+      const schemas = getAllAnalysisSchemas();
+      let successCount = 0, skipCount = 0, errorCount = 0;
+      const summaries = [];
+      for (const survey of surveys) {
+        try {
+          const [form, responses] = await Promise.all([getForm(token, survey.id), listAllResponses(token, survey.id)]);
+          const rows = responsesToRows(form, responses);
+          const schemaId = detectAnySurveyType(survey.name, rows[0]);
+          const schema = schemaId ? schemas[schemaId] : null;
+          if (!schema) { skipCount++; summaries.push(`- ${survey.name}: تعذّر التعرف على النوع`); continue; }
+          const result = analyze(rows, schema);
+          const meta = { year: args.year, program: departmentFromSurveyName(survey.name), preparedBy: args.preparedBy || "", reviewer: args.reviewer || "" };
+          const blob = await buildAnnualDocx(result, meta, docSettings);
+          const fname = `تقرير_${schema.label}_${survey.name}.docx`;
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = fname;
+          a.click();
+          successCount++;
+          summaries.push(`- ${survey.name}: ✅ ${fname}`);
+          await new Promise(r => setTimeout(r, 450)); // let the browser process each download separately
+        } catch (e) {
+          errorCount++;
+          summaries.push(`- ${survey.name}: ❌ ${e.message}`);
+        }
+      }
+      addMsg({ type: "success", text: `✅ تم تحليل وتحميل ${successCount} تقرير${skipCount ? `، وتخطي ${skipCount}` : ""}${errorCount ? `، وفشل ${errorCount}` : ""}.` });
+      return `النتيجة:\n${summaries.join("\n")}`;
+    }
+
     return `أداة غير معروفة: ${name}`;
-  }, [addMsg, docSettings]);
+  }, [addMsg, docSettings, ensureSemesterToken, requestConfirm]);
 
   // ── File upload handler (for request_file_upload tool) ────────────────────
   const handleUploadedFile = useCallback(async file => {
@@ -454,7 +708,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
               <div key={m.id} style={{ display: "flex", direction: "ltr",
                 justifyContent:
                   m.type === "user" ? "flex-end" :
-                  m.type === "upload_prompt" ? "center" : "flex-start",
+                  (m.type === "upload_prompt" || m.type === "confirm_action") ? "center" : "flex-start",
               }}>
 
                 {/* User bubble */}
@@ -500,6 +754,43 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
                         fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 13,
                       }}
                     >📂 اختر الملف</button>
+                  </div>
+                )}
+
+                {/* Confirmation card — required before any real Drive/Forms side effect */}
+                {m.type === "confirm_action" && (
+                  <div style={{
+                    background: "rgba(255,193,7,.08)", border: "1px solid rgba(255,193,7,.3)",
+                    borderRadius: 14, padding: "14px 16px", maxWidth: "92%", direction: "rtl", textAlign: "right",
+                  }}>
+                    <div style={{ color: "#ffd166", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{m.title}</div>
+                    <div style={{ color: "#e8f0fe", fontSize: 12.5, lineHeight: 1.9, whiteSpace: "pre-wrap", marginBottom: 10 }}>
+                      {m.lines?.join("\n")}
+                    </div>
+                    {m.resolved ? (
+                      <div style={{ fontSize: 12, color: m.resolved === "confirmed" ? "#1abc9c" : "rgba(255,255,255,.5)" }}>
+                        {m.resolved === "confirmed" ? "✅ تم التأكيد" : "✕ تم الإلغاء"}
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button
+                          onClick={() => handleConfirmChoice(m.id, true)}
+                          style={{
+                            background: "linear-gradient(135deg,#1abc9c,#16a085)", color: "#fff", border: "none",
+                            borderRadius: 16, padding: "7px 16px", cursor: "pointer",
+                            fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 12.5,
+                          }}
+                        >{m.confirmLabel || "تأكيد"}</button>
+                        <button
+                          onClick={() => handleConfirmChoice(m.id, false)}
+                          style={{
+                            background: "rgba(255,255,255,.08)", color: "#e8f0fe", border: "1px solid rgba(255,255,255,.18)",
+                            borderRadius: 16, padding: "7px 16px", cursor: "pointer",
+                            fontFamily: "'Cairo',sans-serif", fontSize: 12.5,
+                          }}
+                        >{m.cancelLabel || "إلغاء"}</button>
+                      </div>
+                    )}
                   </div>
                 )}
 

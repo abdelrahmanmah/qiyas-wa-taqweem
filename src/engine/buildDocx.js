@@ -77,6 +77,8 @@ export const DEFAULT_SETTINGS = {
   includeEvaluatorsTable: true,
   includeParticipants:    true,
   recommendationsCount:   5,
+  includePdfCharts:          true,
+  recommendationsThreshold:  70,
   logoDataUrl: null,
   reportFont:      "Arial",
   reportDirection: "rtl",

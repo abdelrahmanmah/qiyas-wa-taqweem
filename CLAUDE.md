@@ -545,7 +545,351 @@ Restart the dev server after changing this file.
 4. For production, also add the production domain.
 
 ### Account picker
-`requestAccessToken({ prompt: "select_account" })` is called every time so the user always sees the account picker — Google never auto-selects a cached account.
+`requestAccessToken({ prompt: "select_account" })` is called every time **`connectDrive()` runs** (an explicit, user-clicked connect) so the user always sees the account picker there — Google never auto-selects a cached account for that path. This is no longer the *only* way a token gets set, though — see "Staying signed in" below.
+
+### Staying signed in (token persistence + silent refresh)
+
+Originally, every GIS token client in this app (`connectDrive()` here, and the Semester Survey
+Generator's own separate token client) forced the account-picker popup on every single visit,
+since a plain OAuth2 implicit flow with no backend has no refresh token — the ~1hr access token
+just evaporated on reload with nothing to fall back on. Two client-side-only mitigations, added
+to both `App.jsx`'s Drive flow and `semesterSurveyModel.js`'s Semester flow identically:
+
+1. **Persist the still-valid token.** `saveStoredToken(key, accessToken, expiresInSec)` /
+   `getStoredToken(key)` / `clearStoredToken(key)` (all in `semesterSurveyModel.js`, imported
+   into `App.jsx` too since the Drive flow needed the exact same behavior) wrap
+   `localStorage` with an expiry timestamp (60s safety margin). `driveToken`/the Semester
+   `useSemesterAuth` hook's `token` both now **initialize from `getStoredToken(...)`** instead
+   of `null` — a reload within the token's lifetime needs zero Google calls at all.
+2. **Silent refresh before ever showing a popup.** Once on mount, if there's no valid stored
+   token, a `requestAccessToken({ prompt: "" })` (empty prompt = silent, no visible UI) is
+   tried in the background — this succeeds without any popup if the browser still has an
+   active Google session and the user previously consented to the scope. Only if *that* fails
+   (or on an explicit user click) does the visible "الاتصال بـ Google" / "ربط Google Drive"
+   button/popup ever appear. A `explicitRef`/`explicitDriveRef` ref (flipped right before each
+   `requestAccessToken` call) tells the shared `onError` callback whether to surface an error
+   banner — a silent attempt failing is expected/normal (no prior session yet) and must stay
+   invisible, while an explicit connect failing should tell the user.
+
+`App.jsx`'s "قطع" (disconnect) button now also calls `clearStoredToken(DRIVE_TOKEN_KEY)`, and a
+token restored straight from `localStorage` (bypassing `connectDrive()`'s callback, which
+normally triggers the file fetch) is picked up by a small effect that fetches the Drive file
+list once the Drive tab is actually opened. The Semester flow's `SemesterSurveys.jsx` and
+`SemesterFormPicker.jsx` both read/write the **same** `SEMESTER_TOKEN_KEY` — connecting in
+either one covers the other for the rest of that token's lifetime, since they share scope and
+client ID.
+
+---
+
+## Semester Survey Generator (`src/SemesterSurveys.jsx`)
+
+A third top-level tab alongside **🗂️ إدارة الاستبيانات** and **⚙ الإعدادات** (`showSemesterSurveys`
+state in `App`, header button **📆 استبيانات الفصل الدراسي**, mutually exclusive with the other
+two — same toggle-and-clear-the-others pattern). Generates per-semester copies of Google Forms
+templates directly on Google Drive and reports response stats — **no database, no localStorage
+cache**; Drive (via the Drive + Forms REST APIs) is the only source of truth, read fresh on every
+load/filter-change/refresh.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `src/engine/semesterSurveyModel.js` | OAuth (own GIS token client + scope), Drive REST helpers (list/copy/move/create-folder), Forms REST helpers (get form, list responses), naming/util helpers. No React. |
+| `src/SemesterSurveys.jsx` | UI: tab bar (إنشاء استبيانات / لوحة المتابعة), auth gate, `GenerateSurveysView`, `DashboardView`, a local toast stack, and CSS-div bar charts (no chart library, mirrors `DriveDashboard`'s bar-chart technique). |
+
+### Why a separate OAuth scope/token client
+
+The existing Drive integration (see above) requests `drive.readonly` — enough to browse/download
+survey response files, but not to copy, rename, move, or create folders. This feature needs
+broader access plus Forms access, so `semesterSurveyModel.js` runs its **own** `initTokenClient`
+with scope:
+```
+https://www.googleapis.com/auth/drive
+https://www.googleapis.com/auth/forms.body
+https://www.googleapis.com/auth/forms.responses.readonly
+```
+kept fully separate from `App.jsx`'s `DRIVE_SCOPE`/`tokenClientRef` so the existing upload/Drive-
+dashboard flow is untouched. OAuth is **client-side only** (Google Identity Services token-client
+popup, same as the existing Drive integration) — no `GOOGLE_CLIENT_SECRET`/server-side code
+exchange. A secret baked into a static SPA bundle isn't actually secret, and this app has no
+server-side token storage to make a refresh-token flow worthwhile.
+
+### Why there's no "linked response Sheet"
+
+The Google Forms REST API has no way to read or attach the classic "responses saved to this
+Google Sheet" link — that's an Apps-Script-only capability (`FormApp.getDestinationId()`), and a
+form copied via `Drive.files.copy` loses any existing Sheet link entirely. So this feature never
+touches the Sheets API: response counts and "آخر رد" come straight from the Forms API's
+`forms.responses.list` (paginated via `nextPageToken` in `listAllResponses`), and every "فتح
+الردود" action deep-links to the form's own built-in Responses tab —
+`editorResponsesUrl(formId)` → `https://docs.google.com/forms/d/{formId}/edit#responses` — not a
+spreadsheet.
+
+### Environment variables
+
+Two new `VITE_*` vars (same module-scope-const pattern as `GOOGLE_CLIENT_ID`, read in
+`semesterSurveyModel.js`), added to `.env.local` (gitignored) — see the new `.env.example` at the
+repo root for the full list with `GOOGLE_CLIENT_ID` reused:
+```
+VITE_GOOGLE_TEMPLATE_FOLDER_ID=       # Drive folder containing the Form templates
+VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID=   # Root folder; {year}/{semester} subfolders are created under it
+```
+If either is unset, `SemesterSurveys` shows a warning card instead of the auth gate — it never
+silently no-ops.
+
+### Generate Surveys flow
+
+1. On mount (after Drive connect), `listFormsInFolder` lists every `application/vnd.google-apps.form`
+   file directly inside `VITE_GOOGLE_TEMPLATE_FOLDER_ID` — never hardcoded, so any form dropped
+   into that folder appears automatically. Each gets a "تحديد" checkbox + **Select All**.
+2. Each selected template also has a **generation-mode `<select>`**: **نسخة عامة** (default —
+   one general copy), **الأقسام** (one copy per *department*, ignoring any programs it has),
+   or **الأقسام والبرامج** (one copy per *program* for departments that have programs, one
+   copy per department for those that don't) — `t.mode` is `"general" | "departments" |
+   "programs"`, and `"departments"`/`"programs"` map directly onto
+   `expandDepartmentUnits(departments, granularity)`'s second argument in
+   `semesterSurveyModel.js`. The department list itself comes from `loadDepartments()`
+   (localStorage-backed, default seed `DEFAULT_DEPARTMENTS`: محاسبة، اقتصاد، علوم سياسية have
+   no programs; إدارة أعمال has مالية/تسويق; تكنولوجيا الأعمال has BA/MIS/Fintech/MKI) — editable
+   at runtime via the **⚙ الأقسام والبرامج** tab (`DepartmentsView`, works without a Google
+   connection since it's pure local config, not Drive data). Each generated copy is named
+   `"{template} - [{department}[ - {program}]] - {semester} - {year}"` via
+   `buildSurveyName(...)`; `departmentFromSurveyName(...)` parses that middle unit back out
+   generically (whatever's between the first and last-two `" - "`-joined segments), used for
+   report metadata in Analyze All (see below).
+3. Academic Year — a free-text input backed by a `<datalist>` (`ssg-year-options`) populated
+   from existing year folders under `VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID` (fetched once via
+   `listSubfolders` on mount) — pick an existing year or type a new one; validated against
+   `/^\d{4}\/\d{4}$/` (e.g. `2026/2027`) either way. Semester dropdown (`SEMESTERS`: خريف /
+   ربيع / صيف).
+4. On **إنشاء**: expands each selected template — via `expandDepartmentUnits` per its own
+   generation-mode select, or as a single general job if left on "نسخة عامة" — into a flat job list,
+   creates/reuses the `{year}` folder, then the `{semester}` subfolder inside it, then **one
+   subfolder per selected survey type** inside the semester folder (named after the template —
+   created once per distinct template via a single `Promise.all` pass over the *unique* selected
+   templates, before the job batch starts, so per-department jobs from the same template share
+   one folder instead of racing to create duplicates). Final structure:
+   `{root}/{year}/{semester}/{templateName}/{copy...}`. Jobs then run through `runBatched`
+   (batches of 4 via `Promise.all` — the exact same batching idiom `DriveDashboard.loadStats`/
+   `BatchProcessor` already use elsewhere in `App.jsx`, reused rather than reinvented). Each job:
+   `copyFile` → `moveFile` (into its template's subfolder) → `updateFormTitle` → `publishForm` →
+   `getForm` (to get the public `responderUri`). `updateFormTitle` matters because
+   `Drive.files.copy` only renames the Drive **file**, not the form's own internal title (what
+   respondents actually see when they open it) — it's set separately via `forms.{id}:batchUpdate`
+   / `updateFormInfo{info:{title},updateMask:"title"}` so both stay in sync with the same
+   `buildSurveyName(...)` string. `publishForm` calls `forms.{id}:setPublishSettings` with
+   `{isPublished:true,isAcceptingResponses:true}` — **as of 2026-06-30, forms created via the
+   API start unpublished and reject responses until explicitly published**, so every generated
+   copy is published immediately; without this step the survey link would look fine but silently
+   refuse to accept any responses until someone opened it in the Forms UI and published it by
+   hand. Per-job status renders live (○ → ⏳ → ✔/✖).
+5. Successful jobs feed a results table: Open Form / Open Form Responses / Copy Form Link / Copy
+   Responses Link, plus a success/failure toast.
+
+### Dashboard flow
+
+Academic Year / Semester filters are populated by listing Drive **subfolders** (`listSubfolders`)
+of `VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID`, then of the selected year folder — never hardcoded.
+Changing a filter (or clicking **↻ تحديث**) walks one level deeper than the filters: it lists the
+survey-type subfolders inside the resolved semester folder, then the form(s) inside each, and
+tags every row with its `surveyType` (shown as a "النوع" column in the table) — mirroring the
+`{year}/{semester}/{templateName}/{copy}` structure created by Generate Surveys. Then, in
+batches of 4, fetches `getForm` + `listAllResponses` per form to compute stats client-side. No
+caching anywhere — every load/filter-change/refresh is a fresh set of API calls, per the "Drive
+only, no DB, no cache" constraint. Stat cards (total surveys, total responses, avg/survey, last
+response received), a CSS-div bar chart of responses-per-survey (`BarChart` in
+`SemesterSurveys.jsx` — same width-percentage/gradient-bar technique as `DriveDashboard`, no
+chart library dependency), and a table with a per-row **↻ تحديث** action that re-fetches just
+that one survey's stats.
+
+### Progress feedback
+
+Both long batch operations (Generate's job loop, Analyze All's per-survey loop) render a shared
+`ProgressBar` (done/total count + animated striped fill) plus a rotating status line
+(`useRotatingTip`, cycling through a short list of Arabic phrases every ~2.6s — `GENERATE_TIPS`/
+`ANALYZE_TIPS`) so a multi-step wait doesn't look frozen. Both sit above the existing per-item
+○/⏳/✔/✖ status list rather than replacing it — the tip line is deliberately generic/non-literal
+("جاري نسخ النماذج...") since the two loops don't expose a truly step-by-step public API to
+narrate against.
+
+### Exporting links (`📋 نسخ الروابط كرسالة` / `⬇ تنزيل Excel`)
+
+Two shared bulk-export buttons (`LinksExportButtons` in `SemesterSurveys.jsx`) appear wherever a
+list of generated surveys is shown — the results table at the end of a Generate run, and the
+Dashboard's survey table — each acting on whatever rows are currently visible there (a fresh
+generate batch vs. every survey in the selected year/semester, respectively):
+- **نسخ الروابط كرسالة**: copies a plain-text numbered list (name + form link + responses link
+  per survey) to the clipboard via the same `copyToClipboard` helper the per-row "نسخ رابط..."
+  buttons already use — ready to paste into an email/chat.
+- **تنزيل Excel**: builds a 3-column `.xlsx` (الاستبيان / رابط النموذج / رابط الردود) with
+  `XLSX.utils.json_to_sheet` + `XLSX.write` (the `xlsx` package the app already depends on for
+  reading uploads — this is the first place in the codebase that *writes* one) and downloads it
+  via the same `downloadBlob` helper.
+
+### Analyze All (`🔍 تحليل الكل`)
+
+Runs every currently-listed survey through the app's **existing, unmodified** analysis engine
+and generates a Word report per survey — no separate analysis path was written for Forms data.
+The bridge is `responsesToRows(form, responses)` in `semesterSurveyModel.js`: it converts a
+Forms API `form` (its `items[]`) + `responses[]` into the exact `[header, ...rows]` shape
+`analyze.js` already expects from a parsed Excel export (`Timestamp`, optionally `Email Address`
+if the form collects it, then one column per question in form order). This works because Google
+Forms API answers come back as plain option text (e.g. `"أوافق بشدة"`), which is exactly the
+plain-label fallback `parseResponse5`/`parseResponse3` already handle for custom surveys (see
+"Response Value Parsing" above) — so `detectAnySurveyType(survey.name, rows[0])` +
+`analyze(rows, schema)` (both imported straight from `analyze.js`/`customSurveyModel.js`) run
+unchanged. Surveys whose type can't be auto-detected are skipped with a toast, not force-matched.
+
+Clicking the button shows a small shared-fields form (اسم المعد / المراجع — **not** persisted
+anywhere, entered fresh each run, matching how the rest of the app already collects these two
+fields per report) before running. `meta.program` is recovered from the survey's own Drive file
+name via `departmentFromSurveyName()` (parses the `" - "`-joined `buildSurveyName()` format —
+4 parts means a per-department copy, 3 means general). Report branding (institution name, logo,
+signatures, etc.) comes from the same `eruQA_settings_v1` localStorage key `SettingsPanel`
+already writes — read via a small local `loadReportSettings()` duplicate of `App.jsx`'s
+`loadSettings()`, since `SemesterSurveys.jsx` has no prop access into `App`'s state. Each
+successful report downloads immediately via a local `downloadBlob()` (same tiny helper duplicated
+in `SurveyManagement.jsx`/`App.jsx`) with a **450ms delay between downloads** — the same delay
+`BatchProcessor.downloadAll` already uses in `App.jsx`, needed because browsers throttle/block
+several near-simultaneous auto-downloads.
+
+### Google Cloud Console setup (in addition to the Drive integration's setup above)
+1. Enable the **Google Forms API** on the same project (`redaa2`).
+2. If the OAuth consent screen is in "Testing" mode, add the `forms.body` and
+   `forms.responses.readonly` scopes to it (and add test users) — otherwise the consent popup
+   will reject the broader scope request.
+3. The signed-in Google account must have **edit access** to both the configured template folder
+   and the root surveys folder.
+
+---
+
+## Course Evaluation Hub (`src/CourseEvaluationHub.jsx`)
+
+A fourth top-level tab (`showCourseEval` state in `App`, header button **📚 تقييم المقررات**,
+mutually exclusive with **🗂️ إدارة الاستبيانات** / **📆 استبيانات الفصل الدراسي** /
+**⚙ الإعدادات** — same toggle-and-clear-the-others pattern). Groups every tool used to run a
+full course-evaluation cycle behind its own internal sub-tab bar (`activeTab` state local to
+the hub, not lifted into `App`): **📖 دليل الاستخدام** (a static ordered guide tying the other
+four together, with a "افتح تاب..." jump button per step that just calls `setActiveTab`),
+**📋 قالب بيانات المقررات**, **📊 أداء الاستبيانات**, **🧩 تقسيم التقييم**, and
+**📄 مراجعة التوصيات**. Each sub-tool is its own file, rendered conditionally by the hub —
+none of them know they're inside a hub (no shared state, no props from `App`), same
+standalone-file pattern as `SurveyManagement.jsx`/`SemesterSurveys.jsx`.
+
+This replaced a previous standalone top-level tab for just the splitter (`showCourseSplitter`,
+button **🧩 تقسيم تقييم المقررات**) — the splitter's own code/logic is untouched, only its
+entry point moved from the header into the hub's sub-tab bar.
+
+### Course Splitter (`src/CourseSplitter.jsx`)
+
+Fully independent of the survey wizard/analysis engine — it's a self-contained utility ported
+from a standalone HTML tool (`course_eval_splitte V3r.html`) that a UMIS export needs run
+through *before* any of those files can be analyzed as individual surveys, since a single UMIS
+"course evaluation" report export bundles every course's results into **one Excel sheet with
+repeating block headers**, not one file per course.
+
+### Marker text is user-editable, not hardcoded
+
+The block marker (`DEFAULT_MARKER`, default `"بنود الاستبيان"`) and `BLOCK_OFFSET` (rows
+between a course's data start and its marker row, default `10`) now match the verified-working
+standalone tool (`course_eval_splitte V3r.html`) byte-for-byte — an earlier port had
+`DEFAULT_MARKER` as `"بيانات الاستبيان"` (reconstructed from a garbled copy-paste), which matched
+zero rows in real UMIS exports and made the splitter silently produce no courses; fixed by
+copying the exact string from the standalone tool's source. Different UMIS report
+templates/versions may still use different text or row offsets, so both remain exposed in an
+"⚙ إعدادات متقدمة" collapsible in step 3, not hardcoded constants a user would need a code change
+to fix. If the configured marker matches zero rows, `findMarkerCandidates(wb)` scans the sheet
+for other strings that repeat a plausible number of
+times (2–200×) and surfaces them as clickable suggestions, so a user can find the right marker
+without opening the file in Excel to hunt for it manually.
+
+### What it does
+
+1. **Splits** a merged UMIS RDLC-format Excel export into one `.xlsx` workbook per course, by
+   scanning every row for a repeating marker string (`"بيانات الاستبيان"`) that starts each
+   course's block, then slicing the sheet (including remapped cell merges) into per-course
+   ranges. The course code/title is recovered by regex-matching a `"... (CODE)"` pattern in the
+   few rows just above each marker.
+2. **Matches** each split-out course against an optional **reference course list** (columns
+   `COURSE_CODE` / `COURSE_DESCR_EN` / `COURSE_DESCR_AR`) — this is what lets it report which
+   expected courses are **missing** (no evaluation file was found for them at all), not just
+   split what's present.
+3. **Classifies by department**, from an optional **department-distribution list** (columns
+   اسم المقرر / كود المقرر / القسم العلمي), matched **by course name first** (exact, then
+   Levenshtein-similarity fuzzy ≥0.8), falling back to exact code match — chosen in that order
+   because course codes are observed to vary between UMIS and other systems while names don't.
+4. **Flags duplicates** — the same course code appearing in more than one uploaded merged file.
+
+All three inputs (reference list, department list, one-or-more merged files) are independent
+optional/required uploads — only the merged file(s) are required to run a split at all; the
+other two only add matching/classification on top.
+
+### Output
+
+- Per-course "⬇ تحميل" button — downloads that one course's split-out `.xlsx`.
+- "⬇ تحميل كل المواد (ZIP)" — zips every split course via `jszip`, foldered by department name
+  when a department list was supplied (courses with no confident department match land in a
+  `"غير محدد - يحتاج مراجعة"` folder so they're never silently dropped), flat otherwise.
+- A results table + filter row (الكل / تم تقسيمها / لم تُرفع بعد / مكررة) and a summary stat
+  bar (matched/total against the reference list, missing count, duplicate count, no-department
+  count, fuzzy-match count) — same visual language (`.mini-table`, `.card`, stat tiles) as the
+  rest of the app, not a re-skinned copy of the standalone tool's own dark-panel CSS.
+
+### Why it's a separate file, not folded into `analyze.js`
+
+The splitter's "rows" are a raw UMIS RDLC layout (merged cells, a fixed header block, blocks of
+arbitrary length keyed off a marker string) — nothing like the `[header, ...dataRows]` shape
+`analyze.js`/`readExcel()` expect from a Google Forms export. It also writes new `.xlsx`
+workbooks (via `XLSX.write`) rather than only reading them, and is the second place in the
+codebase (after the Semester Survey Generator's Excel-link export) to do so. Kept fully
+standalone — no shared state, no props from `App` — exactly like `SurveyManagement.jsx` and
+`SemesterSurveys.jsx`.
+
+### Course Template Tool (`src/CourseTemplateTool.jsx`)
+
+Manages the per-course assignment sheet handed out before an evaluation cycle: اسم المقرر /
+كود المقرر / عضو هيئة التدريس / عضو الهيئة المعاونة / القسم العلمي / هل يوجد لاب (نعم/لا) /
+القائم بالمراجعة. **⬇ تحميل قالب فارغ** downloads just the header row; **📤 رفع ملف موجود**
+re-imports a filled sheet (`mapHeaders()` matches uploaded headers by normalized text — parens
+like `"(نعم-لا)"` stripped before comparing — falling back to plain column position for
+unrecognized headers) into an editable `<table>` where every cell is a live `<input>` (the
+"هل يوجد لاب" column is a tri-state toggle button instead, cycling نعم → لا → empty, so the
+insights below can rely on an exact value rather than free text). **⬇ تنزيل نسخة معدّلة**
+re-exports the current in-memory rows. Insights (`useMemo` over `rows`, no persistence) cover
+exactly what was asked for: توزيع حسب القسم (course + lab count per department, CSS-div bar),
+عبء العمل لكل عضو (per-instructor/assistant/reviewer load, same bar technique), and بيانات
+ناقصة / تكرار (rows missing اسم المقرر/كود المقرر/القسم العلمي, and rows whose كود المقرر
+repeats).
+
+### Survey Participation Tool (`src/SurveyParticipationTool.jsx`)
+
+Reads the system's survey-performance export — columns `COURSE_CODE`, `COURSE_DESCR_EN`,
+`NoOfVotes` — where `NoOfVotes` is a **"voted/total" fraction string** (e.g. `"0/25"`, not a
+plain count). `parseVotes()` splits on `/`; if no `/` is present it falls back to treating the
+whole value as `voted` with `total: null` rather than failing outright. Each course is
+classified into one of four states (`classify()`): `total === 0` → **لا يوجد طلاب مسجلين**
+(the `0/0` case — no one was ever enrolled to evaluate this course), `voted === 0 && total > 0`
+→ **لم يتم التقييم**, `0 < voted < threshold` → **مشكوك في انتظامها** (needs a manual check for
+whether the course is actually a regular one — `threshold` defaults to 10 but is a plain
+number input, not hardcoded), otherwise **طبيعية**. Stat tiles + a status filter row +
+per-category "⬇ تنزيل Excel" buttons (تم التقييم / لم يتم التقييم / مشكوك فيها / تقرير كامل)
+cover the three exportable reports asked for, plus a combined one with a status column.
+
+### PDF Recommendation Reviewer (`src/PdfRecommendationReviewer.jsx`)
+
+Ported from the standalone `pdf_rec_reviewer.html`. Renders the **last page** of every PDF in a
+user-picked folder (`webkitdirectory` input, Chrome/Edge-only — same constraint the standalone
+tool had) as a thumbnail — that's where a reviewer's recommendation section typically lives —
+via a 4-way concurrent render pool (`CONCURRENCY = 4`, identical batching idea to the
+`Promise.all`-batches-of-4 pattern already used in `DriveDashboard`/`SemesterSurveys`/
+`BatchProcessor`). Each card is a checkbox toggle for "has a recommendation"; **📊 تصدير Excel**
+writes the checked subset (`#`, اسم المقرر, اسم الملف) via `XLSX`. Unlike the original tool
+(which loaded pdf.js off `cdnjs.cloudflare.com`), this uses the npm `pdfjs-dist` package with
+its worker resolved through Vite's `?url` import (`import pdfjsWorker from
+"pdfjs-dist/build/pdf.worker.min.mjs?url"`) so it works in a production build with no external
+CDN dependency. Visual language switched from the standalone tool's own dark-panel CSS to the
+app's shared `.card`/`.btn` classes and accent color, same principle already applied when
+`CourseSplitter.jsx` was ported.
 
 ---
 
@@ -600,7 +944,10 @@ Helper functions (defined after `detectProgramFromFilename`, before `uniqueCol`)
 - `detectTypeHintFromFilename(filename)` — matches against `schema.fileHints` with Arabic normalisation
 
 ### Drive Dashboard (`DriveDashboard` component)
-Toggle between **📁 قائمة** (list with filters) and **📊 لوحة** (dashboard) via `driveDashboard` boolean state.
+Three-way toggle in the Drive tab's connected-bar — **📁 قائمة** (flat list with filters),
+**📊 لوحة** (dashboard), **🗓️ الفصل الدراسي** (semester-survey picker, see below) — via
+`driveViewMode` state (`"list" | "dashboard" | "semester"`; was a `driveDashboard` boolean
+before the semester picker was added).
 
 `DriveDashboard` props: `{ files, token, onSelectFile }`. Internal state: `stats[]`, `loading`, `done`.
 
@@ -608,6 +955,25 @@ On-demand analysis: clicking "📊 تحليل الملفات (N)" downloads file
 1. Summary cards by survey type (file count + response count)
 2. CSS bar charts — distribution by program and by academic year
 3. Detailed table with per-file type/year/program/responses and "تحليل" button
+
+### Semester-survey picker (`SemesterFormPicker.jsx`)
+
+The **🗓️ الفصل الدراسي** view mode above lets the single-file wizard's Drive tab analyze a
+survey generated by the Semester Survey Generator (see that section) directly — browsing
+`{root}/{year}/{semester}` (year/semester `<select>`s populated via `listSubfolders`, exactly
+like the Generator's own Dashboard) and listing every form across that semester's survey-type
+subfolders, tagged with its type. It needs its **own** OAuth token (a local
+`useSemesterAuth()` duplicate, same as `SemesterSurveys.jsx`'s) because the wizard's existing
+`driveToken` is `drive.readonly` only and can't read Forms responses.
+
+Selecting a form fetches `getForm` + `listAllResponses`, converts them via
+`responsesToRows()` (the same Forms→rows bridge Analyze All uses), and calls
+`onFormSelected(rows, name, department)` — wired in `App.jsx` to a new
+`handleDriveFormSelect`, which is `handleDriveFileSelect`'s exact tail (detect type → animate
+`DRIVE_STEPS` → `setStep(2)`) minus the download step (already "downloaded" via the Forms API
+by the time it's called, so step 0 renders `"done"` immediately instead of animating). From
+step 2 onward the survey flows through the completely unmodified normal wizard (preview,
+metadata, Word report) — no special-casing needed past this handoff.
 
 ### State variables (inside App component)
 
@@ -622,6 +988,7 @@ On-demand analysis: clicking "📊 تحليل الملفات (N)" downloads file
 | `error` | Error message string |
 | `showSettings` | Settings panel visible |
 | `showSurveyManagement` | Survey Management tab visible (mutually exclusive with `showSettings`; see Survey Management System section) |
+| `showCourseEval` | Course Evaluation Hub visible (mutually exclusive with the above; see Course Evaluation Hub section) |
 | `showTutorial` | Tutorial overlay visible |
 
 **File & detection:**
@@ -665,7 +1032,7 @@ On-demand analysis: clicking "📊 تحليل الملفات (N)" downloads file
 | `driveFilterType` | Survey type filter |
 | `driveFilterYear` | Academic year filter |
 | `driveFilterProgram` | Program filter |
-| `driveDashboard` | `true` = dashboard, `false` = file list |
+| `driveViewMode` | `"list"` / `"dashboard"` / `"semester"` — which of the three Drive tab views is active |
 | `tokenClientRef` | `useRef` holding GIS token client |
 
 **Comparison mode:**

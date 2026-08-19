@@ -13,3 +13,7 @@ apis.txt
 *.xls
 *.docx
 استبيانات/
+
+# Local-only design exports / scratch assets — not part of the app
+stitch_ui_ux_interface_optimization/
+ChatGPT Image*.png

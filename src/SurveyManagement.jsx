@@ -240,9 +240,9 @@ function QuestionRow({ q, index, total, onChange, onDelete, onMove, sectionId, a
           )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <button className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => onMove(-1)} title="تحريك للأعلى">↑</button>
-          <button className="btn btn-ghost btn-sm" disabled={index === total - 1} onClick={() => onMove(1)} title="تحريك للأسفل">↓</button>
-          <button className="btn btn-danger btn-sm" onClick={onDelete} title="حذف السؤال">✕</button>
+          <button className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => onMove(-1)} title="تحريك للأعلى" aria-label="تحريك السؤال للأعلى">↑</button>
+          <button className="btn btn-ghost btn-sm" disabled={index === total - 1} onClick={() => onMove(1)} title="تحريك للأسفل" aria-label="تحريك السؤال للأسفل">↓</button>
+          <button className="btn btn-danger btn-sm" onClick={onDelete} title="حذف السؤال" aria-label="حذف السؤال">✕</button>
         </div>
       </div>
     </div>
@@ -277,9 +277,9 @@ function SectionBlock({ section, index, total, onChange, onDelete, onMove, allSe
             onChange={e => onChange({ ...section, description: e.target.value })} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <button className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => onMove(-1)} title="تحريك المحور للأعلى">↑</button>
-          <button className="btn btn-ghost btn-sm" disabled={index === total - 1} onClick={() => onMove(1)} title="تحريك المحور للأسفل">↓</button>
-          <button className="btn btn-danger btn-sm" onClick={onDelete} title="حذف المحور">✕</button>
+          <button className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => onMove(-1)} title="تحريك المحور للأعلى" aria-label="تحريك المحور للأعلى">↑</button>
+          <button className="btn btn-ghost btn-sm" disabled={index === total - 1} onClick={() => onMove(1)} title="تحريك المحور للأسفل" aria-label="تحريك المحور للأسفل">↓</button>
+          <button className="btn btn-danger btn-sm" onClick={onDelete} title="حذف المحور" aria-label="حذف المحور">✕</button>
         </div>
       </div>
 

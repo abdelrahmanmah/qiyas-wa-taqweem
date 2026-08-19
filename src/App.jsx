@@ -1,34 +1,58 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from "./engine/analyze.js";
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
+import { downloadBrandedReportPdf } from "./engine/buildReportPdf.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
 import EnhancedReportView from "./EnhancedReportView.jsx";
 import SurveyManagement from "./SurveyManagement.jsx";
+import SemesterSurveys from "./SemesterSurveys.jsx";
+import SemesterFormPicker from "./SemesterFormPicker.jsx";
+import CourseEvaluationHub from "./CourseEvaluationHub.jsx";
 import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
+import { saveStoredToken, getStoredToken, clearStoredToken } from "./engine/semesterSurveyModel.js";
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
+
+/* ── Design tokens ──
+   Named once here so color/spacing intent stays consistent across App.jsx and every
+   sibling view (SurveyManagement.jsx, SemesterSurveys.jsx, CourseSplitter.jsx,
+   CourseEvaluationHub.jsx) that reuses these same class names. */
+:root{
+  --bg-1:#0f2035; --bg-2:#1a3a5c; --bg-3:#0d3b2e;
+  --surface:rgba(255,255,255,.07);       --surface-hover:rgba(255,255,255,.12);
+  --surface-soft:rgba(255,255,255,.04);  --surface-strong:rgba(255,255,255,.1);
+  --border:rgba(255,255,255,.12);        --border-soft:rgba(255,255,255,.08);
+  --text:#e8f0fe;    --text-strong:#fff;
+  --text-muted:rgba(255,255,255,.55);    --text-faint:rgba(255,255,255,.4);
+  --accent:#1abc9c;      --accent-dark:#16a085;    --accent-soft:rgba(26,188,156,.15);
+  --accent-2:#2874a6;    --accent-2-dark:#1a3a5c;
+  --success:#0d6e3a;     --warning:#ffc107;         --danger:#e74c3c;
+  --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:50px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px;
+}
 body{font-family:'Cairo',sans-serif;direction:rtl}
 
 /* ── Buttons ── */
-.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:50px;
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:var(--radius-pill);
   font-family:'Cairo',sans-serif;font-weight:700;font-size:15px;cursor:pointer;border:none;
   transition:all .22s;white-space:nowrap}
-.btn-primary{background:linear-gradient(135deg,#1abc9c,#16a085);color:#fff}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff}
 .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(26,188,156,.4)}
-.btn-blue{background:linear-gradient(135deg,#2874a6,#1a3a5c);color:#fff}
+.btn-blue{background:linear-gradient(135deg,var(--accent-2),var(--accent-2-dark));color:#fff}
 .btn-blue:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(40,116,166,.4)}
-.btn-ghost{background:rgba(255,255,255,.1);color:#e8f0fe;border:1px solid rgba(255,255,255,.18)}
+.btn-ghost{background:var(--surface-strong);color:var(--text);border:1px solid var(--border)}
 .btn-ghost:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3)}
 .btn-danger{background:rgba(231,76,60,.15);color:#e87c70;border:1px solid rgba(231,76,60,.25)}
 .btn-danger:hover{background:rgba(231,76,60,.28);color:#ff6b5b}
 .btn-sm{padding:7px 16px;font-size:13px}
 
 /* ── Cards ── */
-.card{background:rgba(255,255,255,.07);backdrop-filter:blur(16px);
-  border:1px solid rgba(255,255,255,.12);border-radius:20px}
+.card{background:var(--surface);backdrop-filter:blur(16px);
+  border:1px solid var(--border);border-radius:var(--radius-lg)}
 
 /* ── Upload zone ── */
 .upload-zone{border:2px dashed rgba(255,255,255,.3);border-radius:16px;padding:48px 32px;
@@ -91,8 +115,15 @@ select.input option:checked{background:#1a5276;color:#fff}
 /* ── Stat cards ── */
 .stat-card{
   background:rgba(255,255,255,.08);border-radius:16px;padding:18px 22px;text-align:center;
-  border:1px solid rgba(255,255,255,.08);transition:background .2s}
-.stat-card:hover{background:rgba(255,255,255,.12)}
+  border:1px solid var(--border-soft);transition:background .2s}
+.stat-card:hover{background:var(--surface-hover)}
+
+/* ── Stat chip (compact inline stat, used in File Health Summary etc.) ── */
+.stat-chip{background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-sm);
+  padding:10px 14px;display:flex;flex-direction:column;gap:2px;min-width:110px}
+.stat-chip-value{color:var(--accent);font-weight:900;font-size:16px}
+.stat-chip-label{color:var(--text-faint);font-size:11px}
+.stat-chip.warn .stat-chip-value{color:var(--warning)}
 
 /* ── Spinner ── */
 .spin{animation:spin 1s linear infinite}
@@ -124,13 +155,16 @@ select.input option:checked{background:#1a5276;color:#fff}
 
 /* ── Step bar ── */
 .step-bar{display:flex;gap:0;margin-bottom:32px;border-radius:14px;overflow:hidden;
-  border:1px solid rgba(255,255,255,.08)}
-.step-item{flex:1;padding:11px 6px;text-align:center;font-size:11.5px;font-weight:700;
-  background:rgba(255,255,255,.04);color:rgba(255,255,255,.35);transition:all .2s;
-  border-left:1px solid rgba(255,255,255,.06)}
+  border:1px solid var(--border-soft)}
+.step-item{flex:1;padding:11px 6px 13px;text-align:center;font-size:11.5px;font-weight:700;
+  background:var(--surface-soft);color:var(--text-muted);transition:all .2s;
+  border-left:1px solid rgba(255,255,255,.06);position:relative;
+  display:flex;flex-direction:column;align-items:center;gap:3px}
 .step-item:last-child{border-left:none}
-.step-item.active{background:rgba(26,188,156,.18);color:#1abc9c;border-color:rgba(26,188,156,.2)}
-.step-item.done{background:rgba(26,188,156,.07);color:rgba(26,188,156,.55)}
+.step-item-num{font-size:10px;font-weight:900;opacity:.65}
+.step-item.active{background:rgba(26,188,156,.18);color:var(--accent);border-color:rgba(26,188,156,.2)}
+.step-item.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--accent)}
+.step-item.done{background:rgba(26,188,156,.07);color:rgba(26,188,156,.7)}
 
 /* ── Type/mode cards ── */
 .type-card{flex:1;padding:24px 18px;border-radius:16px;border:2px solid rgba(255,255,255,.1);
@@ -188,6 +222,21 @@ html,body{overflow-x:hidden;width:100%}
   .mini-table{font-size:11.5px}
   .mini-table th,.mini-table td{padding:6px 6px}
 }
+
+/* ── Respect reduced-motion preference ── */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;scroll-behavior:auto !important}
+}
+
+/* ── Focus visibility (keyboard nav) ── */
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ── Header nav group (view-toggle buttons, separated visually from the reset action) ── */
+.header-nav-group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-pill);padding:5px}
+.header-nav-group .btn{padding:7px 16px;font-size:12.5px}
 `;
 
 const STEPS = ["نوع التقرير", "رفع الملف", "التحقق", "معاينة البيانات", "بيانات التقرير", "النتائج"];
@@ -196,6 +245,7 @@ const AI_KEY       = "eruQA_ai_v1";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 const DRIVE_SCOPE      = "https://www.googleapis.com/auth/drive.readonly";
+const DRIVE_TOKEN_KEY  = "eruQA_driveToken_v1";
 const GSHEETS_MIME     = "application/vnd.google-apps.spreadsheet";
 const DRIVE_FILE_MIMES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -244,119 +294,6 @@ function readFileAsBuffer(file) {
     r.onerror = () => reject(new Error("فشل قراءة الملف"));
     r.readAsArrayBuffer(file);
   });
-}
-
-function downloadPDF(result, meta) {
-  const is5 = result.scaleType === "likert-5";
-  const { n, axes, totalQuestions, overallAgreePct, overallMean, overallDirection, schemaLabel, byDegree, byDepartment } = result;
-
-  const badgeClass = tier =>
-    tier === "excellent" ? "badge-excellent" :
-    tier === "good"      ? "badge-good" :
-    tier === "neutral"   ? "badge-neutral" : "badge-low";
-
-  const axesRows = axes.map((ax, i) => `
-    <tr>
-      <td class="num">${i + 1}</td>
-      <td class="rtl">${ax.name}</td>
-      ${is5 ? `<td class="num">${ax.axisMean ?? ""}</td>` : ""}
-      <td class="num pct">${ax.axisAgreePct}%</td>
-      <td class="num"><span class="badge ${badgeClass(ax.tier)}">${ax.direction}</span></td>
-    </tr>`).join("");
-
-  const degreeRows = byDegree && Object.keys(byDegree).length
-    ? Object.entries(byDegree).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
-        `<tr><td class="num">${v}</td><td class="num">${(v / n * 100).toFixed(1)}%</td><td class="rtl">${k}</td></tr>`
-      ).join("") : "";
-
-  const deptRows = byDepartment && Object.keys(byDepartment).length
-    ? Object.entries(byDepartment).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
-        `<tr><td class="num">${v}</td><td class="num">${(v / n * 100).toFixed(1)}%</td><td class="rtl">${k}</td></tr>`
-      ).join("") : "";
-
-  const html = `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-<meta charset="UTF-8"/>
-<title>تقرير ${schemaLabel ?? ""} — ${meta.year ?? ""}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Cairo',Arial,sans-serif;direction:rtl;color:#222;background:#fff;padding:16mm}
-h1{color:#1F3864;font-size:22pt;text-align:center;margin-bottom:6pt}
-h2{color:#1F3864;font-size:14pt;margin:18pt 0 8pt;padding-bottom:4pt;border-bottom:2pt solid #2E75B6}
-.cover{text-align:center;margin-bottom:20pt;padding-bottom:16pt;border-bottom:1pt solid #BDD7EE}
-.cover .sub{font-size:13pt;color:#555;margin:5pt 0}
-.cover .prog{font-size:11pt;color:#2E75B6;font-weight:700}
-.stats{display:flex;gap:10pt;margin:12pt 0}
-.stat{flex:1;text-align:center;padding:9pt;border:1pt solid #BDD7EE;border-radius:6pt}
-.stat .n{font-size:20pt;font-weight:900;color:#1a5276}
-.stat .l{font-size:8pt;color:#666;margin-top:2pt}
-table{width:100%;border-collapse:collapse;margin:8pt 0;font-size:10pt}
-th{background:#1F3864;color:#fff;padding:6pt;text-align:center;font-weight:700}
-th.rtl{text-align:right}
-td{padding:5pt 6pt;border:1pt solid #ccc}
-td.num{text-align:center}
-td.rtl{text-align:right}
-td.pct{font-weight:700;color:#1a5276}
-tr:nth-child(even) td{background:#f5f9ff}
-.total-row td{background:#BDD7EE!important;font-weight:bold}
-.badge{display:inline-block;padding:2pt 7pt;border-radius:8pt;font-size:9pt;font-weight:700}
-.badge-excellent{background:#d4edda;color:#155724}
-.badge-good{background:#cce5ff;color:#004085}
-.badge-neutral{background:#fff3cd;color:#856404}
-.badge-low{background:#f8d7da;color:#721c24}
-@media print{@page{size:A4;margin:15mm}body{padding:0}}
-</style>
-</head>
-<body>
-<div class="cover">
-  <h1>نتائج تحليل استبيان<br/>${schemaLabel ?? ""}</h1>
-  <div class="sub">العام الدراسي: ${meta.year ?? ""}</div>
-  ${meta.program ? `<div class="prog">${meta.program}</div>` : ""}
-</div>
-
-<div class="stats">
-  <div class="stat"><div class="n">${n}</div><div class="l">عدد المستجيبين</div></div>
-  <div class="stat"><div class="n">${axes.length}</div><div class="l">عدد المحاور</div></div>
-  <div class="stat"><div class="n">${totalQuestions}</div><div class="l">عدد الأسئلة</div></div>
-  <div class="stat"><div class="n">${overallAgreePct}%</div><div class="l">نسبة الموافقة</div></div>
-</div>
-
-${degreeRows ? `<h2>توزيع المشاركين حسب المسمى الوظيفي</h2>
-<table><thead><tr><th>العدد</th><th>النسبة</th><th class="rtl">المسمى</th></tr></thead>
-<tbody>${degreeRows}</tbody></table>` : ""}
-
-${deptRows ? `<h2>توزيع المشاركين حسب القسم</h2>
-<table><thead><tr><th>العدد</th><th>النسبة</th><th class="rtl">القسم</th></tr></thead>
-<tbody>${deptRows}</tbody></table>` : ""}
-
-<h2>ملخص المحاور</h2>
-<table>
-<thead><tr>
-  <th style="width:32pt">م</th>
-  <th class="rtl">المحور</th>
-  ${is5 ? "<th style=\"width:60pt\">المتوسط</th>" : ""}
-  <th style="width:80pt">نسبة الموافقة</th>
-  <th style="width:70pt">الاتجاه</th>
-</tr></thead>
-<tbody>
-${axesRows}
-<tr class="total-row">
-  <td class="num" colspan="${is5 ? 2 : 2}" style="text-align:right;font-size:12pt">الإجمالي</td>
-  ${is5 ? `<td class="num">${overallMean ?? ""}</td>` : ""}
-  <td class="num pct" style="font-size:13pt">${overallAgreePct}%</td>
-  <td class="num"><span class="badge badge-excellent">${overallDirection}</span></td>
-</tr>
-</tbody>
-</table>
-</body></html>`;
-
-  const w = window.open("", "_blank", "width=900,height=700");
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => { w.print(); }, 800);
 }
 
 // Filename → program detector. Inline Arabic normalization so we don't depend on engine internals.
@@ -581,6 +518,27 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
             />
           </div>
         )}
+      </div>
+
+      {/* Section 4b — Branded PDF Options */}
+      <div className="settings-section">
+        <div className="settings-section-title">🖨️ تقرير PDF المصمم</div>
+        {Toggle("includePdfCharts", "تضمين الرسوم البيانية (الأعمدة والأشرطة الملوّنة)")}
+        <div style={{ marginTop: 14 }}>
+          <label className="label">حد التوصيات — أقل من (%)</label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={100}
+            style={{ width: 120 }}
+            value={settings.recommendationsThreshold ?? 70}
+            onChange={e => set("recommendationsThreshold", Math.min(100, Math.max(1, parseInt(e.target.value) || 70)))}
+          />
+          <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11.5, marginTop: 6 }}>
+            أي عبارة تسجّل نسبة موافقة أقل من هذه القيمة تظهر في جدول التوصيات بتقرير الـ PDF (المحور، العبارة، النسبة).
+          </div>
+        </div>
       </div>
 
       {/* Section 5 — Report Design */}
@@ -1419,7 +1377,7 @@ function TutorialOverlay({ onClose }) {
         <div style={{ height: 4, background: `linear-gradient(90deg,${slide.color},${slide.color}88)` }} />
 
         {/* Close */}
-        <button onClick={onClose} style={{
+        <button onClick={onClose} aria-label="إغلاق الدليل التعليمي" style={{
           position: "absolute", top: 16, left: 16,
           width: 32, height: 32, borderRadius: 8,
           border: "1px solid rgba(255,255,255,.15)",
@@ -1647,7 +1605,9 @@ function ProcessingOverlay({ steps, filename }) {
   );
 }
 
-function LoadingOverlay({ message = "جاري المعالجة…" }) {
+function LoadingOverlay({ message = "جاري المعالجة…", progress }) {
+  const hasProgress = progress && progress.total > 0;
+  const pct = hasProgress ? Math.round((progress.current / progress.total) * 100) : 0;
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 8500,
@@ -1662,7 +1622,24 @@ function LoadingOverlay({ message = "جاري المعالجة…" }) {
         animation: "spin 0.85s linear infinite",
       }} />
       <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center" }}>{message}</div>
-      <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>يرجى الانتظار…</div>
+      {hasProgress ? (
+        <div style={{ width: 280 }}>
+          <div style={{ height: 8, background: "rgba(255,255,255,.1)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 4, width: `${pct}%`,
+              background: "linear-gradient(90deg,#1abc9c,#2874a6,#1abc9c)",
+              backgroundSize: "200% 100%",
+              animation: "progressFlow 1.8s linear infinite",
+              transition: "width .3s ease",
+            }} />
+          </div>
+          <div style={{ textAlign: "center", marginTop: 10, color: "rgba(255,255,255,.55)", fontSize: 13, fontWeight: 700 }}>
+            صفحة {progress.current} من {progress.total} ({pct}%)
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>يرجى الانتظار…</div>
+      )}
     </div>
   );
 }
@@ -1670,46 +1647,21 @@ function LoadingOverlay({ message = "جاري المعالجة…" }) {
 // ── StepBar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }) {
   return (
-    <div className="step-bar">
-      {STEPS.map((label, i) => (
-        <div key={i} className={`step-item ${i === step ? "active" : i < step ? "done" : ""}`}>
-          {i < step ? "✓ " : ""}{label}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── SurveyTypePicker ──────────────────────────────────────────────────────────
-function SurveyTypePicker({ value, onChange }) {
-  const TYPES = Object.values(allSchemas()).map(s => {
-    const isL5 = s.scale.type === "likert-5";
-    const scaleLabel = isL5 ? "مقياس 5 درجات" : "مقياس 3 درجات";
-    const autoDesc = s.axes.length === 1
-      ? `${s.axes[0].questions.length} عبارة – ${scaleLabel}`
-      : `${s.axes.length} محوراً – ${scaleLabel}`;
-    return {
-      id:    s.id,
-      icon:  s.icon  || "📋",
-      label: s.label,
-      desc:  s.desc  || autoDesc,
-    };
-  });
-  return (
-    <div className="card" style={{ padding: 36 }}>
-      <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, marginBottom: 8, textAlign: "center" }}>اختر نوع الاستبيان</div>
-      <div style={{ color: "rgba(255,255,255,.45)", fontSize: 13, marginBottom: 28, textAlign: "center" }}>
-        يمكن اكتشاف النوع تلقائياً من الملف أيضاً
-      </div>
-      <div className="type-card-row" style={{ display: "flex", gap: 16 }}>
-        {TYPES.map(t => (
-          <div key={t.id} className={`type-card ${value === t.id ? "selected" : ""}`} onClick={() => onChange(t.id)}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>{t.icon}</div>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t.label}</div>
-            <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12 }}>{t.desc}</div>
+    <div className="step-bar" role="list" aria-label="خطوات إنشاء التقرير">
+      {STEPS.map((label, i) => {
+        const status = i === step ? "active" : i < step ? "done" : "pending";
+        return (
+          <div
+            key={i}
+            role="listitem"
+            className={`step-item ${status}`}
+            aria-current={status === "active" ? "step" : undefined}
+          >
+            <span className="step-item-num">{status === "done" ? "✓" : String(i + 1).padStart(2, "0")}</span>
+            <span>{label}</span>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -2118,24 +2070,61 @@ function DataPreviewTable({ headers, rows, removed, onToggleRow,
   );
 }
 
+// ── CollapsibleSection ────────────────────────────────────────────────────────
+function CollapsibleSection({ title, defaultOpen = true, children, badge }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "16px 22px", background: "transparent", border: "none", cursor: "pointer",
+          fontFamily: "'Cairo',sans-serif",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}>{title}</span>
+          {badge}
+        </span>
+        <span style={{
+          color: "#1abc9c", fontSize: 15, transition: "transform .2s",
+          display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)",
+        }} aria-hidden="true">▾</span>
+      </button>
+      {open && <div style={{ padding: "0 22px 22px" }}>{children}</div>}
+    </div>
+  );
+}
+
+// ── QuickStatsRow (compact live-analysis KPIs, used in Step 3 while trimming rows) ──
+function QuickStatsRow({ result }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 14 }}>
+      {[
+        { n: result.n,                     l: "عدد المستجيبين", icon: "👥" },
+        { n: result.axes.length,           l: "عدد المحاور",    icon: "📋" },
+        { n: result.totalQuestions,        l: "عدد الأسئلة",    icon: "❓" },
+        { n: `${result.overallAgreePct}%`, l: "نسبة الموافقة",  icon: "✅" },
+      ].map((s, i) => (
+        <div key={i} className="stat-card">
+          <div style={{ fontSize: 26, marginBottom: 6 }}>{s.icon}</div>
+          <div style={{ color: "#1abc9c", fontSize: 28, fontWeight: 900 }}>{s.n}</div>
+          <div style={{ color: "rgba(255,255,255,.55)", fontSize: 11, marginTop: 4 }}>{s.l}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── ResultsPreview ────────────────────────────────────────────────────────────
 function ResultsPreview({ result }) {
   const is5 = result.scaleType === "likert-5";
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 14, marginBottom: 24 }}>
-        {[
-          { n: result.n,                    l: "عدد المستجيبين",   icon: "👥" },
-          { n: result.axes.length,          l: "عدد المحاور",      icon: "📋" },
-          { n: result.totalQuestions,       l: "عدد الأسئلة",      icon: "❓" },
-          { n: `${result.overallAgreePct}%`, l: "نسبة الموافقة",   icon: "✅" },
-        ].map((s, i) => (
-          <div key={i} className="stat-card">
-            <div style={{ fontSize: 26, marginBottom: 6 }}>{s.icon}</div>
-            <div style={{ color: "#1abc9c", fontSize: 28, fontWeight: 900 }}>{s.n}</div>
-            <div style={{ color: "rgba(255,255,255,.55)", fontSize: 11, marginTop: 4 }}>{s.l}</div>
-          </div>
-        ))}
+      <div style={{ marginBottom: 24 }}>
+        <QuickStatsRow result={result} />
       </div>
 
       {Object.keys(result.byDegree).length > 0 && (
@@ -2272,12 +2261,17 @@ export default function App() {
   const [mode, setMode]         = useState("annual");
   const [meta, setMeta]         = useState({ year: "2024-2025", program: "", preparedBy: "", reviewer: "" });
   const [processing, setProcessing] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 });
   const [error, setError]       = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [showSurveyManagement, setShowSurveyManagement] = useState(false);
+  const [showSemesterSurveys, setShowSemesterSurveys] = useState(false);
+  const [showCourseEval, setShowCourseEval] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [settings, setSettings]         = useState(loadSettings);
   const [aiSettings, setAiSettings]     = useState(loadAiSettings);
+  const [pdfIncludeCharts, setPdfIncludeCharts] = useState(() => loadSettings().includePdfCharts !== false);
 
   const [singleFile, setSingleFile]     = useState(null);
   const [singleResult, setSingleResult] = useState(null);
@@ -2320,7 +2314,7 @@ export default function App() {
 
   // Upload source tab
   const [uploadTab,         setUploadTab]         = useState("upload");
-  const [driveToken,        setDriveToken]        = useState(null);
+  const [driveToken,        setDriveToken]        = useState(() => getStoredToken(DRIVE_TOKEN_KEY));
   const [driveFiles,        setDriveFiles]        = useState([]);
   const [driveSearch,       setDriveSearch]       = useState("");
   const [driveLoading,      setDriveLoading]      = useState(false);
@@ -2329,8 +2323,10 @@ export default function App() {
   const [driveFilterType,   setDriveFilterType]   = useState("");
   const [driveFilterYear,   setDriveFilterYear]   = useState("");
   const [driveFilterProgram,setDriveFilterProgram]= useState("");
-  const [driveDashboard,    setDriveDashboard]    = useState(false);
+  const [driveViewMode,     setDriveViewMode]     = useState("list"); // "list" | "dashboard" | "semester"
   const tokenClientRef = useRef(null);
+  const explicitDriveRef = useRef(false);
+  const triedSilentDriveRef = useRef(false);
 
   // Annual-mode preview state (Step 3)
   const [singleHeaders, setSingleHeaders]     = useState(null);
@@ -2381,8 +2377,7 @@ export default function App() {
     }
   }, []);
 
-  const connectDrive = useCallback(async () => {
-    if (!GOOGLE_CLIENT_ID) return;
+  const ensureDriveTokenClient = useCallback(async () => {
     await loadGisScript();
     if (!tokenClientRef.current) {
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
@@ -2390,14 +2385,49 @@ export default function App() {
         scope: DRIVE_SCOPE,
         prompt: "select_account",
         callback: async (resp) => {
-          if (resp.error) { setError("فشل الاتصال بـ Google Drive: " + resp.error); return; }
+          if (resp.error) {
+            // A silent background attempt failing is normal (no prior session/consent) —
+            // only surface an error banner for an explicit, user-clicked connect.
+            if (explicitDriveRef.current) setError("فشل الاتصال بـ Google Drive: " + resp.error);
+            return;
+          }
           setDriveToken(resp.access_token);
+          saveStoredToken(DRIVE_TOKEN_KEY, resp.access_token, resp.expires_in);
           await fetchDriveFiles(resp.access_token);
         },
       });
     }
-    tokenClientRef.current.requestAccessToken({ prompt: "select_account" });
+    return tokenClientRef.current;
   }, [fetchDriveFiles]);
+
+  const connectDrive = useCallback(async () => {
+    if (!GOOGLE_CLIENT_ID) return;
+    const client = await ensureDriveTokenClient();
+    explicitDriveRef.current = true;
+    client.requestAccessToken({ prompt: "select_account" });
+  }, [ensureDriveTokenClient]);
+
+  // Token persisted from a previous visit? Great, no Google call needed at all. Otherwise,
+  // once on mount, try a silent refresh (no popup) before ever showing the connect button.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || driveToken || triedSilentDriveRef.current) return;
+    triedSilentDriveRef.current = true;
+    (async () => {
+      try {
+        const client = await ensureDriveTokenClient();
+        explicitDriveRef.current = false;
+        client.requestAccessToken({ prompt: "" });
+      } catch { /* ignore — falls through to the manual connect button */ }
+    })();
+  }, [driveToken, ensureDriveTokenClient]);
+
+  // A token restored from localStorage skips connectDrive() entirely (and the file-list
+  // fetch that normally happens in its callback) — fetch once the Drive tab is actually open.
+  useEffect(() => {
+    if (uploadTab === "drive" && driveToken && driveFiles.length === 0 && !driveLoading) {
+      fetchDriveFiles(driveToken);
+    }
+  }, [uploadTab, driveToken, driveFiles.length, driveLoading, fetchDriveFiles]);
 
   const handleDriveFileSelect = useCallback(async (file) => {
     if (!driveToken || !file) return;
@@ -2438,6 +2468,32 @@ export default function App() {
       setError(err.message ?? "خطأ في تحميل الملف من Drive");
     }
   }, [driveToken, runStepAnim]);
+
+  // Same tail as handleDriveFileSelect, but for a survey picked via SemesterFormPicker —
+  // rows are already fetched (Forms API responses converted to Excel-row shape) by the
+  // time this runs, so "step 0: تحميل الملف من Drive" is marked done immediately.
+  const handleDriveFormSelect = useCallback((rows, filename, department) => {
+    setDriveProcessing(true);
+    setError("");
+    setProcFile(filename);
+    setProcSteps(DRIVE_STEPS.map((label, i) => ({ label, status: i === 0 ? "done" : "pending" })));
+    try {
+      setSingleFile({ name: filename });
+      setRawRows(rows);
+      const detected = detectSurveyType(filename, rows[0]) ?? null;
+      setDetectedAutoType(detected);
+      setSurveyType(detected ?? "faculty");
+      if (department) setMeta(m => ({ ...m, program: department }));
+      runStepAnim(DRIVE_STEPS, 1, 400, () => {
+        setDriveProcessing(false);
+        setStep(2);
+      });
+    } catch (err) {
+      setProcSteps(null);
+      setDriveProcessing(false);
+      setError(err.message ?? "خطأ في معالجة الاستبيان");
+    }
+  }, [runStepAnim]);
 
   // Step 0: read file headers → auto-detect → advance to step 1
   const handleFileSelected = useCallback((file) => {
@@ -2590,6 +2646,19 @@ export default function App() {
     } finally { setProcessing(false); }
   };
 
+  const downloadAnnualPdf = async () => {
+    setPdfGenerating(true);
+    setPdfProgress({ current: 0, total: 0 });
+    try {
+      await downloadBrandedReportPdf(
+        singleResult, { ...meta }, { ...settings, includePdfCharts: pdfIncludeCharts },
+        (current, total) => setPdfProgress({ current, total })
+      );
+    } catch (err) {
+      setError(`تعذّر إنشاء ملف PDF: ${err.message}`);
+    } finally { setPdfGenerating(false); }
+  };
+
   const downloadComparison = async () => {
     setProcessing(true);
     try {
@@ -2603,12 +2672,13 @@ export default function App() {
   const reset = () => {
     setStep(0); setSingleFile(null); setSingleResult(null); setComparison(null);
     setSlots(defaultSlots()); setError(""); setProcessing(false); setShowSettings(false);
+    setShowSemesterSurveys(false);
     setSingleHeaders(null); setSingleAllRows(null); setSingleSchema(null);
     setSingleMetaCols(null); setSingleRemoved(new Set());
     setSingleFilters({ dept: "", degree: "" });
     setDetecting(false); setDetectedAutoType(null); setRawRows(null);
     setBatchMode(false); setBatchFiles([]);
-    setUploadTab("upload"); setDriveSelected(null); setDriveDashboard(false);
+    setUploadTab("upload"); setDriveSelected(null); setDriveViewMode("list");
     setDriveFilterType(""); setDriveFilterYear(""); setDriveFilterProgram("");
   };
 
@@ -2637,6 +2707,7 @@ export default function App() {
           <button
             onClick={() => setShowTutorial(true)}
             title="دليل الاستخدام"
+            aria-label="فتح دليل الاستخدام"
             style={{
               width: 36, height: 36, borderRadius: "50%",
               border: "1px solid rgba(255,255,255,.18)",
@@ -2649,20 +2720,42 @@ export default function App() {
             onMouseOver={e => { e.currentTarget.style.background = "rgba(26,188,156,.25)"; e.currentTarget.style.borderColor = "rgba(26,188,156,.5)"; e.currentTarget.style.color = "#1abc9c"; }}
             onMouseOut={e  => { e.currentTarget.style.background = "rgba(255,255,255,.08)"; e.currentTarget.style.borderColor = "rgba(255,255,255,.18)"; e.currentTarget.style.color = "rgba(255,255,255,.7)"; }}
           >?</button>
-          <button
-            className={`btn btn-sm ${showSurveyManagement ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => { setShowSurveyManagement(v => !v); setShowSettings(false); }}
-          >
-            🗂️ إدارة الاستبيانات
-          </button>
-          <button
-            className={`btn btn-sm ${showSettings ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => { setShowSettings(v => !v); setShowSurveyManagement(false); }}
-          >
-            ⚙ الإعدادات
-          </button>
-          {(step > 0 || showSettings || showSurveyManagement) && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setShowSurveyManagement(false); reset(); }}>↩ بدء جديد</button>
+          <nav className="header-nav-group" aria-label="أقسام النظام">
+            <button
+              className={`btn btn-sm ${showSurveyManagement ? "btn-primary" : "btn-ghost"}`}
+              aria-current={showSurveyManagement ? "page" : undefined}
+              title="إدارة الاستبيانات"
+              onClick={() => { setShowSurveyManagement(v => !v); setShowSettings(false); setShowSemesterSurveys(false); setShowCourseEval(false); }}
+            >
+              🗂️ إدارة الاستبيانات
+            </button>
+            <button
+              className={`btn btn-sm ${showSemesterSurveys ? "btn-primary" : "btn-ghost"}`}
+              aria-current={showSemesterSurveys ? "page" : undefined}
+              title="استبيانات الفصل الدراسي"
+              onClick={() => { setShowSemesterSurveys(v => !v); setShowSettings(false); setShowSurveyManagement(false); setShowCourseEval(false); }}
+            >
+              📆 استبيانات الفصل الدراسي
+            </button>
+            <button
+              className={`btn btn-sm ${showCourseEval ? "btn-primary" : "btn-ghost"}`}
+              aria-current={showCourseEval ? "page" : undefined}
+              title="تقييم المقررات"
+              onClick={() => { setShowCourseEval(v => !v); setShowSettings(false); setShowSurveyManagement(false); setShowSemesterSurveys(false); }}
+            >
+              📚 تقييم المقررات
+            </button>
+            <button
+              className={`btn btn-sm ${showSettings ? "btn-primary" : "btn-ghost"}`}
+              aria-current={showSettings ? "page" : undefined}
+              title="الإعدادات"
+              onClick={() => { setShowSettings(v => !v); setShowSurveyManagement(false); setShowSemesterSurveys(false); setShowCourseEval(false); }}
+            >
+              ⚙ الإعدادات
+            </button>
+          </nav>
+          {(step > 0 || showSettings || showSurveyManagement || showSemesterSurveys || showCourseEval) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setShowSurveyManagement(false); setShowSemesterSurveys(false); setShowCourseEval(false); reset(); }}>↩ بدء جديد</button>
           )}
         </div>
       </div>
@@ -2672,6 +2765,10 @@ export default function App() {
         {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
         {showSurveyManagement ? (
           <SurveyManagement />
+        ) : showSemesterSurveys ? (
+          <SemesterSurveys />
+        ) : showCourseEval ? (
+          <CourseEvaluationHub />
         ) : showSettings ? (
           <div className="card" style={{ padding: 32 }}>
             <SettingsPanel
@@ -2840,15 +2937,16 @@ export default function App() {
                             {/* View toggle */}
                             <div style={{ display: "flex", background: "rgba(255,255,255,.06)", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.1)" }}>
                               {[
-                                { id: false, label: "📁 قائمة" },
-                                { id: true,  label: "📊 لوحة"  },
+                                { id: "list",     label: "📁 قائمة" },
+                                { id: "dashboard",label: "📊 لوحة"  },
+                                { id: "semester", label: "🗓️ الفصل الدراسي" },
                               ].map(v => (
-                                <button key={String(v.id)} onClick={() => setDriveDashboard(v.id)} style={{
+                                <button key={v.id} onClick={() => setDriveViewMode(v.id)} style={{
                                   padding: "4px 11px", border: "none", cursor: "pointer",
                                   fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 11,
-                                  background: driveDashboard === v.id ? "rgba(26,188,156,.3)" : "transparent",
-                                  color: driveDashboard === v.id ? "#1abc9c" : "rgba(255,255,255,.45)",
-                                  transition: "all .15s",
+                                  background: driveViewMode === v.id ? "rgba(26,188,156,.3)" : "transparent",
+                                  color: driveViewMode === v.id ? "#1abc9c" : "rgba(255,255,255,.45)",
+                                  transition: "all .15s", whiteSpace: "nowrap",
                                 }}>{v.label}</button>
                               ))}
                             </div>
@@ -2857,7 +2955,7 @@ export default function App() {
                               borderRadius: 8, padding: "5px 11px", color: "rgba(255,255,255,.6)",
                               cursor: "pointer", fontSize: 12, fontFamily: "'Cairo',sans-serif",
                             }}>🔄</button>
-                            <button onClick={() => { setDriveToken(null); setDriveFiles([]); setDriveSelected(null); setDriveDashboard(false); }} style={{
+                            <button onClick={() => { setDriveToken(null); clearStoredToken(DRIVE_TOKEN_KEY); setDriveFiles([]); setDriveSelected(null); setDriveViewMode("list"); }} style={{
                               background: "rgba(231,76,60,.1)", border: "1px solid rgba(231,76,60,.25)",
                               borderRadius: 8, padding: "5px 11px", color: "#ff6b6b",
                               cursor: "pointer", fontSize: 12, fontFamily: "'Cairo',sans-serif",
@@ -2865,13 +2963,15 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Dashboard view */}
-                        {driveDashboard ? (
+                        {/* Dashboard / Semester-survey / flat-list views */}
+                        {driveViewMode === "dashboard" ? (
                           <DriveDashboard
                             files={driveFiles}
                             token={driveToken}
-                            onSelectFile={(f) => { setDriveDashboard(false); handleDriveFileSelect(f); }}
+                            onSelectFile={(f) => { setDriveViewMode("list"); handleDriveFileSelect(f); }}
                           />
+                        ) : driveViewMode === "semester" ? (
+                          <SemesterFormPicker onFormSelected={handleDriveFormSelect} />
                         ) : (<>
                         {/* Filters row */}
                         {(() => {
@@ -3106,6 +3206,10 @@ export default function App() {
               const totalQ = s?.axes.reduce((acc, ax) => acc + ax.questions.length, 0) ?? 0;
               const dataRowCount = rawRows.length - 1;
               const colHeaders = rawRows[0] ?? [];
+              const dataRows = rawRows.slice(1);
+              const blankRowCount = dataRows.filter(
+                row => row.every(cell => cell == null || String(cell).trim() === "")
+              ).length;
               return (
                 <div className="card" style={{ padding: 36 }}>
                   <div style={{ color: "#fff", fontSize: 20, fontWeight: 900,
@@ -3147,28 +3251,39 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* File stats */}
+                  {/* File Health Summary */}
+                  <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12, fontWeight: 700,
+                                marginBottom: 10, letterSpacing: .3 }}>
+                    ملخص حالة الملف
+                  </div>
                   <div style={{
                     display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24,
                   }}>
                     {[
-                      { icon: "📄", label: "الملف", value: singleFile?.name ?? "—" },
-                      { icon: "👥", label: "عدد الاستجابات", value: `${dataRowCount} صف` },
-                      { icon: "📊", label: "عدد الأعمدة", value: `${colHeaders.length} عمود` },
+                      { label: "الملف", value: singleFile?.name ?? "—" },
+                      { label: "عدد الاستجابات", value: `${dataRowCount} صف` },
+                      { label: "عدد الأعمدة", value: `${colHeaders.length} عمود` },
+                      { label: "صفوف فارغة", value: `${blankRowCount} صف`, warn: blankRowCount > 0 },
                     ].map((item, i) => (
-                      <div key={i} style={{
-                        background: "rgba(255,255,255,.05)", borderRadius: 12, padding: "14px 16px",
-                        border: "1px solid rgba(255,255,255,.08)",
-                      }}>
-                        <div style={{ fontSize: 22, marginBottom: 4 }}>{item.icon}</div>
-                        <div style={{ color: "#1abc9c", fontWeight: 700, fontSize: 14,
-                                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div key={i} className={`stat-chip ${item.warn ? "warn" : ""}`}>
+                        <div className="stat-chip-value" style={{
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
                           {item.value}
                         </div>
-                        <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11, marginTop: 2 }}>{item.label}</div>
+                        <div className="stat-chip-label">{item.label}</div>
                       </div>
                     ))}
                   </div>
+                  {blankRowCount > 0 && (
+                    <div style={{
+                      background: "rgba(255,193,7,.08)", border: "1px solid rgba(255,193,7,.3)",
+                      borderRadius: 12, padding: "10px 16px", marginBottom: 24,
+                      color: "#ffd54f", fontSize: 12.5,
+                    }}>
+                      ⚠ تم رصد {blankRowCount} صف فارغ بالكامل — لن يتم استبعاده تلقائياً وسيُحتسب ضمن عدد المشاركين. يُفضّل حذفه يدوياً من خطوة "معاينة البيانات" التالية.
+                    </div>
+                  )}
 
                   {/* Column headers preview */}
                   <div style={{ marginBottom: 24 }}>
@@ -3254,55 +3369,64 @@ export default function App() {
                 ? analyzeRows(singleHeaders, filteredRows, singleSchema, singleMetaCols)
                 : null;
               return (
-                <div className="card" style={{ padding: 28 }}>
-                  <div style={{ color: "#fff", fontSize: 20, fontWeight: 900,
-                                textAlign: "center", marginBottom: 10 }}>
-                    🔍 معاينة البيانات
-                  </div>
-                  <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13,
-                                textAlign: "center", marginBottom: 20 }}>
-                    راجع البيانات واحذف الصفوف غير المرغوبة قبل توليد التقرير
-                  </div>
-
-                  <DataPreviewTable
-                    headers={singleHeaders}
-                    rows={singleAllRows}
-                    removed={singleRemoved}
-                    onToggleRow={idx => setSingleRemoved(prev => {
-                      const next = new Set(prev);
-                      if (next.has(idx)) next.delete(idx); else next.add(idx);
-                      return next;
-                    })}
-                    deptIdx={singleMetaCols?.deptIdx}
-                    degreeIdx={singleMetaCols?.degreeIdx}
-                    filters={singleFilters}
-                    onFilterChange={setSingleFilters}
-                  />
-
-                  <div style={{ marginTop: 36 }}>
-                    <div style={{ color: "#fff", fontSize: 18, fontWeight: 900,
-                                  marginBottom: 14, textAlign: "center" }}>
+                <div>
+                  {/* Live analysis dashboard — stays at the top for a quick sanity check
+                      while trimming rows below, with Next/Previous right underneath it so
+                      the user never has to scroll past the row table to move on. */}
+                  <div className="card" style={{ padding: 28, marginBottom: 18 }}>
+                    <div style={{ color: "#fff", fontSize: 20, fontWeight: 900,
+                                  textAlign: "center", marginBottom: 6 }}>
                       📈 لوحة التحليل التفاعلية
                     </div>
+                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13,
+                                  textAlign: "center", marginBottom: 22 }}>
+                      تتحدث تلقائياً مع كل صف تحذفه أو فلتر تطبّقه
+                    </div>
                     {liveResult ? (
-                      <ResultsPreview result={liveResult} />
+                      <QuickStatsRow result={liveResult} />
                     ) : (
                       <div style={{ color: "#e74c3c", textAlign: "center", padding: 20,
                                     background: "rgba(231,76,60,.08)", borderRadius: 10 }}>
                         لا توجد صفوف بعد تطبيق الفلاتر — أزل بعض الفلاتر للمتابعة.
                       </div>
                     )}
+
+                    <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 26 }}>
+                      <button className="btn btn-ghost" onClick={() => setStep(2)}>→ السابق</button>
+                      <button className="btn btn-primary"
+                        disabled={!liveResult}
+                        style={{ opacity: liveResult ? 1 : 0.5 }}
+                        onClick={() => { setSingleResult(liveResult); setStep(4); }}>
+                        متابعة ←
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 28 }}>
-                    <button className="btn btn-ghost" onClick={() => setStep(2)}>→ السابق</button>
-                    <button className="btn btn-primary"
-                      disabled={!liveResult}
-                      style={{ opacity: liveResult ? 1 : 0.5 }}
-                      onClick={() => { setSingleResult(liveResult); setStep(4); }}>
-                      متابعة ←
-                    </button>
-                  </div>
+                  {/* Row-level data preview — collapsible, sits below the dashboard */}
+                  <CollapsibleSection
+                    title="🔍 معاينة البيانات"
+                    defaultOpen={true}
+                    badge={
+                      <span style={{ color: "rgba(255,255,255,.4)", fontSize: 12, fontWeight: 400 }}>
+                        راجع البيانات واحذف الصفوف غير المرغوبة
+                      </span>
+                    }
+                  >
+                    <DataPreviewTable
+                      headers={singleHeaders}
+                      rows={singleAllRows}
+                      removed={singleRemoved}
+                      onToggleRow={idx => setSingleRemoved(prev => {
+                        const next = new Set(prev);
+                        if (next.has(idx)) next.delete(idx); else next.add(idx);
+                        return next;
+                      })}
+                      deptIdx={singleMetaCols?.deptIdx}
+                      degreeIdx={singleMetaCols?.degreeIdx}
+                      filters={singleFilters}
+                      onFilterChange={setSingleFilters}
+                    />
+                  </CollapsibleSection>
                 </div>
               );
             })()}
@@ -3328,7 +3452,9 @@ export default function App() {
                       {meta.program ? ` — ${meta.program}` : ""}
                       {" | "}<span style={{ color: "#d6eaf8" }}>{meta.year}</span>
                     </div>
-                    <ResultsPreview result={singleResult} />
+                    <CollapsibleSection title="📊 ملخص النتائج" defaultOpen={true}>
+                      <ResultsPreview result={singleResult} />
+                    </CollapsibleSection>
                   </div>
                 )}
 
@@ -3340,7 +3466,9 @@ export default function App() {
                       {" | مقارنة "}
                       {comparison.slots.map(s => s.year).join(" / ")}
                     </div>
-                    <ComparisonPreview comparison={comparison} />
+                    <CollapsibleSection title="📊 ملخص النتائج" defaultOpen={true}>
+                      <ComparisonPreview comparison={comparison} />
+                    </CollapsibleSection>
                   </div>
                 )}
 
@@ -3361,8 +3489,10 @@ export default function App() {
                     )}
                     {isAnnual && singleResult && (
                       <button className="btn btn-ghost" style={{ fontSize: 16, padding: "14px 36px" }}
-                        onClick={() => downloadPDF(singleResult, meta)}>
-                        🖨️ تحميل PDF
+                        disabled={pdfGenerating} onClick={downloadAnnualPdf}>
+                        {pdfGenerating
+                          ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
+                          : "🖨️ تحميل PDF"}
                       </button>
                     )}
                     {isAnnual && singleResult && (
@@ -3375,8 +3505,19 @@ export default function App() {
                       </button>
                     )}
                   </div>
+                  {isAnnual && singleResult && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.6)", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={pdfIncludeCharts}
+                        onChange={e => setPdfIncludeCharts(e.target.checked)}
+                        style={{ width: 15, height: 15, cursor: "pointer" }}
+                      />
+                      تضمين الرسوم البيانية في تقرير الـ PDF (تعطيلها يقلل عدد الصفحات)
+                    </label>
+                  )}
                   <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>
-                    Word: تقرير كامل مع جداول ومحاور • PDF: ملخص للطباعة السريعة
+                    Word: تقرير كامل مع جداول ومحاور • PDF: تقرير مصمَّم بنفس الهوية البصرية جاهز للطباعة
                   </div>
                 </div>
               </div>
@@ -3390,6 +3531,9 @@ export default function App() {
 
       {/* ── Processing steps overlay ── */}
       {procSteps && <ProcessingOverlay steps={procSteps} filename={procFile} />}
+
+      {/* ── Branded PDF generation overlay ── */}
+      {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} />}
 
       {/* ── Enhanced Report View overlay (isolated, zero impact on existing flow) ── */}
       {showEnhancedView && singleResult && (

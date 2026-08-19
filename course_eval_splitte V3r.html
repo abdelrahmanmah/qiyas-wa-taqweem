@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مفكك تقييمات المقررات | ERU</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1720;
+    --panel:#16212c;
+    --panel2:#1c2b38;
+    --line:#28394a;
+    --text:#e7eef4;
+    --muted:#8ea3b4;
+    --accent:#2fb5a0;
+    --accent2:#3b82c4;
+    --warn:#e0a336;
+    --bad:#e0555a;
+    --good:#3fbf85;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:linear-gradient(180deg,#0c141c,#0f1720 40%);
+    color:var(--text);
+    font-family:"Segoe UI","Cairo","Tahoma",sans-serif;
+    line-height:1.6;
+    padding:28px 18px 60px;
+  }
+  .wrap{max-width:980px;margin:0 auto;}
+  header.top{margin-bottom:28px;}
+  header.top h1{
+    font-size:1.5rem;
+    margin:0 0 6px;
+    letter-spacing:.2px;
+  }
+  header.top p{color:var(--muted);margin:0;font-size:.95rem;}
+  .eyebrow{
+    display:inline-block;font-size:.72rem;color:var(--accent);
+    background:rgba(47,181,160,.12);border:1px solid rgba(47,181,160,.35);
+    padding:3px 10px;border-radius:999px;margin-bottom:10px;letter-spacing:.5px;
+  }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px 22px;
+    margin-bottom:18px;
+  }
+  .card h2{
+    font-size:1.02rem;margin:0 0 4px;display:flex;align-items:center;gap:8px;
+  }
+  .card h2 .num{
+    width:24px;height:24px;border-radius:50%;background:var(--panel2);
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:.78rem;color:var(--accent);border:1px solid var(--line);
+    flex-shrink:0;
+  }
+  .card .hint{color:var(--muted);font-size:.85rem;margin:0 0 14px;}
+
+  .drop{
+    border:1.5px dashed var(--line);
+    border-radius:var(--radius);
+    padding:22px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+    background:var(--panel2);
+  }
+  .drop:hover, .drop.drag{border-color:var(--accent);background:rgba(47,181,160,.06);}
+  .drop input{display:none;}
+  .drop .icon{font-size:1.6rem;margin-bottom:6px;opacity:.85;}
+  .drop .main{font-size:.95rem;}
+  .drop .sub{color:var(--muted);font-size:.8rem;margin-top:4px;}
+
+  .filelist{margin-top:12px;display:flex;flex-direction:column;gap:6px;}
+  .fileitem{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:8px 12px;font-size:.85rem;
+  }
+  .fileitem .name{color:var(--text);}
+  .fileitem .size{color:var(--muted);font-size:.78rem;}
+  .fileitem button{
+    background:none;border:none;color:var(--bad);cursor:pointer;font-size:.9rem;padding:2px 6px;
+  }
+
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;}
+  button.primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    color:#08151a;border:none;padding:12px 22px;border-radius:8px;
+    font-size:.95rem;font-weight:600;cursor:pointer;
+  }
+  button.primary:disabled{opacity:.4;cursor:not-allowed;}
+  button.secondary{
+    background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    padding:12px 20px;border-radius:8px;font-size:.9rem;cursor:pointer;
+  }
+  button.secondary:hover{border-color:var(--accent);}
+
+  .status-line{margin-top:14px;font-size:.85rem;color:var(--muted);min-height:1.2em;}
+  .status-line.err{color:var(--bad);}
+  .status-line.ok{color:var(--good);}
+
+  table{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:10px;}
+  th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);}
+  th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.4px;}
+  tr:hover td{background:rgba(255,255,255,.02);}
+  .badge{
+    display:inline-block;padding:2px 10px;border-radius:999px;font-size:.75rem;font-weight:600;
+  }
+  .badge.done{background:rgba(63,191,133,.15);color:var(--good);border:1px solid rgba(63,191,133,.4);}
+  .badge.missing{background:rgba(224,85,90,.12);color:var(--bad);border:1px solid rgba(224,85,90,.4);}
+  .badge.dup{background:rgba(224,163,54,.12);color:var(--warn);border:1px solid rgba(224,163,54,.4);}
+
+  .summary-bar{
+    display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;
+  }
+  .stat{
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:10px 16px;min-width:110px;
+  }
+  .stat .n{font-size:1.3rem;font-weight:700;}
+  .stat .l{color:var(--muted);font-size:.75rem;margin-top:2px;}
+  .stat.good .n{color:var(--good);}
+  .stat.bad .n{color:var(--bad);}
+  .stat.warn .n{color:var(--warn);}
+
+  .dl-btn{
+    background:var(--panel2);border:1px solid var(--line);color:var(--accent);
+    padding:5px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;
+  }
+  .dl-btn:hover{border-color:var(--accent);}
+
+  .filter-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .filter-row button{
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:6px 14px;border-radius:999px;font-size:.8rem;cursor:pointer;
+  }
+  .filter-row button.active{background:rgba(47,181,160,.15);color:var(--accent);border-color:var(--accent);}
+
+  footer.note{color:var(--muted);font-size:.78rem;margin-top:26px;text-align:center;}
+  code{background:var(--panel2);padding:1px 6px;border-radius:4px;font-size:.85em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <span class="eyebrow">ERU · UMIS Course Evaluation</span>
+    <h1>مفكك ملفات تقييم المقررات</h1>
+    <p>يفصّل ملف الـ Excel المجمّع (كل المواد في ملف واحد) إلى ملف مستقل لكل مادة، يقارنها بقائمة المواد المتوقعة، ويقسّمها حسب القسم العلمي.</p>
+  </header>
+
+  <!-- Step 1: Reference list -->
+  <div class="card" style="border-color:rgba(47,181,160,.4);">
+    <h2><span class="num">1</span> قائمة المواد الأساسية <span style="font-size:.72rem;color:var(--accent);background:rgba(47,181,160,.12);border:1px solid rgba(47,181,160,.35);padding:2px 10px;border-radius:999px;font-weight:600;">المرجع الرئيسي</span></h2>
+    <p class="hint">ملف مثل "رويدا" — <b>ده الأساس اللي كل حاجة تانية بتتقاس عليه.</b> هو قائمة كل المواد اللي اتعمل لها استبيانات فعلاً، وعليه بيتحدد كام مادة المفروض تتنزل من السيستم، وكام لسه ناقص.</p>
+    <div class="drop" id="dropRef">
+      <input type="file" id="fileRef" accept=".xlsx,.xls">
+      <div class="icon">📋</div>
+      <div class="main">اضغط لاختيار الملف أو اسحبه هنا</div>
+      <div class="sub">xlsx / xls — يحتوي على أعمدة COURSE_CODE و COURSE_DESCR</div>
+    </div>
+    <div class="filelist" id="refFileList"></div>
+  </div>
+
+  <!-- Step 2: Department distribution -->
+  <div class="card">
+    <h2><span class="num">2</span> توزيع المقررات على الأقسام (اختياري)</h2>
+    <p class="hint">ملف مثل "توزيع المقررات" — يحدد قسم كل مادة. المطابقة تتم <b>بالاسم أولاً</b> لأن نفس المادة ممكن يكون ليها أكتر من كود بين السيستمين، وكود المادة يُستخدم فقط كتأكيد إضافي.</p>
+    <div class="drop" id="dropDept">
+      <input type="file" id="fileDept" accept=".xlsx,.xls">
+      <div class="icon">🏛️</div>
+      <div class="main">اضغط لاختيار الملف أو اسحبه هنا</div>
+      <div class="sub">xlsx / xls — يحتوي على أعمدة اسم المقرر، كود المقرر، القسم العلمي</div>
+    </div>
+    <div class="filelist" id="deptFileList"></div>
+  </div>
+
+  <!-- Step 3: Merged files -->
+  <div class="card">
+    <h2><span class="num">3</span> الملفات المجمّعة من السيستم</h2>
+    <p class="hint">ملف مثل "مجمع" — يمكنك رفع أكثر من ملف مرة واحدة (مثلاً ملف لكل قسم/كلية).</p>
+    <div class="drop" id="dropMerged">
+      <input type="file" id="fileMerged" accept=".xlsx,.xls" multiple>
+      <div class="icon">📦</div>
+      <div class="main">اضغط لاختيار ملف أو أكثر أو اسحبها هنا</div>
+      <div class="sub">xlsx / xls — نفس تنسيق تقرير الـ RDLC القادم من UMIS</div>
+    </div>
+    <div class="filelist" id="mergedFileList"></div>
+
+    <div class="actions">
+      <button class="primary" id="btnProcess" disabled>فكّ الملفات وابدأ المطابقة</button>
+      <button class="secondary" id="btnReset">تفريغ الكل</button>
+    </div>
+    <div class="status-line" id="statusLine"></div>
+  </div>
+
+  <!-- Step 4: Results -->
+  <div class="card" id="resultsCard" style="display:none;">
+    <h2><span class="num">4</span> النتائج</h2>
+
+    <div class="summary-bar" id="summaryBar"></div>
+
+    <div class="actions" style="margin-top:0;">
+      <button class="primary" id="btnZip">⬇ تحميل كل المواد (ZIP مقسّم حسب القسم)</button>
+    </div>
+
+    <div style="margin-top:22px;">
+      <div class="filter-row" id="filterRow" style="display:none;">
+        <button data-f="all" class="active">الكل</button>
+        <button data-f="done">تم تنزيلها</button>
+        <button data-f="missing">لم تنزل بعد</button>
+        <button data-f="dup">مكررة</button>
+      </div>
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>كود المادة</th>
+            <th>اسم المادة</th>
+            <th>القسم</th>
+            <th>الحالة</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer class="note">
+    كل المعالجة تتم داخل المتصفح فقط — لا يتم رفع أي ملف لأي سيرفر. الملفات الناتجة بصيغة xlsx.
+  </footer>
+</div>
+
+<script>
+// ---------- State ----------
+let refWorkbookRows = null;      // reference list parsed rows (objects)
+let refIndex = new Map();        // normalizedCode -> {code, descrEn, descrAr}
+let mergedFiles = [];            // [{file, buffer}]
+let extractedCourses = [];       // [{code, rawTitle, cleanTitle, wb, matched, dup, sourceFile, department, deptMethod, deptScore}]
+let deptFileObj = null;
+let deptByName = new Map();      // normalizedName -> {code, dept}
+let deptByCode = new Map();      // normalizedCode -> {name, dept}
+let deptNameKeys = [];           // list of normalizedName keys, for fuzzy search
+
+// ---------- Helpers ----------
+function normCode(s){
+  return (s||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'');
+}
+function normName(s){
+  return (s||'').toString().toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function cleanTitle(s){
+  return (s||'').toString().replace(/\n/g,' ').replace(/\s+/g,' ').replace(/^[.\s]+/,'').trim();
+}
+// Levenshtein-based similarity ratio, 0..1 (1 = identical)
+function similarity(a, b){
+  if(a===b) return 1;
+  if(!a.length || !b.length) return 0;
+  const m=a.length, n=b.length;
+  const dp = new Array(n+1);
+  for(let j=0;j<=n;j++) dp[j]=j;
+  for(let i=1;i<=m;i++){
+    let prev = dp[0]; dp[0]=i;
+    for(let j=1;j<=n;j++){
+      const tmp = dp[j];
+      dp[j] = a[i-1]===b[j-1] ? prev : 1+Math.min(prev, dp[j], dp[j-1]);
+      prev = tmp;
+    }
+  }
+  const dist = dp[n];
+  return 1 - dist/Math.max(m,n);
+}
+function findDepartment(code, name){
+  const ck = normCode(code), nk = normName(name);
+  // 1. exact name match (most reliable — codes vary between systems, names don't)
+  if(nk && deptByName.has(nk)){
+    return {dept: deptByName.get(nk).dept, method:'name', score:0.95};
+  }
+  // 2. exact code match
+  if(ck && deptByCode.has(ck)){
+    return {dept: deptByCode.get(ck).dept, method:'code', score:1};
+  }
+  // 3. fuzzy name match
+  if(nk){
+    let best=null, bestScore=0;
+    for(const key of deptNameKeys){
+      const s = similarity(nk, key);
+      if(s>bestScore){ bestScore=s; best=key; }
+    }
+    if(best && bestScore>=0.8){
+      return {dept: deptByName.get(best).dept, method:'fuzzy-name', score:bestScore};
+    }
+  }
+  return null;
+}
+function safeFileName(s){
+  return (s||'').toString().replace(/[\\/:*?"<>|]/g,'_').trim();
+}
+function bytesToSize(b){
+  if(b<1024) return b+' B';
+  if(b<1024*1024) return (b/1024).toFixed(0)+' KB';
+  return (b/1024/1024).toFixed(1)+' MB';
+}
+
+// ---------- File input wiring ----------
+function wireDrop(dropEl, inputEl, onFiles){
+  dropEl.addEventListener('click', ()=>inputEl.click());
+  inputEl.addEventListener('change', e=>onFiles(e.target.files));
+  dropEl.addEventListener('dragover', e=>{e.preventDefault(); dropEl.classList.add('drag');});
+  dropEl.addEventListener('dragleave', ()=>dropEl.classList.remove('drag'));
+  dropEl.addEventListener('drop', e=>{
+    e.preventDefault(); dropEl.classList.remove('drag');
+    onFiles(e.dataTransfer.files);
+  });
+}
+
+const refFileList = document.getElementById('refFileList');
+const mergedFileList = document.getElementById('mergedFileList');
+const btnProcess = document.getElementById('btnProcess');
+
+let refFileObj = null;
+
+wireDrop(document.getElementById('dropRef'), document.getElementById('fileRef'), files=>{
+  if(!files.length) return;
+  refFileObj = files[0];
+  renderRefFile();
+  updateProcessEnabled();
+});
+
+function renderRefFile(){
+  refFileList.innerHTML = '';
+  if(!refFileObj) return;
+  const row = document.createElement('div');
+  row.className = 'fileitem';
+  row.innerHTML = `<span class="name">📄 ${refFileObj.name}</span><span class="size">${bytesToSize(refFileObj.size)}</span>
+    <button title="إزالة">✕</button>`;
+  row.querySelector('button').onclick = ()=>{ refFileObj=null; renderRefFile(); };
+  refFileList.appendChild(row);
+}
+
+wireDrop(document.getElementById('dropDept'), document.getElementById('fileDept'), files=>{
+  if(!files.length) return;
+  deptFileObj = files[0];
+  renderDeptFile();
+});
+
+function renderDeptFile(){
+  const el = document.getElementById('deptFileList');
+  el.innerHTML = '';
+  if(!deptFileObj) return;
+  const row = document.createElement('div');
+  row.className = 'fileitem';
+  row.innerHTML = `<span class="name">📄 ${deptFileObj.name}</span><span class="size">${bytesToSize(deptFileObj.size)}</span>
+    <button title="إزالة">✕</button>`;
+  row.querySelector('button').onclick = ()=>{ deptFileObj=null; renderDeptFile(); };
+  el.appendChild(row);
+}
+
+wireDrop(document.getElementById('dropMerged'), document.getElementById('fileMerged'), files=>{
+  for(const f of files) mergedFiles.push(f);
+  renderMergedFiles();
+  updateProcessEnabled();
+});
+
+function renderMergedFiles(){
+  mergedFileList.innerHTML = '';
+  mergedFiles.forEach((f, idx)=>{
+    const row = document.createElement('div');
+    row.className = 'fileitem';
+    row.innerHTML = `<span class="name">📄 ${f.name}</span><span class="size">${bytesToSize(f.size)}</span>
+      <button title="إزالة">✕</button>`;
+    row.querySelector('button').onclick = ()=>{ mergedFiles.splice(idx,1); renderMergedFiles(); updateProcessEnabled(); };
+    mergedFileList.appendChild(row);
+  });
+}
+
+function updateProcessEnabled(){
+  btnProcess.disabled = mergedFiles.length===0;
+}
+
+document.getElementById('btnReset').onclick = ()=>{
+  refFileObj = null; deptFileObj = null; mergedFiles = []; extractedCourses = []; refIndex = new Map();
+  deptByName = new Map(); deptByCode = new Map(); deptNameKeys = [];
+  renderRefFile(); renderDeptFile(); renderMergedFiles(); updateProcessEnabled();
+  document.getElementById('resultsCard').style.display='none';
+  setStatus('');
+};
+
+// ---------- Core: parse department distribution list ----------
+async function parseDeptFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+  const byName = new Map();
+  const byCode = new Map();
+  rows.forEach(r=>{
+    const name = r['اسم المقرر'] || r['اسم المادة'] || '';
+    const code = r['كود المقرر'] || r['كود المادة'] || '';
+    const dept = r['القسم العلمي'] || r['القسم'] || '';
+    if(!dept) return;
+    const nk = normName(name);
+    const ck = normCode(code);
+    if(nk && !byName.has(nk)) byName.set(nk, {code, dept});
+    if(ck && !byCode.has(ck)) byCode.set(ck, {name, dept});
+  });
+  return {byName, byCode};
+}
+
+function setStatus(msg, kind){
+  const el = document.getElementById('statusLine');
+  el.textContent = msg||'';
+  el.className = 'status-line'+(kind?(' '+kind):'');
+}
+
+// ---------- Core: parse reference list ----------
+async function parseRefFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+  const idx = new Map();
+  rows.forEach(r=>{
+    const code = r.COURSE_CODE || r.course_code || r.CourseCode;
+    if(!code) return;
+    const key = normCode(code);
+    if(!idx.has(key)){
+      idx.set(key, {
+        code: code,
+        descrEn: cleanTitle(r.COURSE_DESCR_EN||''),
+        descrAr: cleanTitle(r.COURSE_DESCR_AR||''),
+        faculty: r.FACULTY_AR||r.FACULTY_EN||''
+      });
+    }
+  });
+  return idx;
+}
+
+// ---------- Core: find blocks & split a merged workbook ----------
+function extractCoursesFromWorkbook(wb, sourceName){
+  const shName = wb.SheetNames[0];
+  const ws = wb.Sheets[shName];
+  const ref = XLSX.utils.decode_range(ws['!ref']);
+  const totalRows = ref.e.r + 1;
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:true});
+  const merges = ws['!merges'] || [];
+  const cols = ws['!cols'];
+
+  // 1. find marker rows containing the repeating block header text
+  const MARKER = 'بنود الاستبيان';
+  const markerRows = [];
+  rows.forEach((row, r)=>{
+    for(const cell of row){
+      if(typeof cell === 'string' && cell.replace(/\s/g,'').includes(MARKER.replace(/\s/g,''))){
+        markerRows.push(r);
+        break;
+      }
+    }
+  });
+
+  if(markerRows.length===0){
+    return {ok:false, error:'لم يتم العثور على أي مادة داخل هذا الملف — تأكد أنه نفس تنسيق تقرير UMIS.', courses:[]};
+  }
+
+  const firstBlockStart = markerRows[0] - 10; // "السنة الدراسية" row
+  const headerEnd = Math.max(0, firstBlockStart - 1); // fixed top header (university/college/title), rows 0..headerEnd
+  const headerRowCount = headerEnd + 1;
+
+  const results = [];
+
+  markerRows.forEach((m, i)=>{
+    const blockStart = m - 10;
+    const blockEnd = (i < markerRows.length-1) ? (markerRows[i+1]-10-1) : (totalRows-1);
+    if(blockStart < 0 || blockEnd < blockStart) return;
+
+    // find course title: search a few rows around (marker-6 .. marker-2) for a cell matching "... (CODE)"
+    let rawTitle = '';
+    let code = '';
+    let nameOnly = '';
+    for(let r = Math.max(0,m-8); r < m; r++){
+      const rowArr = rows[r] || [];
+      for(const cell of rowArr){
+        if(typeof cell === 'string'){
+          const match = cell.match(/^([\s\S]*)\(([A-Za-z0-9\.\-]{3,15})\)\s*$/);
+          if(match){ rawTitle = cell; nameOnly = match[1]; code = match[2]; break; }
+        }
+      }
+      if(code) break;
+    }
+    if(!code){
+      code = 'UNKNOWN_'+(i+1);
+    }
+
+    // Build new sheet: header rows (0..headerEnd) + block rows (blockStart..blockEnd)
+    const newRows = [];
+    for(let r=0; r<=headerEnd; r++) newRows.push(rows[r] ? rows[r].slice() : []);
+    for(let r=blockStart; r<=blockEnd; r++) newRows.push(rows[r] ? rows[r].slice() : []);
+
+    const newWs = XLSX.utils.aoa_to_sheet(newRows);
+
+    // remap merges
+    const offset = headerRowCount - blockStart;
+    const newMerges = [];
+    merges.forEach(mg=>{
+      if(mg.s.r <= headerEnd && mg.e.r <= headerEnd){
+        newMerges.push({s:{r:mg.s.r,c:mg.s.c}, e:{r:mg.e.r,c:mg.e.c}});
+      } else if(mg.s.r >= blockStart && mg.e.r <= blockEnd){
+        newMerges.push({s:{r:mg.s.r+offset,c:mg.s.c}, e:{r:mg.e.r+offset,c:mg.e.c}});
+      }
+    });
+    newWs['!merges'] = newMerges;
+    if(cols) newWs['!cols'] = cols;
+
+    const newWb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(newWb, newWs, 'Sheet1');
+
+    results.push({
+      code: code,
+      rawTitle: rawTitle,
+      cleanTitle: cleanTitle(nameOnly),
+      wb: newWb,
+      sourceFile: sourceName
+    });
+  });
+
+  return {ok:true, courses: results};
+}
+
+// ---------- Process button ----------
+document.getElementById('btnProcess').onclick = async ()=>{
+  if(!refFileObj){
+    setStatus('⚠ لسه مرفعتش "قائمة المواد الأساسية" — هكمل من غيرها، بس مش هتعرف كام مادة لسه ناقصة.', 'err');
+  } else {
+    setStatus('جارِ المعالجة...');
+  }
+  btnProcess.disabled = true;
+  extractedCourses = [];
+
+  try{
+    if(refFileObj){
+      refIndex = await parseRefFile(refFileObj);
+    } else {
+      refIndex = new Map();
+    }
+
+    if(deptFileObj){
+      const parsed = await parseDeptFile(deptFileObj);
+      deptByName = parsed.byName;
+      deptByCode = parsed.byCode;
+      deptNameKeys = [...deptByName.keys()];
+    } else {
+      deptByName = new Map(); deptByCode = new Map(); deptNameKeys = [];
+    }
+
+    for(const f of mergedFiles){
+      const buf = await f.arrayBuffer();
+      let wb;
+      try{
+        wb = XLSX.read(buf, {type:'array', cellText:false});
+      }catch(e){
+        setStatus('تعذّرت قراءة الملف: '+f.name+' — '+e.message, 'err');
+        continue;
+      }
+      const out = extractCoursesFromWorkbook(wb, f.name);
+      if(!out.ok){
+        setStatus('⚠ '+f.name+': '+out.error, 'err');
+        continue;
+      }
+      extractedCourses.push(...out.courses);
+    }
+
+    // mark duplicates (same code found more than once across files)
+    const seen = new Map();
+    extractedCourses.forEach(c=>{
+      const key = normCode(c.code);
+      if(!seen.has(key)) seen.set(key, []);
+      seen.get(key).push(c);
+    });
+    extractedCourses.forEach(c=>{
+      const key = normCode(c.code);
+      c.dup = seen.get(key).length > 1;
+      const refEntry = refIndex.get(key);
+      c.matched = !!refEntry;
+      if(refEntry && !c.cleanTitle) c.cleanTitle = refEntry.descrEn;
+
+      const deptMatch = (deptByName.size || deptByCode.size) ? findDepartment(c.code, c.cleanTitle) : null;
+      c.department = deptMatch ? deptMatch.dept : null;
+      c.deptMethod = deptMatch ? deptMatch.method : null;
+      c.deptScore = deptMatch ? deptMatch.score : 0;
+    });
+
+    renderResults();
+    setStatus(`تم استخراج ${extractedCourses.length} مادة من ${mergedFiles.length} ملف.`, 'ok');
+  }catch(err){
+    setStatus('حصل خطأ غير متوقع: '+err.message, 'err');
+  }finally{
+    btnProcess.disabled = false;
+  }
+};
+
+// ---------- Render results table ----------
+let currentFilter = 'all';
+
+function renderResults(){
+  const card = document.getElementById('resultsCard');
+  card.style.display = 'block';
+
+  const total = refIndex.size;
+  const matchedCodes = new Set(extractedCourses.filter(c=>c.matched).map(c=>normCode(c.code)));
+  const missing = [];
+  if(total>0){
+    refIndex.forEach((v,k)=>{ if(!matchedCodes.has(k)) missing.push(v); });
+  }
+  const dupCount = extractedCourses.filter(c=>c.dup).length;
+
+  // summary bar
+  const summary = document.getElementById('summaryBar');
+  summary.innerHTML = '';
+  const stats = [
+    {n: extractedCourses.length, l:'مادة تم تنزيلها', cls:''},
+  ];
+  if(total>0){
+    stats.push({n: matchedCodes.size+' / '+total, l:'تمت مطابقتها بالقائمة', cls:'good'});
+    stats.push({n: missing.length, l:'لم تُنزَّل بعد', cls: missing.length? 'bad':'good'});
+  }
+  if(dupCount>0){
+    stats.push({n: dupCount, l:'نسخ مكررة', cls:'warn'});
+  }
+  if(deptByName.size || deptByCode.size){
+    const noDept = extractedCourses.filter(c=>!c.department).length;
+    const uncertain = extractedCourses.filter(c=>c.deptMethod==='fuzzy-name').length;
+    if(noDept>0) stats.push({n: noDept, l:'بدون قسم محدد', cls:'bad'});
+    if(uncertain>0) stats.push({n: uncertain, l:'مطابقة قسم تقريبية', cls:'warn'});
+  }
+  stats.forEach(s=>{
+    const d = document.createElement('div');
+    d.className = 'stat'+(s.cls?(' '+s.cls):'');
+    d.innerHTML = `<div class="n">${s.n}</div><div class="l">${s.l}</div>`;
+    summary.appendChild(d);
+  });
+
+  // filter row only if we have a reference list
+  const filterRow = document.getElementById('filterRow');
+  filterRow.style.display = total>0 ? 'flex' : 'none';
+
+  buildTableRows(missing);
+}
+
+function buildTableRows(missingList){
+  const body = document.getElementById('resultBody');
+  body.innerHTML = '';
+
+  let rows = extractedCourses.map(c=>({type:'course', data:c}));
+  if(document.getElementById('filterRow').style.display !== 'none'){
+    rows = rows.concat(missingList.map(m=>({type:'missing', data:m})));
+  }
+
+  if(currentFilter==='done') rows = rows.filter(r=>r.type==='course' && r.data.matched!==false);
+  if(currentFilter==='missing') rows = rows.filter(r=>r.type==='missing');
+  if(currentFilter==='dup') rows = rows.filter(r=>r.type==='course' && r.data.dup);
+
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    if(r.type==='course'){
+      const c = r.data;
+      let badge = '<span class="badge done">تم تنزيلها</span>';
+      if(c.dup) badge += ' <span class="badge dup">مكررة</span>';
+      let deptCell = '<span style="color:var(--muted)">—</span>';
+      if(c.department){
+        const uncertain = c.deptMethod === 'fuzzy-name';
+        deptCell = c.department + (uncertain ? ' <span title="مطابقة تقريبية بالاسم — راجعها" style="color:var(--warn);">⚠</span>' : '');
+      }
+      tr.innerHTML = `
+        <td>${c.code}</td>
+        <td>${c.cleanTitle || '<span style="color:var(--muted)">—</span>'}</td>
+        <td>${deptCell}</td>
+        <td>${badge}</td>
+        <td><button class="dl-btn" data-idx="${extractedCourses.indexOf(c)}">⬇ تحميل</button></td>`;
+      tr.querySelector('button').onclick = (e)=>{
+        const idx = e.target.getAttribute('data-idx');
+        downloadCourse(extractedCourses[idx]);
+      };
+    } else {
+      const m = r.data;
+      tr.innerHTML = `
+        <td>${m.code}</td>
+        <td>${m.descrEn || m.descrAr || '—'}</td>
+        <td><span style="color:var(--muted)">—</span></td>
+        <td><span class="badge missing">لم تُنزَّل بعد</span></td>
+        <td></td>`;
+    }
+    body.appendChild(tr);
+  });
+
+  if(rows.length===0){
+    body.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px;">لا توجد نتائج مطابقة لهذا الفلتر</td></tr>';
+  }
+}
+
+document.getElementById('filterRow').addEventListener('click', e=>{
+  if(e.target.tagName!=='BUTTON') return;
+  currentFilter = e.target.getAttribute('data-f');
+  [...document.getElementById('filterRow').children].forEach(b=>b.classList.remove('active'));
+  e.target.classList.add('active');
+  renderResults();
+});
+
+function courseFileName(c){
+  const t = safeFileName(c.cleanTitle || 'مادة');
+  return `${safeFileName(c.code)} - ${t}.xlsx`.slice(0,150);
+}
+
+function downloadCourse(c){
+  const wbout = XLSX.write(c.wb, {bookType:'xlsx', type:'array'});
+  const blob = new Blob([wbout], {type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = courseFileName(c);
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnZip').onclick = async ()=>{
+  if(extractedCourses.length===0) return;
+  const zip = new JSZip();
+  const hasDept = deptByName.size || deptByCode.size;
+  extractedCourses.forEach(c=>{
+    const wbout = XLSX.write(c.wb, {bookType:'xlsx', type:'array'});
+    if(hasDept){
+      const folderName = safeFileName(c.department || 'غير محدد - يحتاج مراجعة');
+      zip.folder(folderName).file(courseFileName(c), wbout);
+    } else {
+      zip.file(courseFileName(c), wbout);
+    }
+  });
+  const blob = await zip.generateAsync({type:'blob'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'مواد_مفصولة.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+</script>
+</body>
+</html>

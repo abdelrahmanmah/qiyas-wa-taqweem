@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مراجعة التوصيات – PDF Reviewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0D1117;
+  --surf: #161B22;
+  --card: #1C2128;
+  --card-on: #0D2018;
+  --br: #30363D;
+  --br-h: #4F8EF7;
+  --br-c: #39D98A;
+  --blue: #4F8EF7;
+  --green: #39D98A;
+  --text: #E6EDF3;
+  --muted: #8B949E;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  direction: rtl;
+  min-height: 100vh;
+}
+
+/* ── TOPBAR ── */
+.bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--surf);
+  border-bottom: 1px solid var(--br);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 18px; height: 58px;
+}
+.logo {
+  font-size: 16px; font-weight: 700; flex: 1;
+  display: flex; align-items: center; gap: 7px;
+}
+.logo b { color: var(--green); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 7px;
+  border: 1px solid var(--br); background: transparent;
+  color: var(--text); font-size: 13px; font-family: inherit;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+.btn-blue  { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn-blue:hover:not(:disabled) { background: #3a78e0; border-color: #3a78e0; color: #fff; }
+.btn-green { background: var(--green); border-color: var(--green); color: #031A0C; font-weight: 700; }
+.btn-green:hover:not(:disabled) { background: #2cbf75; }
+.btn:disabled { opacity: .35; cursor: default; }
+.btn-sm { padding: 4px 11px; font-size: 12px; }
+
+/* ── PROGRESS ── */
+.prog { height: 2px; background: var(--br); }
+.prog-i { height: 100%; background: var(--blue); width: 0; transition: width .3s; }
+
+/* ── STATUSBAR ── */
+.sb {
+  display: none; align-items: center; gap: 14px;
+  padding: 7px 18px; background: var(--surf);
+  border-bottom: 1px solid var(--br); font-size: 13px; color: var(--muted);
+}
+.sb.on { display: flex; }
+.stat { display: flex; align-items: center; gap: 5px; }
+.snum { font-weight: 700; font-size: 15px; color: var(--text); }
+.snum.g { color: var(--green); }
+.vl { color: var(--br); }
+.sp { flex: 1; }
+
+/* ── EMPTY STATE ── */
+.empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; height: calc(100vh - 90px);
+  color: var(--muted); text-align: center; padding: 20px;
+}
+.eico { font-size: 56px; line-height: 1; }
+.empty h2 { font-size: 18px; color: var(--text); font-weight: 600; }
+.empty p { font-size: 13px; max-width: 320px; line-height: 1.75; }
+.empty .hint {
+  font-size: 12px; color: var(--muted);
+  background: var(--surf); border: 1px solid var(--br);
+  border-radius: 8px; padding: 10px 16px; margin-top: 4px;
+  max-width: 340px; text-align: center;
+}
+
+/* ── GRID ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px; padding: 16px 18px;
+}
+
+/* ── CARD ── */
+.card {
+  position: relative;
+  background: var(--card);
+  border: 1.5px solid var(--br);
+  border-radius: 10px; overflow: hidden;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s, transform .15s;
+}
+.card:hover { border-color: var(--br-h); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+.card.on {
+  border-color: var(--br-c);
+  background: var(--card-on);
+  box-shadow: 0 0 0 1px var(--br-c), 0 4px 20px rgba(57,217,138,.18);
+}
+
+/* Thumbnail */
+.thumb { width: 100%; background: #08080D; overflow: hidden; }
+.shimmer {
+  width: 100%; height: 260px;
+  background: linear-gradient(110deg, #1C2128 30%, #252B38 50%, #1C2128 70%);
+  background-size: 200% 100%;
+  animation: sh 1.4s infinite;
+}
+@keyframes sh { to { background-position: -200% 0; } }
+.thumb canvas { width: 100%; height: auto; display: block; }
+.thumb-err {
+  height: 200px; display: flex;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 6px;
+  color: var(--muted); font-size: 12px;
+}
+
+/* Rec badge */
+.badge {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--green); color: #031A0C;
+  font-size: 11px; font-weight: 800;
+  padding: 3px 9px; border-radius: 20px;
+  display: none; align-items: center; gap: 3px;
+  z-index: 5; pointer-events: none;
+}
+.card.on .badge { display: flex; }
+
+/* Footer */
+.foot {
+  padding: 8px 10px;
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--br); transition: border-color .2s;
+}
+.card.on .foot { border-top-color: rgba(57,217,138,.25); }
+.chk { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; }
+.fname {
+  font-size: 11.5px; color: var(--muted); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.3; cursor: pointer;
+  direction: ltr; text-align: left;
+}
+.card.on .fname { color: var(--green); font-weight: 600; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%) translateY(70px);
+  background: #22272E; border: 1px solid #3C434E;
+  color: var(--text); padding: 10px 20px; border-radius: 8px;
+  font-size: 13px; z-index: 99;
+  transition: transform .25s; box-shadow: 0 4px 20px rgba(0,0,0,.6);
+  white-space: nowrap;
+}
+.toast.on { transform: translateX(-50%) translateY(0); }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #30363D; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<div class="bar">
+  <div class="logo">📄 مراجعة <b>التوصيات</b></div>
+  <label class="btn btn-blue">
+    📁 فتح مجلد
+    <input type="file" id="fi" webkitdirectory multiple style="display:none">
+  </label>
+  <button class="btn btn-green" id="expBtn" disabled onclick="doExport()">📊 تصدير Excel</button>
+</div>
+
+<!-- ── PROGRESS ── -->
+<div class="prog"><div class="prog-i" id="prog"></div></div>
+
+<!-- ── STATUSBAR ── -->
+<div class="sb" id="sb">
+  <div class="stat">إجمالي: <span class="snum" id="tot">0</span></div>
+  <div class="vl">|</div>
+  <div class="stat">✅ توصيات: <span class="snum g" id="chkEl">0</span></div>
+  <div class="sp"></div>
+  <button class="btn btn-sm" onclick="selAll()">تحديد الكل</button>
+  <button class="btn btn-sm" onclick="clrAll()">مسح الكل</button>
+</div>
+
+<!-- ── EMPTY ── -->
+<div class="empty" id="empty">
+  <div class="eico">🗂️</div>
+  <h2>اختر مجلد يحتوي على ملفات PDF</h2>
+  <p>سيتم عرض آخر صفحة من كل ملف — حدّد المقررات التي تحتوي توصيات ثم صدّر القائمة كـ Excel</p>
+  <div class="hint">⚠️ يشتغل في Chrome / Edge فقط بسبب استخدام خاصية webkitdirectory</div>
+</div>
+
+<!-- ── GRID ── -->
+<div class="grid" id="grid"></div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── State ──────────────────────────────────────────────
+let items = [], done = 0, total = 0;
+
+const $  = id => document.getElementById(id);
+const grid   = $('grid');
+const sb     = $('sb');
+const empty  = $('empty');
+const prog   = $('prog');
+const expBtn = $('expBtn');
+const tot    = $('tot');
+const chkEl  = $('chkEl');
+
+// ── Folder input ───────────────────────────────────────
+$('fi').addEventListener('change', e => {
+  const pdfs = [...e.target.files]
+    .filter(f => f.name.toLowerCase().endsWith('.pdf'))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
+  if (!pdfs.length) { toast('❌ لا توجد ملفات PDF في هذا المجلد'); return; }
+
+  items  = pdfs.map(f => ({ file: f, name: f.name, checked: false }));
+  total  = pdfs.length;
+  done   = 0;
+
+  grid.innerHTML = '';
+  empty.style.display = 'none';
+  sb.classList.add('on');
+  prog.style.width = '0%';
+
+  items.forEach((it, i) => grid.appendChild(mkCard(it, i)));
+  updStats();
+  renderAll();
+});
+
+// ── Build card ─────────────────────────────────────────
+function mkCard(it, i) {
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.id = 'c' + i;
+  const nameNoExt = it.name.replace(/\.pdf$/i, '');
+  c.innerHTML = `
+    <div class="thumb" id="t${i}"><div class="shimmer"></div></div>
+    <div class="badge">✓ توصيات</div>
+    <div class="foot">
+      <input class="chk" type="checkbox" id="k${i}">
+      <span class="fname" title="${it.name}">${nameNoExt}</span>
+    </div>`;
+
+  const togByClick = () => {
+    const k = $('k' + i);
+    k.checked = !k.checked;
+    toggle(i, k.checked);
+  };
+  c.querySelector('.thumb').addEventListener('click', togByClick);
+  c.querySelector('.fname').addEventListener('click', togByClick);
+  c.querySelector('.chk').addEventListener('change', e => toggle(i, e.target.checked));
+  return c;
+}
+
+// ── Toggle selection ───────────────────────────────────
+function toggle(i, v) {
+  items[i].checked = v;
+  $('c' + i).classList.toggle('on', v);
+  updStats();
+}
+
+// ── Stats update ───────────────────────────────────────
+function updStats() {
+  const n = items.filter(x => x.checked).length;
+  tot.textContent    = total;
+  chkEl.textContent  = n;
+  expBtn.disabled    = n === 0;
+}
+
+// ── Bulk select / clear ────────────────────────────────
+function selAll() {
+  items.forEach((_, i) => {
+    items[i].checked = true;
+    $('c' + i)?.classList.add('on');
+    const k = $('k' + i); if (k) k.checked = true;
+  });
+  updStats();
+}
+
+function clrAll() {
+  items.forEach((_, i) => {
+    items[i].checked = false;
+    $('c' + i)?.classList.remove('on');
+    const k = $('k' + i); if (k) k.checked = false;
+  });
+  updStats();
+}
+
+// ── Concurrent rendering ───────────────────────────────
+async function renderAll() {
+  const q = items.map((_, i) => i);
+  const pool = Array.from({ length: 4 }, () => workerRender(q));
+  await Promise.all(pool);
+}
+
+async function workerRender(q) {
+  while (q.length) await renderOne(q.shift());
+}
+
+async function renderOne(i) {
+  const thumb = $('t' + i);
+  try {
+    const buf  = await items[i].file.arrayBuffer();
+    const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(pdf.numPages); // آخر صفحة
+
+    // Scale to a fixed display width (300px native → CSS 100%)
+    const base  = page.getViewport({ scale: 1 });
+    const scale = Math.min(2.0, 300 / base.width);
+    const vp    = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+    canvas.style.cssText = 'width:100%;height:auto;display:block';
+
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+    thumb.querySelector('.shimmer')?.remove();
+    thumb.appendChild(canvas);
+  } catch {
+    thumb.innerHTML = '<div class="thumb-err">⚠️<br>تعذّر تحميل الملف</div>';
+  }
+
+  done++;
+  prog.style.width = (done / total * 100) + '%';
+  if (done === total) setTimeout(() => prog.style.width = '0%', 900);
+}
+
+// ── Export to Excel ────────────────────────────────────
+function doExport() {
+  const rows = items.filter(x => x.checked);
+  if (!rows.length) return;
+
+  const data = [['#', 'اسم المقرر', 'اسم الملف']];
+  rows.forEach((r, i) =>
+    data.push([i + 1, r.name.replace(/\.pdf$/i, ''), r.name])
+  );
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 5 }, { wch: 50 }, { wch: 55 }];
+  ws['!sheetViews'] = [{ rightToLeft: true }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'توصيات المقررات');
+  XLSX.writeFile(wb, `توصيات_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast(`✅ تم تصدير ${rows.length} مقرر بنجاح`);
+}
+
+// ── Toast ──────────────────────────────────────────────
+let tTimer;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(tTimer);
+  tTimer = setTimeout(() => el.classList.remove('on'), 3000);
+}
+</script>
+</body>
+</html>

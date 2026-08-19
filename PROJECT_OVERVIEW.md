@@ -19,6 +19,10 @@ persistence) that:
   export.
 - Includes an optional AI chat assistant (Groq / Gemini / Claude) that can read survey data
   already loaded in the app and trigger report generation via tool calls.
+- Includes a **Semester Survey Generator**: copies Google Forms templates per academic
+  year/semester (optionally one copy per department), organizes them on Google Drive, and
+  reports live response stats — with Google Drive itself as the only source of truth (see
+  §4.12).
 
 The app runs entirely in the browser at build/runtime, with the exception of three small
 dev-only Vite middleware routes (`/api/chat`, `/api/list-files`, `/api/read-file`) used by the
@@ -41,9 +45,13 @@ Redaa2/
 │   ├── App.jsx                  # Full UI: step wizard, settings, survey/Drive pickers (~3400 lines)
 │   ├── AiChat.jsx                # Floating AI assistant panel + tool-calling logic
 │   ├── EnhancedReportView.jsx     # Standalone enhanced report view with CSS charts + PDF export
+│   ├── SurveyManagement.jsx      # No-code custom survey builder/editor tab
+│   ├── SemesterSurveys.jsx       # Semester Survey Generator tab (Generate + Dashboard pages)
 │   ├── engine/
 │   │   ├── analyze.js            # Excel parsing, column mapping, statistics engine
-│   │   └── buildDocx.js          # Word (.docx) document generation
+│   │   ├── buildDocx.js          # Word (.docx) document generation
+│   │   ├── customSurveyModel.js  # Custom-survey storage + analysis-engine bridge
+│   │   └── semesterSurveyModel.js # Drive/Forms REST helpers + OAuth for the Semester Survey Generator
 │   └── schemas/
 │       ├── index.js              # Loads all *.yaml schemas at build time, compiles them
 │       ├── compileSchema.js       # Converts minimal YAML schema format → full runtime schema
@@ -88,17 +96,21 @@ build time:
 | UI framework | React | ^19.2.5 |
 | Build tool / dev server | Vite | ^8.0.10 |
 | React Vite plugin | @vitejs/plugin-react | ^4.7.0 |
-| Excel parsing | xlsx (SheetJS) | ^0.18.5 |
+| Excel parsing & writing | xlsx (SheetJS) | ^0.18.5 |
 | Word document generation | docx | ^9.6.1 |
 | Client-side PDF export | html2pdf.js | ^0.14.0 |
 | YAML parsing (build-time only) | js-yaml | ^4.1.0 |
 | Language | Arabic (RTL primary UI/output), English schema metadata |
 | Auth (Drive feature) | Google Identity Services (GIS), OAuth2 implicit flow, browser-only |
+| Auth (Semester Survey Generator) | Google Identity Services (GIS), separate token client/scope (`drive` + `forms.body` + `forms.responses.readonly`), browser-only |
+| Google Forms API | `forms.googleapis.com/v1` REST — read/copy/rename/move/publish forms, list responses | used only by the Semester Survey Generator |
 | AI providers (optional assistant) | Groq, Google Gemini, Anthropic Claude — via OpenAI-compatible / native REST calls |
 
 No server framework, ORM, or database is used. The only server-side code is three small Vite
 dev-middleware routes that exist purely to support local development of the AI chat feature
-(see Limitations).
+(see Limitations). `xlsx` was previously read-only in this app (parsing uploaded Excel files);
+the Semester Survey Generator's Excel-links export is the first place the app *writes* an
+`.xlsx` file client-side.
 
 ---
 
@@ -219,6 +231,35 @@ dev-middleware routes that exist purely to support local development of the AI c
 - Google Sheets files auto-exported to `.xlsx` via the Drive `/export` endpoint before
   parsing.
 
+### 4.12 Semester Survey Generator (`SemesterSurveys.jsx` + `engine/semesterSurveyModel.js`)
+
+A third top-level tab (📆 استبيانات الفصل الدراسي), fully independent of the main analysis
+wizard, that treats Google Drive as the single source of truth for a per-semester survey
+lifecycle — no database, no localStorage cache; every load/filter-change/refresh is a fresh
+Drive/Forms API call.
+
+- **Generate Surveys page**: lists every Google Form inside a configured template folder
+  (`VITE_GOOGLE_TEMPLATE_FOLDER_ID`), each with a select checkbox and a "نسخة لكل قسم"
+  (per-department) toggle. On Generate, it copies the selected template(s) — one copy per
+  entry in the app's department list if per-department is checked — sets the copy's Drive
+  file name **and** the form's own internal title (`اسم الاستبيان - [القسم -] الفصل - السنة`),
+  publishes the form so it can accept responses (required since forms created via the API are
+  unpublished by default as of 2026-06-30), and files it under
+  `{root}/{year}/{semester}/{templateName}/` (`VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID`), creating
+  folders as needed. A live progress bar + rotating status text tracks the batch.
+- **Dashboard page**: year/semester filters (populated from Drive subfolders, not hardcoded),
+  stat cards (total surveys, total responses, avg/survey, last response), a CSS bar chart of
+  responses per survey, and a table with per-survey/per-row refresh.
+- **Analyze All**: runs every listed survey through the app's *existing, unmodified* analysis
+  engine (`analyze.js`) by converting each form's Forms-API responses into the same
+  `[header, ...rows]` shape a real Excel export would produce, auto-detecting the matching
+  schema exactly like an uploaded file — then generates and downloads a Word report per survey
+  via the same `buildAnnualDocx()` used everywhere else in the app.
+- **Links export**: "نسخ الروابط كرسالة" (clipboard) and "تنزيل Excel" (a written `.xlsx`)
+  bulk-export the form/responses links for a Generate batch or the Dashboard's current list.
+- Uses its own OAuth token client/scope, separate from the read-only Drive integration in
+  §4.11, since it needs write access (copy/rename/move/create-folder) plus Forms access.
+
 ---
 
 ## 5. Current Survey Types
@@ -308,6 +349,9 @@ the per-year `result` objects into a single `comparison` object consumed by
 | Annual report | `.docx` | `buildAnnualDocx()` → `docx` library → Blob → browser download | Step 5 "تحميل" button, or AI assistant `generate_report` tool call |
 | Comparison report | `.docx` | `buildComparisonDocx()` → `docx` library → Blob → browser download | Step 4 results screen (comparison mode) |
 | Enhanced report | `.pdf` | `EnhancedReportView` → `html2pdf.js` (html2canvas under the hood) → client-side PDF | Export button inside `EnhancedReportView` |
+| Semester survey report | `.docx` | `buildAnnualDocx()` fed by Forms-API responses converted to rows | "🔍 تحليل الكل" on the Semester Surveys Dashboard, once per survey |
+| Survey links list | `.xlsx` | `XLSX.utils.json_to_sheet` + `XLSX.write` → Blob → browser download | "⬇ تنزيل Excel" on Generate results / Dashboard |
+| Survey links list | plain text (clipboard) | `navigator.clipboard.writeText` | "📋 نسخ الروابط كرسالة" on Generate results / Dashboard |
 
 All exports happen entirely client-side; no file is ever uploaded to a server for report
 generation. Filenames are auto-generated from schema label, program, and year(s)
@@ -361,14 +405,27 @@ generation. Filenames are auto-generated from schema label, program, and year(s)
 - **Drive integration requires Google Cloud OAuth setup**: `VITE_GOOGLE_CLIENT_ID` must be
   configured in `.env.local`; without it the Drive tab will not authenticate. Expected/by
   design.
+- **Semester Survey Generator requires additional setup**: `VITE_GOOGLE_TEMPLATE_FOLDER_ID` and
+  `VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID` in `.env.local`; the Google Forms API enabled on the
+  same Cloud project; and — while the OAuth consent screen is in "Testing" mode — every user's
+  account added as a test user, plus the `forms.body`/`forms.responses.readonly` scopes added
+  to the consent screen, or Google rejects the broader scope request with `Error 403:
+  access_denied`. Expected/by design, but easy to hit on first setup.
+- **No native "linked response Sheet" for generated surveys**: the Forms REST API has no way
+  to read/attach the classic Sheet-linked-to-a-form feature (Apps-Script-only), and copying a
+  form via the Drive API drops any such link anyway. Response counts and "Open Responses" are
+  read straight from the Forms API's `responses.list` / a deep link to the form's own
+  Responses tab instead — by design, not a bug to fix.
+- **Semester Survey Generator's "Analyze All" depends on auto-detection**: a generated
+  survey's responses are matched against one of the app's 5 built-in or custom schemas via the
+  same fuzzy detection used for uploaded files; a template whose question wording doesn't
+  reasonably match an existing schema will be skipped rather than force-analyzed.
 - **`docx` 9.x RTL limitation**: documented in `CLAUDE.md` — the library does not provide a
   working section-level RTL frame, requiring the manual `cellAlign` left/right-swap
   workaround throughout `buildDocx.js`. This is a known, already-mitigated constraint, not a
   bug to fix in this release.
-- **Repository is not yet a git repository** — `git init` and an initial commit are still
-  prerequisites before a `v1.0.0` tag can be created. Not done automatically since it wasn't
-  explicitly requested.
-
-This document describes the application as observed in the code, updated to reflect the
-cleanup performed before the v1.0.0 tag. No application logic or behavior was modified —
-only dead files, legacy duplicates, and exposed secrets were removed.
+This document originally described the application as observed in the code at the v1.0.0
+cleanup pass (dead files, legacy duplicates, and exposed secrets removed; no application logic
+changed). It has since been updated to describe the Semester Survey Generator (§4.12), added on
+the `feature/semester-survey-generator` branch — that work did add new application logic/UI,
+unlike the v1.0.0 pass above.
