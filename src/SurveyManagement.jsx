@@ -11,6 +11,7 @@ import {
   buildSurveysBackupBlob, importSurveysBackup,
 } from "./engine/customSurveyModel.js";
 import { readExcel } from "./engine/analyze.js";
+import { InlineNotice } from "./UiElements.jsx";
 
 const SURVEY_CATALOG_CSS = `
 .survey-catalog-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
@@ -243,7 +244,9 @@ function SurveyListView({
       </div>
 
       {toolbarMsg && (
-        <div style={{ color: toolbarMsg.startsWith("✗") ? "#ff6b5b" : "#1abc9c", fontSize: 12.5, marginBottom: 14 }}>{toolbarMsg}</div>
+        toolbarMsg.startsWith("✗")
+          ? <InlineNotice style={{ marginBottom: 14 }}>{toolbarMsg.replace(/^✗\s*/, "")}</InlineNotice>
+          : <div style={{ color: "#1abc9c", fontSize: 12.5, marginBottom: 14 }}>{toolbarMsg}</div>
       )}
 
       <div className="survey-catalog-toolbar">
@@ -542,7 +545,7 @@ function ImportFromExcel({ onImported }) {
           ✓ تم استيراد {summary.questionCount} سؤال و {summary.metaCount} عمود معلومات عامة من «{summary.fileName}» (مقياس مكتشف: {SCALE_TYPES[summary.scaleType]?.label}).
         </div>
       )}
-      {error && <div style={{ color: "#ff6b5b", fontSize: 12, marginTop: 10 }}>{error}</div>}
+      <InlineNotice text={error} style={{ marginTop: 10 }} />
     </div>
   );
 }

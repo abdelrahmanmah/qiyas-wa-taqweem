@@ -15,6 +15,7 @@ import { analyze } from "./engine/analyze.js";
 import { DEFAULT_SETTINGS } from "./engine/buildDocx.js";
 import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
 import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurveyModel.js";
+import { GoogleDriveIcon, InlineNotice } from "./UiElements.jsx";
 
 const SETTINGS_KEY = "eruQA_settings_v1"; // same key App.jsx's SettingsPanel writes to
 
@@ -204,7 +205,7 @@ function ToastStack({ toasts, onDismiss }) {
         <div
           key={t.id}
           className="ssg-toast"
-          style={{ background: t.kind === "error" ? "linear-gradient(135deg,#e74c3c,#c0392b)" : "linear-gradient(135deg,#1abc9c,#16a085)", cursor: "pointer" }}
+          style={{ background: t.kind === "error" ? "linear-gradient(135deg,#314a68,#243b55)" : "linear-gradient(135deg,#1abc9c,#16a085)", border: t.kind === "error" ? "1px solid rgba(147,197,253,.24)" : "none", cursor: "pointer" }}
           onClick={() => onDismiss(t.id)}
         >
           {t.text}
@@ -317,12 +318,7 @@ function EmptyState({ icon = "📭", text }) {
 }
 
 function ErrorBanner({ text }) {
-  if (!text) return null;
-  return (
-    <div style={{ color: "#ff6b5b", fontSize: 13, background: "rgba(231,76,60,.08)", borderRadius: 10, padding: "10px 14px", marginTop: 10 }}>
-      {text}
-    </div>
-  );
+  return <InlineNotice text={text} style={{ marginTop: 10 }} />;
 }
 
 function BarChart({ data, gradient = "linear-gradient(90deg,#1abc9c,#2874a6)" }) {
@@ -491,7 +487,7 @@ function GenerateSurveysView({ token, pushToast, onReconnect, onGoDashboard }) {
             <span className="ssg-home-badge">{selectedCount} محدد</span>
           </div>
         {loadError ? (
-          <div style={{ padding: "18px", borderRadius: 14, background: "rgba(231,76,60,.07)", border: "1px solid rgba(231,76,60,.16)" }}>
+          <div style={{ padding: "18px", borderRadius: 14, background: "rgba(96,165,250,.045)", border: "1px solid rgba(147,197,253,.12)" }}>
             <ErrorBanner text={loadError} />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
               <button type="button" className="btn btn-primary btn-sm" onClick={() => setTemplateReloadKey(k => k + 1)}>إعادة تحميل القوالب</button>
@@ -1065,12 +1061,12 @@ export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onSect
           {tab === "departments" ? (
             <DepartmentsView pushToast={push} />
           ) : !configured ? (
-            <div className="card" style={{ padding: 24, color: "#ff6b5b", fontSize: 13 }}>
-              ⚠ لم يتم ضبط معرفات مجلدات Google Drive. يرجى إضافة <code>VITE_GOOGLE_TEMPLATE_FOLDER_ID</code> و<code>VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID</code> إلى ملف <code>.env.local</code> وإعادة تشغيل الخادم.
+            <div className="card" style={{ padding: 24 }}>
+              <InlineNotice>لم يتم ضبط معرفات مجلدات Google Drive. يرجى إضافة <code>VITE_GOOGLE_TEMPLATE_FOLDER_ID</code> و<code>VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID</code> إلى ملف <code>.env.local</code> وإعادة تشغيل الخادم.</InlineNotice>
             </div>
           ) : !auth.token ? (
             <div className="card" style={{ padding: 32, textAlign: "center" }}>
-              {auth.connecting ? <LoadingGlyph /> : <div style={{ width: 58, height: 58, display: "grid", placeItems: "center", margin: "0 auto 14px", borderRadius: 18, background: "rgba(26,188,156,.1)", color: "#5eead4" }}><SemesterIcon name="dashboard" size={27} /></div>}
+              {auth.connecting ? <LoadingGlyph /> : <div style={{ width: 62, height: 62, display: "grid", placeItems: "center", margin: "0 auto 14px", borderRadius: 18, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.1)" }}><GoogleDriveIcon size={34} /></div>}
               <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 7 }}>الاتصال بحساب Google</div>
               <div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginBottom: 17 }}>مطلوب للوصول إلى قوالب واستبيانات الفصل الدراسي على Drive.</div>
               <button className="btn btn-primary" disabled={auth.connecting} onClick={auth.connect}>

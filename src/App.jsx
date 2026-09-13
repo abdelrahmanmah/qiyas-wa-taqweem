@@ -8,6 +8,7 @@ import SurveyManagement from "./SurveyManagement.jsx";
 import SemesterSurveys from "./SemesterSurveys.jsx";
 import SemesterFormPicker from "./SemesterFormPicker.jsx";
 import CourseEvaluationHub from "./CourseEvaluationHub.jsx";
+import { GoogleDriveIcon, InlineNotice } from "./UiElements.jsx";
 import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
 import { saveStoredToken, getStoredToken, clearStoredToken, getForm, listAllResponses, responsesToRows, departmentFromSurveyName, SEMESTER_SCOPE, SEMESTER_TOKEN_KEY } from "./engine/semesterSurveyModel.js";
 
@@ -271,8 +272,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   color:rgba(232,240,254,.59);background:transparent;font-family:inherit;font-size:12px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
 .sidebar-item:hover{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.07)}
 .sidebar-item.active{color:#eafffb;background:linear-gradient(125deg,rgba(26,188,156,.2),rgba(40,116,166,.12));border-color:rgba(94,234,212,.22)}
-.sidebar-icon{width:28px;height:28px;display:grid;place-items:center;flex:0 0 28px;color:currentColor}
-.sidebar-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-icon{width:32px;height:32px;display:grid;place-items:center;flex:0 0 32px;color:currentColor}
+.sidebar-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .sidebar-label{overflow:hidden;opacity:1;transition:opacity .16s ease}
 .tool-sidebar.collapsed .sidebar-label,.tool-sidebar.collapsed .sidebar-heading{display:none}
 .tool-sidebar.collapsed .sidebar-item{justify-content:center;padding-inline:0;gap:0}
@@ -285,7 +286,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .app-shell.sidebar-closed .app-content{margin-right:76px}
 .quality-header.sidebar-open{margin-right:254px}.quality-header.sidebar-closed{margin-right:76px}
 .quality-header{min-height:75px;transition:margin-right .24s ease}
-.google-global-btn{display:inline-flex;align-items:center;gap:9px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.12);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;transition:.18s}
+.google-global-btn{display:inline-flex;align-items:center;gap:9px;min-height:40px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.12);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;transition:.18s}
 .google-global-btn.disconnected{color:#e8f0fe;background:rgba(255,255,255,.06)}
 .google-global-btn.connected{color:#9ff5df;background:rgba(26,188,156,.1);border-color:rgba(94,234,212,.22);cursor:pointer}
 .google-status-dot{width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.1)}
@@ -294,7 +295,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .upload-source-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
 .upload-source-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:rgba(255,255,255,.52);font-family:inherit;text-align:right;cursor:pointer;transition:.2s}
 .upload-source-card:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}.upload-source-card.active{color:#eafffb;border-color:rgba(94,234,212,.3);background:linear-gradient(125deg,rgba(26,188,156,.15),rgba(40,116,166,.08));box-shadow:inset 0 -2px #1abc9c}
-.upload-source-icon{width:38px;height:38px;display:grid;place-items:center;flex:0 0 38px;border-radius:11px;color:#7cebd5;background:rgba(26,188,156,.1)}.upload-source-card strong{display:block;font-size:12.5px}.upload-source-card small{display:block;color:rgba(255,255,255,.36);font-size:9px;margin-top:2px}
+.upload-source-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:12px;color:#7cebd5;background:rgba(26,188,156,.1)}.upload-source-icon>svg{width:22px;height:22px}.upload-source-card strong{display:block;font-size:12.5px}.upload-source-card small{display:block;color:rgba(255,255,255,.36);font-size:9px;margin-top:2px}
 .drive-control-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;margin-bottom:12px;border-radius:13px;border:1px solid rgba(94,234,212,.18);background:rgba(26,188,156,.07)}
 .drive-view-switch{display:flex;gap:4px;padding:4px;border-radius:10px;background:rgba(4,18,34,.3);border:1px solid rgba(255,255,255,.075)}.drive-view-btn{padding:6px 10px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.42);font-family:inherit;font-size:9.5px;font-weight:800;cursor:pointer;white-space:nowrap}.drive-view-btn.active{color:#bafff1;background:rgba(26,188,156,.17)}
 .drive-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px;margin-bottom:9px}.drive-search-field{width:100%;background:rgba(4,18,34,.48);color:#e8f0fe;border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:11px 13px;font-family:inherit;font-size:11.5px;direction:rtl;margin-bottom:10px;outline:none}.drive-search-field:focus{border-color:rgba(94,234,212,.42);box-shadow:0 0 0 3px rgba(26,188,156,.07)}
@@ -1013,11 +1014,11 @@ function BatchItem({ item, year, settings }) {
   };
 
   const bg     = item.status === "done"       ? "rgba(26,188,156,.08)"
-               : item.status === "error"      ? "rgba(231,76,60,.07)"
+               : item.status === "error"      ? "rgba(96,165,250,.06)"
                : item.status === "processing" ? "rgba(255,255,255,.05)"
                :                               "rgba(255,255,255,.02)";
   const border = item.status === "done"       ? "rgba(26,188,156,.32)"
-               : item.status === "error"      ? "rgba(231,76,60,.22)"
+               : item.status === "error"      ? "rgba(147,197,253,.18)"
                : item.status === "processing" ? "rgba(255,255,255,.18)"
                :                               "rgba(255,255,255,.07)";
 
@@ -1057,7 +1058,7 @@ function BatchItem({ item, year, settings }) {
             </span>
           )}
           {item.status === "processing" && <span style={{ color: "#1abc9c" }}>جاري التحليل…</span>}
-          {item.status === "error"      && <span style={{ color: "#e74c3c" }}>{item.error}</span>}
+          {item.status === "error"      && <span style={{ color: "#dce8f7" }}>{item.error}</span>}
           {item.status === "pending"    && <span style={{ color: "rgba(255,255,255,.3)" }}>في الانتظار</span>}
         </div>
       </div>
@@ -1171,7 +1172,7 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
             </span>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>
               <span style={{ color: "#1abc9c" }}>{doneCount} ناجح </span>
-              {errorCount > 0 && <span style={{ color: "#e74c3c" }}>· {errorCount} فشل</span>}
+              {errorCount > 0 && <span style={{ color: "#fbbf24" }}>· {errorCount} فشل</span>}
             </span>
           </div>
           <div style={{ background: "rgba(255,255,255,.1)", borderRadius: 6, height: 7, overflow: "hidden" }}>
@@ -1468,7 +1469,7 @@ function DriveDashboard({ files, token, onSelectFile }) {
                     : s.status === "done"
                     ? <span style={{ color: "#1abc9c", fontWeight: 700 }}>{s.count?.toLocaleString()}</span>
                     : s.status === "error"
-                    ? <span style={{ color: "#e74c3c", fontSize: 10 }}>خطأ</span>
+                    ? <span style={{ color: "#dce8f7", fontSize: 10 }}>تعذّر التحميل</span>
                     : <span style={{ color: "rgba(255,255,255,.2)" }}>—</span>}
                 </td>
                 <td style={{ padding: "6px 8px", textAlign: "center" }}>
@@ -3322,16 +3323,16 @@ export default function App() {
       {/* Header */}
       <header className={`app-header quality-header ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`} style={{ padding: "14px 24px", borderBottom: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11, color: "#fff", fontSize: 14, fontWeight: 900 }}>
-          <button type="button" className="sidebar-toggle mobile-nav-toggle" onClick={() => setSidebarOpen(true)} aria-label="فتح القائمة الجانبية" title="فتح القائمة">
+          <button type="button" className="sidebar-toggle mobile-nav-toggle" onClick={() => setSidebarOpen(v => !v)} aria-label={sidebarOpen ? "طي القائمة الجانبية" : "فتح القائمة الجانبية"} title={sidebarOpen ? "طي القائمة" : "فتح القائمة"}>
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
           <span>{activeToolTitle}</span>
         </div>
         {driveConnection === "connected" ? (
-          <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><span className="google-status-dot" /> {driveAccount || "Google Drive متصل"}</button>
+          <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><GoogleDriveIcon size={20} /><span className="google-status-dot" /> {driveAccount || "Google Drive متصل"}</button>
         ) : (
           <button type="button" className="google-global-btn disconnected" disabled={driveConnecting || driveConnection === "checking"} onClick={connectDrive}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7.5 4h9L21 12l-4.5 8h-9L3 12Z"/><path d="m7.5 4 9 16M16.5 4 7.5 20M3 12h18"/></svg>
+            <GoogleDriveIcon size={20} />
             {driveConnection === "checking" ? <>جاري التحقق<span className="loader-dots"><i/><i/><i/></span></> : driveConnecting ? <>جاري الاتصال<span className="loader-dots"><i/><i/><i/></span></> : "ربط Google Drive"}
           </button>
         )}
@@ -3405,7 +3406,7 @@ export default function App() {
                     <span><strong>رفع ملف من الجهاز</strong><small>Excel أو CSV من جهازك، مع دعم اختيار عدة ملفات</small></span>
                   </button>
                   <button className={`upload-source-card ${uploadTab === "drive" ? "active" : ""}`} onClick={() => setUploadTab("drive")}>
-                    <span className="upload-source-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 17h9.5a3.5 3.5 0 0 0 .6-6.95A6 6 0 0 0 6.6 8.7 4.2 4.2 0 0 0 8 17Z"/><path d="m12 9-3 3m3-3 3 3m-3-3v7"/></svg></span>
+                    <span className="upload-source-icon"><GoogleDriveIcon size={24} /></span>
                     <span><strong>Google Drive</strong><small>ابحث واختر الاستبيانات المحفوظة على حسابك</small></span>
                   </button>
                 </div>
@@ -3460,7 +3461,7 @@ export default function App() {
                     ) : !driveToken ? (
                       /* Not connected */
                       <div style={{ textAlign: "center", padding: "28px 0" }}>
-                        <div style={{ fontSize: 44, marginBottom: 14 }}>☁️</div>
+                        <div style={{ width: 68, height: 68, display: "grid", placeItems: "center", margin: "0 auto 14px", borderRadius: 20, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.1)" }}><GoogleDriveIcon size={38} /></div>
                         <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13, marginBottom: 22 }}>
                           اربط حسابك على Google Drive لاختيار ملف الاستبيان مباشرة
                         </div>
@@ -3474,12 +3475,7 @@ export default function App() {
                           onMouseOver={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,.3)"}
                           onMouseOut={e  => e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,.2)"}
                         >
-                          <svg width="20" height="20" viewBox="0 0 48 48">
-                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                          </svg>
+                          <GoogleDriveIcon size={23} />
                           ربط Google Drive
                         </button>
                       </div>
@@ -3494,7 +3490,7 @@ export default function App() {
                       <div>
                         {/* Connected bar */}
                         <div className="drive-control-bar">
-                          <span style={{ color: "#75efd8", fontWeight: 800, fontSize: 12 }}>Google Drive متصل <span aria-hidden="true">●</span></span>
+                          <span style={{ color: "#dce8f7", fontWeight: 800, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 8 }}><GoogleDriveIcon size={21} /> Google Drive متصل <span className="google-status-dot" aria-hidden="true" /></span>
                           <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: "100%" }}>
                             {/* View toggle */}
                             <div className="drive-view-switch">
@@ -3676,12 +3672,7 @@ export default function App() {
                   </div>
                 )}
 
-                {error && (
-                  <div style={{ color: "#e74c3c", marginTop: 20, fontSize: 13,
-                                background: "rgba(231,76,60,.08)", borderRadius: 10, padding: "12px 16px" }}>
-                    {error}
-                  </div>
-                )}
+                <InlineNotice text={error} style={{ marginTop: 20 }} />
 
                 <div style={{ textAlign: "center", marginTop: 20 }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setError(""); setStep(0); }}>→ السابق</button>
@@ -3738,11 +3729,7 @@ export default function App() {
                   );
                 })()}
 
-                {error && (
-                  <div style={{ color: "#e74c3c", marginTop: 16, textAlign: "center", fontSize: 13 }}>
-                    {error}
-                  </div>
-                )}
+                <InlineNotice text={error} style={{ marginTop: 16 }} />
 
                 <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 28 }}>
                   <button className="btn btn-ghost" onClick={() => { setError(""); setStep(0); }}>→ السابق</button>
@@ -3881,11 +3868,7 @@ export default function App() {
                     </div>
                   </CollapsibleSection>
 
-                  {error && (
-                    <div style={{ color: "#e74c3c", marginBottom: 16, textAlign: "center", fontSize: 13 }}>
-                      {error}
-                    </div>
-                  )}
+                  <InlineNotice text={error} style={{ marginBottom: 16 }} />
 
                   <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
                     <button className="btn btn-ghost" onClick={() => {
@@ -3924,10 +3907,9 @@ export default function App() {
                     {liveResult ? (
                       <QuickStatsRow result={liveResult} />
                     ) : (
-                      <div style={{ color: "#e74c3c", textAlign: "center", padding: 20,
-                                    background: "rgba(231,76,60,.08)", borderRadius: 10 }}>
+                      <InlineNotice style={{ justifyContent: "center", padding: 20 }}>
                         لا توجد صفوف بعد تطبيق الفلاتر — أزل بعض الفلاتر للمتابعة.
-                      </div>
+                      </InlineNotice>
                     )}
 
                     <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 26 }}>

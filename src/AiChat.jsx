@@ -734,7 +734,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
                   <div style={{
                     fontSize: 12, borderRadius: 10, padding: "6px 12px", direction: "rtl", textAlign: "right",
                     background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)",
-                    color: m.type === "error_inline" ? "#e74c3c" : m.type === "success" ? "#1abc9c" : "rgba(255,255,255,.5)",
+                    color: m.type === "error_inline" ? "#dce8f7" : m.type === "success" ? "#1abc9c" : "rgba(255,255,255,.5)",
                     maxWidth: "90%",
                   }}><MsgText text={m.text} /></div>
                 )}
