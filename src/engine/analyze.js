@@ -67,9 +67,41 @@ function mapColumns(headers, schema) {
     }, []);
 
     const map = {};
+    // Google Forms matrix questions are exported as headings ending with the
+    // original statement in square brackets. Those are the authoritative
+    // response columns; any columns after them are open-ended comments.
+    const bracketQuestionCols = headers
+      .map((h, i) => ({ h: String(h ?? ""), i }))
+      .filter(({ h }) => h.includes("[") && h.includes("]"))
+      .map(({ i }) => i);
+    const questionCount = schema.axes.reduce((sum, ax) => sum + ax.questions.length, 0);
+
+    if (bracketQuestionCols.length >= questionCount) {
+      let questionIndex = 0;
+      schema.axes.forEach(ax => ax.questions.forEach(q => {
+        map[q.id] = bracketQuestionCols[questionIndex++];
+      }));
+      return map;
+    }
+
+    const used = new Set();
     schema.axes.forEach(ax =>
       ax.questions.forEach(q => {
-        map[q.id] = qColIdx[q.colIndex] ?? q.colIndex;
+        let bestIdx = null;
+        let bestScore = 0;
+        qColIdx.forEach(i => {
+          if (used.has(i)) return;
+          const score = similarity(headers[i], q.text);
+          if (score > bestScore) { bestScore = score; bestIdx = i; }
+        });
+        if (bestIdx !== null && bestScore >= 0.35) {
+          map[q.id] = bestIdx;
+          used.add(bestIdx);
+        } else {
+          const fallback = qColIdx[q.colIndex] ?? q.colIndex;
+          map[q.id] = fallback;
+          used.add(fallback);
+        }
       })
     );
     return map;
@@ -115,6 +147,12 @@ function parseResponse5(v) {
   // "بشدة" (strongly) and "لا" (negation) variants before the bare ones.
   const t = normalize(s);
   if (!t) return null;
+  // Quality/rating scale used by employer and stakeholder surveys.
+  if (t.includes("ممتاز") || t === "excellent") return "5";
+  if ((t.includes("جيد") && (t.includes("جدا") || t.includes("جداً"))) || t === "very good") return "4";
+  if (t === "جيد" || t === "good") return "3";
+  if (t.includes("مقبول") || t === "acceptable") return "2";
+  if (t.includes("ضعيف") || t === "poor") return "1";
   if (t.includes("لا") && t.includes("بشده")) return "1";
   if (t.includes("لا") && (t.includes("اوافق") || t.includes("agree"))) return "2";
   if (t.includes("محايد") || t.includes("neutral")) return "3";
@@ -412,6 +450,10 @@ export function analyzeRows(headers, dataRows, schema, metaCols) {
   return {
     schemaId: schema.id,
     schemaLabel: schema.label,
+    reportTexts: schema.reportTexts ?? null,
+    reportSections: schema.reportSections ?? null,
+    scaleValues: schema.scale.values,
+    isFlat: schema.isFlat === true,
     scaleType: schema.scale.type,
     n,
     axes,

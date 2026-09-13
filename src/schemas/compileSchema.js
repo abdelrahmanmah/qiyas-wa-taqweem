@@ -29,11 +29,11 @@ const INTERP3 = [
   { min: 0,  label: "عدم الموافقة", tier: "low",       color: "922b21" },
 ];
 
-function buildScale(n) {
+function buildScale(n, customValues) {
   if (n === 5) {
     return {
       type: "likert-5",
-      values: SCALE5_VALUES,
+      values: Array.isArray(customValues) && customValues.length === 5 ? customValues : SCALE5_VALUES,
       agreementCodes: ["4", "5"],
       tokenPattern: "\\((\\d)\\)",
     };
@@ -107,7 +107,7 @@ function buildAxes(raw, isLikert5) {
 
 export function compileSchema(raw) {
   const isLikert5 = raw.scale === 5;
-  const scale     = buildScale(raw.scale);
+  const scale     = buildScale(raw.scale, raw.scaleValues);
   const meta      = buildMeta(raw.meta);
   const axes      = buildAxes(raw, isLikert5);
 
@@ -130,6 +130,9 @@ export function compileSchema(raw) {
     fileHints:   raw.hints   || [],
     icon:        raw.icon    || null,
     desc:        raw.desc    || null,
+    programs:    raw.programs || [],
+    isFlat:      raw.flat === true || !raw.axes,
+    reportSections: raw.reportSections || null,
     scale,
     metadata:    meta,
     ...(!isLikert5 ? { questionStartIndex } : {}),

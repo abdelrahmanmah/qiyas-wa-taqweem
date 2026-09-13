@@ -12,7 +12,8 @@ import {
   editorResponsesUrl, responsesToRows, departmentFromSurveyName,
 } from "./engine/semesterSurveyModel.js";
 import { analyze } from "./engine/analyze.js";
-import { buildAnnualDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
+import { DEFAULT_SETTINGS } from "./engine/buildDocx.js";
+import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
 import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurveyModel.js";
 
 const SETTINGS_KEY = "eruQA_settings_v1"; // same key App.jsx's SettingsPanel writes to
@@ -80,6 +81,86 @@ const CSS = `
 @keyframes ssgToastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes ssgProgressFlow{0%{background-position:0 0}100%{background-position:40px 0}}
 @keyframes ssgTipFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ssgOrbit{to{transform:rotate(360deg)}}
+@keyframes ssgPulse{0%,100%{transform:scale(.92);opacity:.45}50%{transform:scale(1);opacity:1}}
+@keyframes ssgDot{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+@keyframes ssgCardIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes ssgGlowMove{0%{transform:translateX(110%)}100%{transform:translateX(-110%)}}
+@keyframes ssgSuccessPop{0%{transform:scale(.7);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.ssg-home{max-width:1080px;margin:0 auto;padding:20px 0 8px}
+.ssg-home-hero{text-align:center;padding:22px 18px 28px}
+.ssg-home-badge{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  color:#5eead4;background:rgba(26,188,156,.1);border:1px solid rgba(94,234,212,.18);font-size:11px;font-weight:800}
+.ssg-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ssg-action-card{position:relative;min-height:210px;padding:24px;border:1px solid rgba(255,255,255,.11);
+  border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035));
+  color:#fff;text-align:right;font-family:inherit;cursor:pointer;overflow:hidden;transition:border-color .2s ease,transform .2s ease,background .2s ease}
+.ssg-action-card:before{content:"";position:absolute;inset:auto -45px -55px auto;width:150px;height:150px;border-radius:50%;
+  background:var(--ssg-glow,rgba(26,188,156,.13));filter:blur(2px);transition:transform .25s ease}
+.ssg-action-card:hover{transform:translateY(-3px);border-color:rgba(94,234,212,.35);background:linear-gradient(145deg,rgba(255,255,255,.1),rgba(255,255,255,.045))}
+.ssg-action-card:hover:before{transform:scale(1.16)}
+.ssg-action-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;margin-bottom:22px;
+  color:var(--ssg-accent,#5eead4);background:color-mix(in srgb,var(--ssg-accent,#5eead4) 14%,transparent);border:1px solid color-mix(in srgb,var(--ssg-accent,#5eead4) 24%,transparent)}
+.ssg-action-title{font-size:17px;font-weight:900;margin-bottom:8px;position:relative}
+.ssg-action-copy{font-size:12px;line-height:1.9;color:rgba(255,255,255,.56);position:relative}
+.ssg-action-arrow{position:absolute;left:20px;bottom:18px;color:var(--ssg-accent,#5eead4);font-size:18px}
+.ssg-secondary-row{display:flex;justify-content:center;margin-top:16px}
+.ssg-create-hero{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:22px 24px;margin-bottom:16px;border-radius:20px;
+  border:1px solid rgba(94,234,212,.16);background:linear-gradient(125deg,rgba(26,188,156,.12),rgba(40,116,166,.08))}
+.ssg-create-kicker{color:#67e8d0;font-size:10px;font-weight:900;margin-bottom:5px}.ssg-create-hero h2{color:#fff;font-size:20px;font-weight:950;margin:0 0 5px}
+.ssg-create-hero p{color:rgba(255,255,255,.48);font-size:11.5px;line-height:1.75;margin:0}
+.ssg-step-pills{display:flex;gap:7px;flex-wrap:wrap}.ssg-step-pill{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.52);font-size:10px;font-weight:800;white-space:nowrap}
+.ssg-step-pill b{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;color:#bafff1;background:rgba(26,188,156,.15)}
+.ssg-create-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.65fr);gap:16px;align-items:start}
+.ssg-panel{padding:20px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
+.ssg-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px}.ssg-panel-title{color:#fff;font-size:14px;font-weight:900}.ssg-panel-copy{color:rgba(255,255,255,.42);font-size:10.5px;margin-top:2px}
+.ssg-template-tools{display:flex;align-items:center;gap:8px;margin-bottom:11px}.ssg-template-search{flex:1;min-width:0;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(4,18,34,.35);color:#fff;font-family:inherit;font-size:11.5px}
+.ssg-template-list{display:flex;flex-direction:column;gap:7px;max-height:470px;overflow:auto;padding-left:3px}
+.ssg-template-card{display:grid;grid-template-columns:auto minmax(0,1fr) 138px;align-items:center;gap:11px;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.035);transition:.18s}
+.ssg-template-card.selected{border-color:rgba(94,234,212,.24);background:rgba(26,188,156,.075)}
+.ssg-template-name{color:#e8f0fe;font-size:11.5px;font-weight:700;line-height:1.65}.ssg-template-card select{width:100%;padding:7px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.13);background:#142d47;color:#e8f0fe;font-family:inherit;font-size:10px}
+.ssg-create-aside{position:sticky;top:94px}.ssg-field-label{display:block;color:rgba(255,255,255,.54);font-size:10.5px;font-weight:700;margin-bottom:6px}.ssg-field{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(4,18,34,.35);color:#fff;font-family:inherit;font-size:12px}
+.ssg-selection-summary{display:flex;justify-content:space-between;align-items:center;padding:12px;margin:15px 0;border-radius:11px;background:rgba(26,188,156,.08);color:rgba(255,255,255,.6);font-size:11px}.ssg-selection-summary strong{color:#7cebd5;font-size:18px}
+.ssg-create-submit{width:100%;justify-content:center}.ssg-results-panel{margin-top:16px}
+.ssg-generation-stage{position:relative;overflow:hidden;padding:24px;border-radius:18px;border:1px solid rgba(94,234,212,.16);background:linear-gradient(130deg,rgba(6,28,47,.74),rgba(17,71,68,.42))}
+.ssg-generation-stage:after{content:"";position:absolute;inset:0 auto 0 0;width:36%;background:linear-gradient(90deg,transparent,rgba(94,234,212,.035),transparent);animation:ssgGlowMove 2.6s linear infinite;pointer-events:none}
+.ssg-generation-widget{position:fixed;left:24px;bottom:82px;width:min(620px,calc(100vw - 48px));max-height:calc(100vh - 120px);z-index:160;
+  box-sizing:border-box;background:linear-gradient(135deg,rgba(6,28,47,.97),rgba(13,66,61,.96));border-color:rgba(94,234,212,.3);
+  box-shadow:0 24px 70px rgba(0,0,0,.46),0 0 0 1px rgba(94,234,212,.06);backdrop-filter:blur(20px);animation:ssgCardIn .3s ease both}
+.ssg-generation-widget .ssg-job-grid{max-height:min(210px,32vh)}
+.ssg-generation-widget.collapsed{width:min(450px,calc(100vw - 48px));padding:16px 18px}
+.ssg-generation-widget.collapsed .ssg-generation-head{margin-bottom:10px}
+.ssg-generation-widget.collapsed .ssg-current-job,.ssg-generation-widget.collapsed .ssg-job-grid{display:none}
+.ssg-widget-toggle{position:relative;z-index:2;width:30px;height:30px;display:grid;place-items:center;flex:0 0 30px;border-radius:9px;
+  border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#d8fff7;font-family:inherit;font-size:17px;line-height:1;cursor:pointer}
+.ssg-widget-toggle:hover{background:rgba(94,234,212,.12);border-color:rgba(94,234,212,.25)}
+.ssg-generation-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.ssg-generation-title{display:flex;align-items:center;gap:13px;color:#fff;font-size:14px;font-weight:900}.ssg-generation-percent{color:#67e8d0;font-size:24px;font-weight:950}
+.ssg-current-job{padding:11px 13px;margin-top:12px;border-radius:11px;color:#d8fff7;background:rgba(26,188,156,.09);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ssg-job-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px;margin-top:14px;max-height:210px;overflow:auto}.ssg-job-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.035);color:rgba(255,255,255,.48);font-size:10.5px;white-space:nowrap;overflow:hidden}.ssg-job-chip span:last-child{overflow:hidden;text-overflow:ellipsis}.ssg-job-chip.done{color:#9ff5df;background:rgba(16,185,129,.07)}.ssg-job-chip.active{color:#fff;background:rgba(59,130,246,.1)}
+.ssg-status-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:rgba(255,255,255,.22)}.ssg-job-chip.done .ssg-status-dot{background:#34d399}.ssg-job-chip.active .ssg-status-dot{background:#60a5fa;box-shadow:0 0 0 5px rgba(96,165,250,.1);animation:ssgPulse 1.2s infinite}.ssg-job-chip.error .ssg-status-dot{background:#fb7185}
+.ssg-success-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:15px;border-bottom:1px solid rgba(255,255,255,.07)}.ssg-success-copy{display:flex;align-items:center;gap:11px;color:#a7f3d0;font-weight:900}.ssg-success-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:rgba(16,185,129,.14);color:#6ee7b7;animation:ssgSuccessPop .45s ease-out}
+.ssg-created-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}.ssg-created-card{padding:15px;border-radius:14px;border:1px solid rgba(255,255,255,.085);background:rgba(255,255,255,.035);animation:ssgCardIn .35s ease both}.ssg-created-name{color:#f1f5f9;font-size:11.5px;font-weight:800;line-height:1.75;min-height:40px}.ssg-created-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}.ssg-link-action{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border-radius:8px;border:1px solid rgba(94,234,212,.14);background:rgba(26,188,156,.065);color:#70e8d1;font-family:inherit;font-size:9.5px;font-weight:700;text-decoration:none;cursor:pointer}
+.ssg-dashboard-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:17px 18px;margin-bottom:14px;border-radius:17px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
+.ssg-dashboard-actions{display:flex;align-items:center;gap:8px;margin-right:auto;flex-wrap:wrap}.ssg-selection-count{display:inline-flex;align-items:center;gap:6px;color:#83ead6;font-size:11px;font-weight:900;padding:7px 10px;border-radius:999px;background:rgba(26,188,156,.09)}
+.ssg-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:15px}.ssg-stat-card{animation:ssgCardIn .35s ease both;position:relative;overflow:hidden}.ssg-stat-card:after{content:"";position:absolute;width:80px;height:80px;border-radius:50%;left:-30px;bottom:-42px;background:rgba(94,234,212,.055)}
+.ssg-survey-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(315px,1fr));gap:11px}.ssg-survey-card{position:relative;min-height:190px;display:flex;flex-direction:column;padding:17px;border-radius:17px;border:1px solid rgba(255,255,255,.09);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025));cursor:pointer;transition:transform .2s ease,border-color .2s ease,background .2s ease,box-shadow .2s ease;animation:ssgCardIn .4s ease both;outline:none}
+.ssg-survey-card:hover,.ssg-survey-card:focus-visible{transform:translateY(-3px);border-color:rgba(96,165,250,.3);box-shadow:0 15px 34px rgba(2,12,27,.2)}.ssg-survey-card.selected{border-color:rgba(94,234,212,.48);background:linear-gradient(145deg,rgba(26,188,156,.14),rgba(40,116,166,.06));box-shadow:inset 0 0 0 1px rgba(94,234,212,.12)}
+.ssg-card-select{position:absolute;left:13px;top:13px;width:25px;height:25px;display:grid;place-items:center;border-radius:9px;color:rgba(255,255,255,.34);background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);transition:.18s}.ssg-survey-card.selected .ssg-card-select{color:#052e2b;background:#5eead4;border-color:#5eead4;animation:ssgSuccessPop .3s ease}
+.ssg-survey-type{width:max-content;max-width:calc(100% - 35px);padding:4px 8px;border-radius:999px;color:#8eead9;background:rgba(26,188,156,.08);font-size:8.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ssg-survey-name{color:#f4f8ff;font-size:12.5px;font-weight:900;line-height:1.75;margin:12px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ssg-survey-metrics{display:flex;gap:8px;margin-top:auto}.ssg-survey-metric{flex:1;padding:9px;border-radius:10px;background:rgba(5,19,34,.28)}.ssg-survey-metric strong{display:block;color:#fff;font-size:17px}.ssg-survey-metric span{display:block;color:rgba(255,255,255,.38);font-size:8.5px;margin-top:1px}
+.ssg-survey-card-actions{display:flex;align-items:center;gap:6px;margin-top:11px;opacity:0;transform:translateY(3px);transition:.18s}.ssg-survey-card:hover .ssg-survey-card-actions,.ssg-survey-card:focus-within .ssg-survey-card-actions,.ssg-survey-card.selected .ssg-survey-card-actions{opacity:1;transform:none}.ssg-card-action{padding:6px 9px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.055);color:#dce8f6;font-family:inherit;font-size:9px;font-weight:750;cursor:pointer;text-decoration:none}.ssg-card-action.primary{margin-left:auto;color:#8cf2dc;border-color:rgba(94,234,212,.2);background:rgba(26,188,156,.1)}
+.ssg-subnav{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;margin-bottom:18px;
+  border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.035)}
+.ssg-subnav-title{display:flex;align-items:center;gap:10px;color:#fff;font-size:14px;font-weight:850}
+.ssg-loading-glyph{position:relative;width:58px;height:58px;display:grid;place-items:center;margin:0 auto 14px;color:#5eead4}
+.ssg-loading-glyph.compact{width:34px;height:34px;margin:0}
+.ssg-loading-ring{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(94,234,212,.14);border-top-color:#2dd4bf;animation:ssgOrbit 1.1s linear infinite}
+.ssg-loading-ring.second{inset:6px;border-top-color:#60a5fa;animation-duration:1.55s;animation-direction:reverse}
+.ssg-loading-core{width:12px;height:12px;border-radius:4px;background:linear-gradient(135deg,#2dd4bf,#3b82f6);animation:ssgPulse 1.4s ease-in-out infinite}
+.ssg-loading-line{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ssg-loading-dots{display:inline-flex;gap:3px;margin-inline-start:5px}
+.ssg-loading-dots i{width:4px;height:4px;border-radius:50%;background:#5eead4;animation:ssgDot 1.15s ease-in-out infinite}
+.ssg-loading-dots i:nth-child(2){animation-delay:.16s}.ssg-loading-dots i:nth-child(3){animation-delay:.32s}
 .ssg-progress-track{background:rgba(255,255,255,.08);border-radius:6px;height:10px;overflow:hidden}
 .ssg-progress-fill{height:100%;border-radius:6px;transition:width .4s ease;
   background-image:linear-gradient(135deg,rgba(255,255,255,.2) 25%,transparent 25%,transparent 50%,
@@ -98,6 +179,9 @@ const CSS = `
   border-radius:14px;padding:16px 18px}
 .ssg-toast{animation:ssgToastIn .25s ease-out;padding:12px 18px;border-radius:12px;
   font-size:13px;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:220px}
+@media(max-width:920px){.ssg-create-layout{grid-template-columns:1fr}.ssg-create-aside{position:static}.ssg-create-hero{align-items:flex-start;flex-direction:column}.ssg-stat-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:820px){.ssg-action-grid{grid-template-columns:1fr}.ssg-action-card{min-height:170px}.ssg-home-hero{padding-top:8px}.ssg-subnav{align-items:flex-start}.ssg-subnav-title{font-size:12px}.ssg-template-card{grid-template-columns:auto minmax(0,1fr)}.ssg-template-card select{grid-column:2}}
+@media(max-width:560px){.ssg-stat-grid{grid-template-columns:1fr 1fr}.ssg-survey-grid,.ssg-created-grid{grid-template-columns:1fr}.ssg-dashboard-actions{margin-right:0}.ssg-survey-card-actions{opacity:1;transform:none}.ssg-generation-widget,.ssg-generation-widget.collapsed{left:10px;bottom:74px;width:calc(100vw - 20px);padding:16px}.ssg-generation-title{font-size:12px}.ssg-generation-percent{font-size:20px}.ssg-generation-widget .ssg-job-grid{grid-template-columns:1fr;max-height:26vh}}
 `;
 
 // ---------- toasts ----------
@@ -135,7 +219,7 @@ function ToastStack({ toasts, onDismiss }) {
 // expires, tries a silent requestAccessToken({prompt:""}) in the background before ever
 // falling back to the visible "الاتصال بـ Google" button — so a returning user only sees
 // the account picker once, not on every visit. See semesterSurveyModel.js for why.
-function useSemesterAuth() {
+function useSemesterAuth(enabled = true) {
   const [token, setToken] = useState(() => getStoredToken(SEMESTER_TOKEN_KEY));
   const [connecting, setConnecting] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -164,7 +248,7 @@ function useSemesterAuth() {
   }, []);
 
   useEffect(() => {
-    if (token || triedSilent.current) return;
+    if (!enabled || token || triedSilent.current) return;
     triedSilent.current = true;
     (async () => {
       try {
@@ -173,7 +257,7 @@ function useSemesterAuth() {
         client.requestAccessToken({ prompt: "" });
       } catch { /* ignore — falls through to the manual connect button */ }
     })();
-  }, [token, ensureClient]);
+  }, [enabled, token, ensureClient]);
 
   const connect = useCallback(async () => {
     setAuthError(""); setConnecting(true);
@@ -194,6 +278,31 @@ function Skeleton({ rows = 4 }) {
   return (
     <div>
       {Array.from({ length: rows }).map((_, i) => <div key={i} className="ssg-skel-row" />)}
+    </div>
+  );
+}
+
+function LoadingGlyph({ compact = false }) {
+  return (
+    <span className={`ssg-loading-glyph${compact ? " compact" : ""}`} aria-hidden="true">
+      <span className="ssg-loading-ring" />
+      <span className="ssg-loading-ring second" />
+      <span className="ssg-loading-core" />
+    </span>
+  );
+}
+
+function LoadingDots() {
+  return <span className="ssg-loading-dots" aria-hidden="true"><i /><i /><i /></span>;
+}
+
+function DashboardLoading({ label = "جاري تجهيز لوحة التحكم" }) {
+  return (
+    <div className="ssg-panel" style={{ padding: 28, textAlign: "center" }} aria-live="polite">
+      <LoadingGlyph />
+      <div style={{ color: "#eafffb", fontSize: 13, fontWeight: 850 }}>{label}<LoadingDots /></div>
+      <div style={{ color: "rgba(255,255,255,.36)", fontSize: 10.5, marginTop: 5 }}>نجمع أحدث الاستبيانات والاستجابات من Google Drive.</div>
+      <div className="ssg-created-grid" style={{ marginTop: 20, textAlign: "right" }}><Skeleton rows={3} /><Skeleton rows={3} /><Skeleton rows={3} /></div>
     </div>
   );
 }
@@ -250,8 +359,8 @@ function ProgressBar({ done, total, label, tip }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "rgba(255,255,255,.7)", marginBottom: 6 }}>
-        <span>{label}</span>
+      <div className="ssg-loading-line" style={{ justifyContent: "space-between", fontSize: 12, color: "rgba(255,255,255,.7)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 9 }}><LoadingGlyph compact /> <span>{label}<LoadingDots /></span></span>
         <span>{done} / {total} — {pct}%</span>
       </div>
       <div className="ssg-progress-track">
@@ -287,7 +396,7 @@ const GENERATE_TIPS = [
   "⏳ لحظات ونكون قد انتهينا...",
 ];
 
-function GenerateSurveysView({ token, pushToast }) {
+function GenerateSurveysView({ token, pushToast, onReconnect, onGoDashboard }) {
   const [templates, setTemplates] = useState(null); // null = loading
   const [loadError, setLoadError] = useState("");
   const [year, setYear] = useState("");
@@ -297,6 +406,9 @@ function GenerateSurveysView({ token, pushToast }) {
   const [jobs, setJobs] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState(null);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [templateReloadKey, setTemplateReloadKey] = useState(0);
+  const [progressCollapsed, setProgressCollapsed] = useState(false);
   const tip = useRotatingTip(generating, GENERATE_TIPS);
 
   useEffect(() => {
@@ -304,9 +416,9 @@ function GenerateSurveysView({ token, pushToast }) {
     setTemplates(null); setLoadError("");
     listFormsInFolder(token, TEMPLATE_FOLDER_ID)
       .then(files => { if (!cancelled) setTemplates(files.map(f => ({ ...f, selected: false, mode: "general" }))); })
-      .catch(e => { if (!cancelled) setLoadError("فشل تحميل القوالب: " + e.message); });
+      .catch(e => { if (!cancelled) { setTemplates([]); setLoadError("فشل تحميل القوالب: " + e.message); } });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, templateReloadKey]);
 
   // Suggestions only — the year field stays free-text so a new year can always be typed.
   useEffect(() => {
@@ -320,6 +432,10 @@ function GenerateSurveysView({ token, pushToast }) {
   const toggleOne = id => setTemplates(ts => ts.map(t => t.id === id ? { ...t, selected: !t.selected } : t));
   const setTemplateMode = (id, mode) => setTemplates(ts => ts.map(t => t.id === id ? { ...t, mode } : t));
   const selectedCount = templates?.filter(t => t.selected).length ?? 0;
+  const visibleTemplates = templates?.filter(t => t.name.toLowerCase().includes(templateSearch.trim().toLowerCase())) ?? [];
+  const finishedJobs = jobs?.filter(j => j.status === "done" || j.status === "error").length ?? 0;
+  const generationPct = jobs?.length ? Math.round((finishedJobs / jobs.length) * 100) : 0;
+  const activeJob = jobs?.find(j => j.status === "active");
 
   async function handleGenerate() {
     setValidationMsg("");
@@ -335,6 +451,7 @@ function GenerateSurveysView({ token, pushToast }) {
       label: j.department ? `${j.template.name} — ${j.department}` : j.template.name,
     })));
     setResults(null);
+    setProgressCollapsed(false);
     setGenerating(true);
 
     try {
@@ -353,140 +470,134 @@ function GenerateSurveysView({ token, pushToast }) {
   }
 
   return (
-    <div>
-      <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-        <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 14 }}>1) اختيار القوالب</div>
-        {templates === null ? (
+    <div className="ssg-create-page">
+      <div className="ssg-create-hero">
+        <div>
+          <div className="ssg-create-kicker">مسار إنشاء سريع ومنظم</div>
+          <h2>جهّز استبيانات الفصل الدراسي</h2>
+          <p>اختر القوالب وحدد طريقة توزيع كل نموذج، ثم راجع الفصل وابدأ الإنشاء.</p>
+        </div>
+        <div className="ssg-step-pills" aria-label="خطوات الإنشاء">
+          <span className="ssg-step-pill"><b>1</b> القوالب</span>
+          <span className="ssg-step-pill"><b>2</b> الفصل الدراسي</span>
+          <span className="ssg-step-pill"><b>3</b> الإنشاء</span>
+        </div>
+      </div>
+
+      <div className="ssg-create-layout">
+        <section className="ssg-panel">
+          <div className="ssg-panel-head">
+            <div><div className="ssg-panel-title">اختيار القوالب</div><div className="ssg-panel-copy">حدد الاستبيانات المطلوبة وطريقة إنشاء النسخ.</div></div>
+            <span className="ssg-home-badge">{selectedCount} محدد</span>
+          </div>
+        {loadError ? (
+          <div style={{ padding: "18px", borderRadius: 14, background: "rgba(231,76,60,.07)", border: "1px solid rgba(231,76,60,.16)" }}>
+            <ErrorBanner text={loadError} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setTemplateReloadKey(k => k + 1)}>إعادة تحميل القوالب</button>
+              {onReconnect && <button type="button" className="btn btn-ghost btn-sm" onClick={onReconnect}>تحديث اتصال Google</button>}
+            </div>
+          </div>
+        ) : templates === null ? (
           <Skeleton rows={5} />
-        ) : loadError ? (
-          <ErrorBanner text={loadError} />
         ) : templates.length === 0 ? (
           <EmptyState text="لا توجد نماذج Google Forms داخل مجلد القوالب المحدد." />
         ) : (
           <>
-            <label className="ssg-tpl-row" style={{ cursor: "pointer" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                <span style={{ color: "#fff", fontWeight: 700 }}>تحديد الكل</span>
-              </span>
-            </label>
-            {templates.map(t => (
-              <div key={t.id} className="ssg-tpl-row">
-                <label style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: "pointer" }}>
-                  <input type="checkbox" checked={t.selected} onChange={() => toggleOne(t.id)} />
-                  <span style={{ color: "#e8f0fe", fontSize: 14 }}>{t.name}</span>
-                </label>
+            <div className="ssg-template-tools">
+              <input className="ssg-template-search" value={templateSearch} onChange={e => setTemplateSearch(e.target.value)} placeholder="ابحث باسم الاستبيان..." />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAll}>{allSelected ? "إلغاء الكل" : "تحديد الكل"}</button>
+            </div>
+            <div className="ssg-template-list">
+            {visibleTemplates.map(t => (
+              <div key={t.id} className={`ssg-template-card ${t.selected ? "selected" : ""}`}>
+                <input type="checkbox" checked={t.selected} onChange={() => toggleOne(t.id)} aria-label={`تحديد ${t.name}`} style={{ width: 17, height: 17, accentColor: "#1abc9c", cursor: "pointer" }} />
+                <label className="ssg-template-name" onClick={() => toggleOne(t.id)} style={{ cursor: "pointer" }}>{t.name}</label>
                 <select
                   value={t.mode} disabled={!t.selected} onChange={e => setTemplateMode(t.id, e.target.value)}
                   title="نسخة عامة واحدة، أو نسخة لكل قسم، أو نسخة لكل قسم وبرنامج (للأقسام التي لها برامج)"
-                  style={{
-                    opacity: t.selected ? 1 : .45, cursor: t.selected ? "pointer" : "default",
-                    padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)",
-                    background: "rgba(255,255,255,.06)", color: "#e8f0fe", fontFamily: "'Cairo',sans-serif", fontSize: 12,
-                  }}
+                  style={{ opacity: t.selected ? 1 : .42, cursor: t.selected ? "pointer" : "default" }}
                 >
-                  <option value="general" style={{ color: "#000" }}>نسخة عامة</option>
-                  <option value="departments" style={{ color: "#000" }}>الأقسام</option>
-                  <option value="programs" style={{ color: "#000" }}>الأقسام والبرامج</option>
+                  <option value="general">نسخة عامة</option>
+                  <option value="departments">نسخة لكل قسم</option>
+                  <option value="programs">الأقسام والبرامج</option>
                 </select>
               </div>
             ))}
+            {!visibleTemplates.length && <EmptyState icon="⌕" text="لا توجد قوالب مطابقة للبحث." />}
+            </div>
           </>
         )}
-      </div>
+        </section>
 
-      <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-        <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 14 }}>2) بيانات الفصل الدراسي</div>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 200px" }}>
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>السنة الدراسية</div>
+        <aside className="ssg-create-aside">
+          <div className="ssg-panel">
+            <div className="ssg-panel-head"><div><div className="ssg-panel-title">بيانات الفصل</div><div className="ssg-panel-copy">ستُستخدم في أسماء المجلدات والنماذج.</div></div></div>
+            <label className="ssg-field-label">السنة الدراسية</label>
             <input
               value={year} onChange={e => setYear(e.target.value)} placeholder="2026/2027"
               disabled={generating} list="ssg-year-options" autoComplete="off"
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }}
+              className="ssg-field"
             />
             <datalist id="ssg-year-options">
               {yearOptions.map(y => <option key={y} value={y} />)}
             </datalist>
-          </div>
-          <div style={{ flex: "1 1 200px" }}>
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>الفصل الدراسي</div>
+            <label className="ssg-field-label" style={{ marginTop: 13 }}>الفصل الدراسي</label>
             <select
               value={semester} onChange={e => setSemester(e.target.value)} disabled={generating}
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }}
+              className="ssg-field"
             >
               {SEMESTERS.map(s => <option key={s} value={s} style={{ color: "#000" }}>{s}</option>)}
             </select>
+            <div className="ssg-selection-summary"><span>القوالب المختارة</span><strong>{selectedCount}</strong></div>
+            <button className="btn btn-primary ssg-create-submit" disabled={generating || selectedCount === 0} onClick={handleGenerate}>
+              {generating ? <span>جاري الإنشاء<LoadingDots /></span> : `إنشاء ${selectedCount ? `${selectedCount} قالب` : "الاستبيانات"}`}
+            </button>
+            <ErrorBanner text={validationMsg} />
           </div>
-        </div>
+        </aside>
       </div>
 
-      <div className="card" style={{ padding: 24 }}>
-        <button className="btn btn-primary" disabled={generating || selectedCount === 0} onClick={handleGenerate}>
-          {generating ? "⏳ جاري الإنشاء..." : `⚙ إنشاء (${selectedCount})`}
-        </button>
-        <ErrorBanner text={validationMsg} />
+      {generating && jobs && (
+        <div className={`ssg-generation-stage ssg-generation-widget ${progressCollapsed ? "collapsed" : ""}`} role="status" aria-live="polite" aria-label="تقدم تجهيز استبيانات الفصل">
+          <div className="ssg-generation-head">
+            <div className="ssg-generation-title"><LoadingGlyph compact /><div><div>جاري تجهيز استبيانات الفصل</div><small style={{ color: "rgba(255,255,255,.42)", fontWeight: 600 }}>{tip}</small></div></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="ssg-generation-percent">{generationPct}%</div>
+              <button type="button" className="ssg-widget-toggle" onClick={() => setProgressCollapsed(v => !v)} aria-label={progressCollapsed ? "توسيع نافذة التقدم" : "تصغير نافذة التقدم"} title={progressCollapsed ? "توسيع" : "تصغير"}>{progressCollapsed ? "+" : "−"}</button>
+            </div>
+          </div>
+          <div className="ssg-progress-track"><div className="ssg-progress-fill" style={{ width: `${generationPct}%` }} /></div>
+          <div className="ssg-current-job">{activeJob ? `نعمل الآن على: ${activeJob.label}` : "جاري تنظيم مجلدات Google Drive..."}</div>
+          <div className="ssg-job-grid">
+            {jobs.map(j => <div key={j.key} className={`ssg-job-chip ${j.status}`}><span className="ssg-status-dot"/><span>{j.label}</span></div>)}
+          </div>
+        </div>
+      )}
 
-        {jobs && (
-          <div style={{ marginTop: 20 }}>
-            {generating && (
-              <ProgressBar
-                done={jobs.filter(j => j.status === "done" || j.status === "error").length}
-                total={jobs.length}
-                label="جاري إنشاء الاستبيانات..."
-                tip={tip}
-              />
-            )}
-            {jobs.map(j => (
-              <div key={j.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", fontSize: 13, color: "rgba(255,255,255,.8)" }}>
-                <span>{j.status === "done" ? "✔" : j.status === "error" ? "✖" : j.status === "active" ? "⏳" : "○"}</span>
-                <span>{j.label}</span>
+      {!generating && results?.length > 0 && (
+        <div className="ssg-panel ssg-results-panel">
+          <div className="ssg-success-head">
+            <div className="ssg-success-copy"><span className="ssg-success-icon">✓</span><div><div>تم إنشاء {results.length} استبيان بنجاح</div><small style={{ color: "rgba(255,255,255,.42)", fontWeight: 600 }}>النماذج جاهزة لاستقبال الردود على Google Drive.</small></div></div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <LinksExportButtons rows={results.map(r => ({ name: r.name, formUrl: r.formUrl, responsesUrl: editorResponsesUrl(r.formId) }))} title={`استبيانات ${semester} ${year}`} filename={`روابط_استبيانات_${semester}_${yearFolderName(year)}.xlsx`} pushToast={pushToast} />
+              <button type="button" className="btn btn-primary btn-sm" onClick={onGoDashboard}>اذهب إلى لوحة التحكم ←</button>
+            </div>
+          </div>
+          <div className="ssg-created-grid">
+            {results.map((r, index) => (
+              <div key={r.key} className="ssg-created-card" style={{ animationDelay: `${Math.min(index * 35, 280)}ms` }}>
+                <div className="ssg-created-name">{r.name}</div>
+                <div className="ssg-created-actions">
+                  <a className="ssg-link-action" href={r.formUrl} target="_blank" rel="noreferrer">فتح النموذج</a>
+                  <a className="ssg-link-action" href={editorResponsesUrl(r.formId)} target="_blank" rel="noreferrer">عرض الردود</a>
+                  <button className="ssg-link-action" onClick={() => copyToClipboard(r.formUrl, pushToast)}>نسخ الرابط</button>
+                </div>
               </div>
             ))}
           </div>
-        )}
-
-        {results && results.length > 0 && (
-          <div style={{ marginTop: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-              <div style={{ color: "#1abc9c", fontWeight: 800 }}>
-                تم إنشاء {results.length} استبيان بنجاح.
-              </div>
-              <LinksExportButtons
-                rows={results.map(r => ({ name: r.name, formUrl: r.formUrl, responsesUrl: editorResponsesUrl(r.formId) }))}
-                title={`استبيانات ${semester} ${year}`}
-                filename={`روابط_استبيانات_${semester}_${yearFolderName(year)}.xlsx`}
-                pushToast={pushToast}
-              />
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ color: "rgba(255,255,255,.5)", textAlign: "right" }}>
-                    <th style={{ padding: "8px 10px" }}>الاستبيان</th>
-                    <th style={{ padding: "8px 10px" }}>النموذج</th>
-                    <th style={{ padding: "8px 10px" }}>الردود</th>
-                    <th style={{ padding: "8px 10px" }}>روابط</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map(r => (
-                    <tr key={r.key} style={{ borderTop: "1px solid rgba(255,255,255,.08)", color: "#e8f0fe" }}>
-                      <td style={{ padding: "8px 10px" }}>{r.name}</td>
-                      <td style={{ padding: "8px 10px" }}><a href={r.formUrl} target="_blank" rel="noreferrer" style={{ color: "#1abc9c" }}>فتح النموذج</a></td>
-                      <td style={{ padding: "8px 10px" }}><a href={editorResponsesUrl(r.formId)} target="_blank" rel="noreferrer" style={{ color: "#1abc9c" }}>فتح الردود</a></td>
-                      <td style={{ padding: "8px 10px", display: "flex", gap: 10 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(r.formUrl, pushToast)}>نسخ رابط النموذج</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(editorResponsesUrl(r.formId), pushToast)}>نسخ رابط الردود</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -494,13 +605,37 @@ function GenerateSurveysView({ token, pushToast }) {
 const ANALYZE_TIPS = [
   "🔎 جاري جلب ردود كل استبيان...",
   "📊 جاري حساب المؤشرات الإحصائية...",
-  "📄 جاري إنشاء تقرير Word لكل استبيان...",
-  "💾 جاري تنزيل التقارير...",
+  "📄 جاري تصميم تقرير PDF لكل استبيان...",
+  "☁️ جاري رفع التقارير على Google Drive...",
   "⏳ لحظات ونكون قد انتهينا...",
 ];
 
+function SurveyDashboardCard({ survey, selected, index, onToggle, onAnalyze, onRefresh }) {
+  const stop = fn => e => { e.stopPropagation(); fn?.(); };
+  const toggleByKey = e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); }
+  };
+  return (
+    <article className={`ssg-survey-card ${selected ? "selected" : ""}`} role="button" tabIndex={0} aria-pressed={selected} onClick={onToggle} onKeyDown={toggleByKey} style={{ animationDelay: `${Math.min(index * 35, 350)}ms` }}>
+      <span className="ssg-card-select" aria-hidden="true">{selected ? "✓" : "+"}</span>
+      <span className="ssg-survey-type">{survey.surveyType || "استبيان فصلي"}</span>
+      <h3 className="ssg-survey-name">{survey.name}</h3>
+      <div className="ssg-survey-metrics">
+        <div className="ssg-survey-metric"><strong>{survey.responses}</strong><span>إجمالي الردود</span></div>
+        <div className="ssg-survey-metric"><strong style={{ fontSize: 12 }}>{formatWhen(survey.last)}</strong><span>آخر استجابة</span></div>
+      </div>
+      <div className="ssg-survey-card-actions">
+        <button type="button" className="ssg-card-action primary" onClick={stop(onAnalyze)}>تحليل ورفع PDF</button>
+        <a className="ssg-card-action" href={survey.formUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>النموذج</a>
+        <a className="ssg-card-action" href={editorResponsesUrl(survey.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>الردود</a>
+        <button type="button" className="ssg-card-action" onClick={stop(onRefresh)}>تحديث</button>
+      </div>
+    </article>
+  );
+}
+
 // ---------- Dashboard ----------
-function DashboardView({ token, pushToast }) {
+function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) {
   const [years, setYears] = useState(null);
   const [year, setYear] = useState("");
   const [semesters, setSemesters] = useState(null);
@@ -508,6 +643,7 @@ function DashboardView({ token, pushToast }) {
   const [surveys, setSurveys] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -531,6 +667,8 @@ function DashboardView({ token, pushToast }) {
   }, [yearFolder?.id, refreshKey]);
 
   const semFolder = semesters?.find(f => f.name === semester) ?? null;
+
+  useEffect(() => { setSelectedIds(new Set()); }, [year, semester]);
 
   const loadSurveys = useCallback(() => {
     if (!semFolder) { setSurveys([]); return; }
@@ -560,24 +698,21 @@ function DashboardView({ token, pushToast }) {
   const avg = totalSurveys ? Math.round((totalResponses / totalSurveys) * 10) / 10 : 0;
   const lastResponse = surveys?.reduce((max, r) => (r.last && (!max || r.last > max)) ? r.last : max, null) ?? null;
 
-  // ---- Analyze all: reuse the app's existing analysis engine (analyze.js) + Word
-  // builder (buildDocx.js) unmodified, by converting each form's responses into the
+  // ---- Analyze all: reuse the app's existing analysis engine and PDF builder by
+  // converting each form's responses into the
   // same [header, ...rows] shape a real Excel export would have. ----
-  const [showAnalyzeForm, setShowAnalyzeForm] = useState(false);
-  const [preparedBy, setPreparedBy] = useState("");
-  const [reviewer, setReviewer] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(null);
   const analyzeTip = useRotatingTip(analyzing, ANALYZE_TIPS);
 
-  async function runAnalyzeAll() {
+  async function runAnalyzeAll(targetSurveys = surveys) {
     setAnalyzing(true);
-    setAnalyzeProgress(surveys.map(s => ({ id: s.id, name: s.name, status: "pending" })));
+    setAnalyzeProgress(targetSurveys.map(s => ({ id: s.id, name: s.name, status: "pending" })));
     const schemas = getAllAnalysisSchemas();
     const settings = loadReportSettings();
     let successCount = 0, skipCount = 0;
 
-    for (const survey of surveys) {
+    for (const survey of targetSurveys) {
       setAnalyzeProgress(p => p.map(x => x.id === survey.id ? { ...x, status: "active" } : x));
       try {
         const [form, responses] = await Promise.all([getForm(token, survey.id), listAllResponses(token, survey.id)]);
@@ -590,9 +725,9 @@ function DashboardView({ token, pushToast }) {
           continue;
         }
         const result = analyze(rows, schema);
-        const meta = { year, program: departmentFromSurveyName(survey.name), preparedBy, reviewer };
-        const blob = await buildAnnualDocx(result, meta, settings);
-        downloadBlob(blob, `تقرير_${schema.label}_${survey.name}.docx`);
+        const meta = { year, program: departmentFromSurveyName(survey.name), preparedBy: "", reviewer: "" };
+        const builtPdf = await buildBrandedReportPdf(result, meta, settings);
+        downloadBlob(builtPdf.blob, builtPdf.filename);
         setAnalyzeProgress(p => p.map(x => x.id === survey.id ? { ...x, status: "done" } : x));
         successCount++;
         await new Promise(r => setTimeout(r, 450)); // let the browser process each download separately
@@ -606,58 +741,58 @@ function DashboardView({ token, pushToast }) {
     if (skipCount) pushToast(`تعذّر التعرف على نوع ${skipCount} استبيان — لم يتم تحليله.`, "error");
   }
 
+  async function analyzeSelection(items) {
+    if (!items.length || analyzing) return;
+    if (!onAnalyzeForms) { await runAnalyzeAll(items); return; }
+    setAnalyzing(true); setLoadError("");
+    try {
+      await onAnalyzeForms(items, token);
+    } catch (e) {
+      setLoadError("تعذّر تحليل الاستبيانات: " + e.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   return (
-    <div>
-      <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 200px" }}>
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>السنة الدراسية</div>
-            <select value={year} onChange={e => setYear(e.target.value)}
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }}>
+    <div className="ssg-dashboard-page">
+      {quickMode && (
+        <div className="ssg-create-hero" style={{ marginBottom: 14 }}>
+          <div>
+            <div className="ssg-create-kicker">تحليل سريع</div>
+            <h2>اختر السنة والفصل ثم شغّل التحليل</h2>
+            <p>حلّل كل استبيانات الفصل دفعة واحدة، أو حدّد الاستبيانات المطلوبة فقط. سيتم إنشاء ملفات PDF ورفعها تلقائياً على Google Drive.</p>
+          </div>
+          <div className="ssg-step-pills">
+            <span className="ssg-step-pill"><b>١</b> السنة والفصل</span>
+            <span className="ssg-step-pill"><b>٢</b> الكل أو المحدد</span>
+            <span className="ssg-step-pill"><b>٣</b> رفع PDF</span>
+          </div>
+        </div>
+      )}
+      <div className="ssg-dashboard-toolbar">
+          <div style={{ flex: "1 1 180px" }}>
+            <label className="ssg-field-label">السنة الدراسية</label>
+            <select className="ssg-field" value={year} onChange={e => setYear(e.target.value)}>
               {(years ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
             </select>
           </div>
-          <div style={{ flex: "1 1 200px" }}>
-            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>الفصل الدراسي</div>
-            <select value={semester} onChange={e => setSemester(e.target.value)}
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }}>
+          <div style={{ flex: "1 1 180px" }}>
+            <label className="ssg-field-label">الفصل الدراسي</label>
+            <select className="ssg-field" value={semester} onChange={e => setSemester(e.target.value)}>
               {(semesters ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
             </select>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => setRefreshKey(k => k + 1)}>↻ تحديث</button>
-          {!!surveys?.length && (
-            <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => setShowAnalyzeForm(v => !v)}>
-              🔍 تحليل الكل ({surveys.length})
-            </button>
-          )}
-        </div>
+          <div className="ssg-dashboard-actions">
+            {!!selectedIds.size && <span className="ssg-selection-count">✓ {selectedIds.size} محدد</span>}
+            {!!surveys?.length && <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(selectedIds.size === surveys.length ? new Set() : new Set(surveys.map(s => s.id)))}>{selectedIds.size === surveys.length ? "إلغاء تحديد الكل" : "تحديد الكل"}</button>}
+            {!!selectedIds.size && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)))}>تحليل ورفع المحدد ({selectedIds.size})</button>}
+            <button className="btn btn-ghost btn-sm" onClick={() => setRefreshKey(k => k + 1)}>تحديث البيانات</button>
+            {!!surveys?.length && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys)}>تحليل ورفع الكل ({surveys.length})</button>}
+          </div>
         <ErrorBanner text={loadError} />
 
-        {showAnalyzeForm && !analyzing && (
-          <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.1)" }}>
-            <div style={{ color: "#fff", fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
-              بيانات مشتركة لجميع التقارير — {surveys.length} استبيان
-            </div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ flex: "1 1 200px" }}>
-                <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>اسم المعد</div>
-                <input value={preparedBy} onChange={e => setPreparedBy(e.target.value)}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }} />
-              </div>
-              <div style={{ flex: "1 1 200px" }}>
-                <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 6 }}>المراجع</div>
-                <input value={reviewer} onChange={e => setReviewer(e.target.value)}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14 }} />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-              <button className="btn btn-primary btn-sm" onClick={() => { setShowAnalyzeForm(false); runAnalyzeAll(); }}>▶ تشغيل التحليل</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowAnalyzeForm(false)}>إلغاء</button>
-            </div>
-          </div>
-        )}
-
-        {(analyzing || analyzeProgress) && (
+        {analyzeProgress && (
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.1)" }}>
             {analyzing && (
               <ProgressBar
@@ -678,44 +813,42 @@ function DashboardView({ token, pushToast }) {
         )}
       </div>
 
-      {!years?.length ? (
+      {years === null || (year && semesters === null) ? (
+        <DashboardLoading label="جاري تحميل السنوات والفصول" />
+      ) : !years.length ? (
         <div className="card" style={{ padding: 24 }}>
           <EmptyState text="لا توجد سنوات دراسية بعد داخل مجلد الاستبيانات الرئيسي." />
         </div>
       ) : surveys === null ? (
-        <div className="card" style={{ padding: 24 }}><Skeleton rows={4} /></div>
+        <DashboardLoading />
       ) : surveys.length === 0 ? (
         <div className="card" style={{ padding: 24 }}>
           <EmptyState text="لا توجد استبيانات لهذا الفصل بعد." />
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 20 }}>
-            <div className="ssg-stat-card">
+          <div className="ssg-stat-grid">
+            <div className="ssg-stat-card" style={{ animationDelay: "0ms" }}>
               <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12 }}>إجمالي الاستبيانات</div>
               <div style={{ color: "#fff", fontSize: 26, fontWeight: 900 }}>{totalSurveys}</div>
             </div>
-            <div className="ssg-stat-card">
+            <div className="ssg-stat-card" style={{ animationDelay: "55ms" }}>
               <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12 }}>إجمالي الردود</div>
               <div style={{ color: "#fff", fontSize: 26, fontWeight: 900 }}>{totalResponses}</div>
             </div>
-            <div className="ssg-stat-card">
+            <div className="ssg-stat-card" style={{ animationDelay: "110ms" }}>
               <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12 }}>متوسط الردود لكل استبيان</div>
               <div style={{ color: "#fff", fontSize: 26, fontWeight: 900 }}>{avg}</div>
             </div>
-            <div className="ssg-stat-card">
+            <div className="ssg-stat-card" style={{ animationDelay: "165ms" }}>
               <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12 }}>آخر رد مستلم</div>
               <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>{formatWhen(lastResponse)}</div>
             </div>
           </div>
 
-          <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-            <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 16 }}>عدد الردود لكل استبيان</div>
-            <BarChart data={surveys.map(s => ({ label: s.name, value: s.responses }))} />
-          </div>
-
-          <div className="card" style={{ padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+          <section className="ssg-panel">
+            <div className="ssg-panel-head">
+              <div><div className="ssg-panel-title">استبيانات الفصل الدراسي</div><div className="ssg-panel-copy">اضغط على البطاقة لتحديدها، أو مرّر عليها للوصول إلى التحليل والروابط.</div></div>
               <LinksExportButtons
                 rows={surveys.map(r => ({ name: r.name, formUrl: r.formUrl, responsesUrl: editorResponsesUrl(r.id) }))}
                 title={`استبيانات ${semester} ${year}`}
@@ -723,35 +856,14 @@ function DashboardView({ token, pushToast }) {
                 pushToast={pushToast}
               />
             </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ color: "rgba(255,255,255,.5)", textAlign: "right" }}>
-                    <th style={{ padding: "8px 10px" }}>الاستبيان</th>
-                    <th style={{ padding: "8px 10px" }}>النوع</th>
-                    <th style={{ padding: "8px 10px" }}>الردود</th>
-                    <th style={{ padding: "8px 10px" }}>آخر رد</th>
-                    <th style={{ padding: "8px 10px" }}>إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {surveys.map(r => (
-                    <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,.08)", color: "#e8f0fe" }}>
-                      <td style={{ padding: "8px 10px" }}>{r.name}{r.error && <span style={{ color: "#ff6b5b", fontSize: 11 }}> (تعذّر التحميل)</span>}</td>
-                      <td style={{ padding: "8px 10px", color: "rgba(255,255,255,.6)" }}>{r.surveyType}</td>
-                      <td style={{ padding: "8px 10px" }}>{r.responses}</td>
-                      <td style={{ padding: "8px 10px" }}>{formatWhen(r.last)}</td>
-                      <td style={{ padding: "8px 10px", display: "flex", gap: 10 }}>
-                        <a href={r.formUrl} target="_blank" rel="noreferrer" style={{ color: "#1abc9c" }}>فتح النموذج</a>
-                        <a href={editorResponsesUrl(r.id)} target="_blank" rel="noreferrer" style={{ color: "#1abc9c" }}>فتح الردود</a>
-                        <button className="btn btn-ghost btn-sm" onClick={() => refreshOne(r.id)}>↻ تحديث</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="ssg-survey-grid">
+              {surveys.map((survey, index) => (
+                <SurveyDashboardCard key={survey.id} survey={survey} index={index} selected={selectedIds.has(survey.id)}
+                  onToggle={() => setSelectedIds(prev => { const next = new Set(prev); if (next.has(survey.id)) next.delete(survey.id); else next.add(survey.id); return next; })}
+                  onAnalyze={() => analyzeSelection([survey])} onRefresh={() => refreshOne(survey.id)} />
+              ))}
             </div>
-          </div>
+          </section>
         </>
       )}
     </div>
@@ -852,9 +964,80 @@ function DepartmentsView({ pushToast }) {
   );
 }
 
-export default function SemesterSurveys() {
-  const [tab, setTab] = useState("generate");
-  const auth = useSemesterAuth();
+function SemesterIcon({ name, size = 24 }) {
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  if (name === "create") return <svg {...common}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/><path d="m14 6 4 4"/></svg>;
+  if (name === "analysis") return <svg {...common}><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/><path d="M2 19h22"/></svg>;
+  if (name === "dashboard") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>;
+  if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.37.37.7.6 1 .3.27.68.4 1.1.4h.1v4h-.1c-.42 0-.8.13-1.1.4-.23.3-.44.63-.6 1Z"/></svg>;
+  if (name === "back") return <svg {...common}><path d="m15 18-6-6 6-6"/></svg>;
+  return <svg {...common}><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>;
+}
+
+const SEMESTER_ACTIONS = [
+  {
+    id: "generate", icon: "create", accent: "#5eead4", glow: "rgba(20,184,166,.16)",
+    title: "إنشاء استبيانات فصل جديد",
+    copy: "اختر القوالب والسنة والفصل، ثم أنشئ النماذج منظمةً تلقائياً على Google Drive.",
+  },
+  {
+    id: "quick-analysis", icon: "analysis", accent: "#60a5fa", glow: "rgba(59,130,246,.16)",
+    title: "تحليل سريع",
+    copy: "حدّد السنة والفصل، ثم حلّل كل الاستبيانات أو اختر بعضها، وارفع تقارير PDF على Drive تلقائياً.",
+  },
+  {
+    id: "dashboard", icon: "dashboard", accent: "#c4b5fd", glow: "rgba(139,92,246,.15)",
+    title: "لوحة التحكم",
+    copy: "استعرض كل الاستبيانات، وعدد الردود، والحالة والروابط من شاشة واحدة سهلة.",
+  },
+];
+
+function SemesterHome({ onSelect }) {
+  return (
+    <section className="ssg-home" aria-labelledby="semester-home-title">
+      <div className="ssg-home-hero">
+        <span className="ssg-home-badge"><SemesterIcon name="dashboard" size={15} /> استبيانات الفصل الدراسي</span>
+        <h1 id="semester-home-title" style={{ color: "#fff", fontSize: "clamp(23px,3vw,34px)", margin: "15px 0 8px", fontWeight: 950 }}>ماذا تريد أن تنجز؟</h1>
+        <p style={{ color: "rgba(255,255,255,.54)", fontSize: 13, margin: 0 }}>الإنشاء والتحليل والمتابعة في نقطة بداية واحدة.</p>
+      </div>
+
+      <div className="ssg-action-grid">
+        {SEMESTER_ACTIONS.map(action => (
+          <button
+            key={action.id}
+            type="button"
+            className="ssg-action-card"
+            style={{ "--ssg-accent": action.accent, "--ssg-glow": action.glow }}
+            onClick={() => onSelect(action.id)}
+          >
+            <span className="ssg-action-icon"><SemesterIcon name={action.icon} /></span>
+            <span className="ssg-action-title">{action.title}</span>
+            <span className="ssg-action-copy">{action.copy}</span>
+            <span className="ssg-action-arrow" aria-hidden="true">←</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="ssg-secondary-row">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onSelect("departments")} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <SemesterIcon name="settings" size={17} /> إدارة الأقسام والبرامج
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const TAB_TITLES = {
+  generate: "إنشاء استبيانات فصل دراسي جديد",
+  "quick-analysis": "تحليل سريع",
+  dashboard: "لوحة تحكم الاستبيانات",
+  departments: "إدارة الأقسام والبرامج",
+};
+
+export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onSectionChange, googleAuth, initialTab = "home" }) {
+  const [tab, setTab] = useState(initialTab);
+  const localAuth = useSemesterAuth(!googleAuth);
+  const auth = googleAuth ?? localAuth;
   const { toasts, push, dismiss } = useToasts();
   const configured = !!TEMPLATE_FOLDER_ID && !!ROOT_SURVEYS_FOLDER_ID;
 
@@ -863,31 +1046,44 @@ export default function SemesterSurveys() {
       <style>{CSS}</style>
       <ToastStack toasts={toasts} onDismiss={dismiss} />
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <button className={`btn btn-sm ${tab === "generate" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("generate")}>➕ إنشاء استبيانات</button>
-        <button className={`btn btn-sm ${tab === "dashboard" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("dashboard")}>📊 لوحة المتابعة</button>
-        <button className={`btn btn-sm ${tab === "departments" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("departments")}>⚙ الأقسام والبرامج</button>
-      </div>
-
-      {tab === "departments" ? (
-        <DepartmentsView pushToast={push} />
-      ) : !configured ? (
-        <div className="card" style={{ padding: 24, color: "#ff6b5b", fontSize: 13 }}>
-          ⚠ لم يتم ضبط معرفات مجلدات Google Drive. يرجى إضافة <code>VITE_GOOGLE_TEMPLATE_FOLDER_ID</code> و<code>VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID</code> إلى ملف <code>.env.local</code> وإعادة تشغيل الخادم.
-        </div>
-      ) : !auth.token ? (
-        <div className="card" style={{ padding: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 34, marginBottom: 10 }}>🔐</div>
-          <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 16 }}>الاستبيانات الفصلية تحتاج الاتصال بحساب Google</div>
-          <button className="btn btn-primary" disabled={auth.connecting} onClick={auth.connect}>
-            {auth.connecting ? "⏳ جاري الاتصال..." : "الاتصال بـ Google"}
-          </button>
-          <ErrorBanner text={auth.authError} />
-        </div>
-      ) : tab === "generate" ? (
-        <GenerateSurveysView token={auth.token} pushToast={push} />
+      {tab === "home" ? (
+        <SemesterHome onSelect={next => { setTab(next); onSectionChange?.(next); }} />
       ) : (
-        <DashboardView token={auth.token} pushToast={push} />
+        <>
+          <div className="ssg-subnav">
+            <div className="ssg-subnav-title">
+              <span className="ssg-action-icon" style={{ width: 36, height: 36, borderRadius: 11, margin: 0 }}>
+                <SemesterIcon name={tab === "generate" ? "create" : tab === "dashboard" ? "dashboard" : tab === "quick-analysis" ? "analysis" : "settings"} size={19} />
+              </span>
+              {TAB_TITLES[tab]}
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setTab("home"); onSectionChange?.("home"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <SemesterIcon name="back" size={17} /> رجوع للاختيارات
+            </button>
+          </div>
+
+          {tab === "departments" ? (
+            <DepartmentsView pushToast={push} />
+          ) : !configured ? (
+            <div className="card" style={{ padding: 24, color: "#ff6b5b", fontSize: 13 }}>
+              ⚠ لم يتم ضبط معرفات مجلدات Google Drive. يرجى إضافة <code>VITE_GOOGLE_TEMPLATE_FOLDER_ID</code> و<code>VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID</code> إلى ملف <code>.env.local</code> وإعادة تشغيل الخادم.
+            </div>
+          ) : !auth.token ? (
+            <div className="card" style={{ padding: 32, textAlign: "center" }}>
+              {auth.connecting ? <LoadingGlyph /> : <div style={{ width: 58, height: 58, display: "grid", placeItems: "center", margin: "0 auto 14px", borderRadius: 18, background: "rgba(26,188,156,.1)", color: "#5eead4" }}><SemesterIcon name="dashboard" size={27} /></div>}
+              <div style={{ color: "#fff", fontSize: 15, fontWeight: 800, marginBottom: 7 }}>الاتصال بحساب Google</div>
+              <div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginBottom: 17 }}>مطلوب للوصول إلى قوالب واستبيانات الفصل الدراسي على Drive.</div>
+              <button className="btn btn-primary" disabled={auth.connecting} onClick={auth.connect}>
+                {auth.connecting ? <span>جاري الاتصال<LoadingDots /></span> : "اتصال آمن بـ Google"}
+              </button>
+              <ErrorBanner text={auth.authError} />
+            </div>
+          ) : tab === "generate" ? (
+            <GenerateSurveysView token={auth.token} pushToast={push} onReconnect={auth.connect} onGoDashboard={() => { setTab("dashboard"); onSectionChange?.("dashboard"); }} />
+          ) : (
+            <DashboardView token={auth.token} pushToast={push} onAnalyzeForms={onAnalyzeForms} quickMode={tab === "quick-analysis"} />
+          )}
+        </>
       )}
     </div>
   );

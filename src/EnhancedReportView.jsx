@@ -771,6 +771,15 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
   const hasCrossTab  = crossDegreeByDept && Array.isArray(crossDegreeByDept.rows) && crossDegreeByDept.rows.length > 0;
   // Use the tier already computed by analyze.js (respects schema interpretation thresholds)
   const overallTier  = result.overallTier ?? "good";
+  const customText = (key, fallback) => {
+    const raw = result.reportTexts?.[key]?.trim() || fallback;
+    const values = {
+      "{اسم_الاستبيان}": schemaLabel ?? "", "{عدد_المشاركين}": n ?? "",
+      "{عدد_الأسئلة}": totalQuestions ?? "", "{عدد_المحاور}": axes.length,
+      "{العام}": meta.year ?? "", "{البرنامج}": meta.program ?? "",
+    };
+    return Object.entries(values).reduce((text, [token, value]) => text.split(token).join(String(value)), raw);
+  };
 
   const handlePrint = async () => {
     if (pdfBusy) return;
@@ -870,9 +879,9 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
               <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,.25)", margin: "4px 0 12px" }} />
 
               <div className="erv-cover-title">
-                تقرير تحليل استبيان
+                {customText("reportTitle", "تقرير تحليل استبيان")}
                 <br />
-                {schemaLabel}
+                {customText("reportSubtitle", schemaLabel)}
               </div>
 
               {meta.program && (
@@ -905,6 +914,8 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
         <div className="erv-page">
           <div className="erv-section">
             <SectionHeading number="أولاً" title="الملخص التنفيذي" subtitle="إحصائيات عامة للاستبيان" />
+
+            {result.reportTexts?.introduction?.trim() && <p style={{ color: T.gray700, fontSize: 13, lineHeight: 1.9, marginBottom: 22 }}>{customText("introduction", "")}</p>}
 
             {/* Stat cards */}
             <div className="erv-stats-row">
@@ -1084,7 +1095,7 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
            ══════════════════════════════════════════════════════════════════ */}
         <div className="erv-page">
           <div className="erv-section">
-            <SectionHeading number="ثالثاً" title="ملخص المحاور" subtitle="نتائج كل محور بالمتوسط ونسبة الموافقة" />
+            <SectionHeading number="ثالثاً" title={customText("summaryHeading", "ملخص المحاور")} subtitle="نتائج كل محور بالمتوسط ونسبة الموافقة" />
 
             <div style={{ overflowX: "auto", direction: "ltr" }}>
             <table className="erv-table" style={{ minWidth: 560, direction: "rtl" }}>
@@ -1167,7 +1178,7 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
            ══════════════════════════════════════════════════════════════════ */}
         <div className="erv-page">
           <div className="erv-section erv-section-page-break">
-            <SectionHeading number="رابعاً" title="النتائج التفصيلية" subtitle="تحليل كل محور وعباراته بصورة تفصيلية" />
+            <SectionHeading number="رابعاً" title={customText("resultsHeading", "النتائج التفصيلية")} subtitle="تحليل كل محور وعباراته بصورة تفصيلية" />
 
             {/* Scale legend */}
             <div style={{
@@ -1205,7 +1216,7 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
         {axes.some(ax => ax.recommendation && (ax.axisAgreePct ?? 100) < 70) && (
           <div className="erv-page">
             <div className="erv-section">
-              <SectionHeading number="خامساً" title="التوصيات" subtitle="التوصيات المستخلصة من نتائج التحليل" />
+              <SectionHeading number="خامساً" title={customText("recommendationsHeading", "التوصيات")} subtitle="التوصيات المستخلصة من نتائج التحليل" />
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {axes
                   .filter(ax => ax.recommendation && (ax.axisAgreePct ?? 100) < 70)

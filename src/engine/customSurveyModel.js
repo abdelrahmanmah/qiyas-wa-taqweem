@@ -13,6 +13,7 @@ import * as XLSX from "xlsx";
 import { SCHEMAS as BUILTIN_SCHEMAS } from "../schemas/index.js";
 
 export const STORAGE_KEY = "eruQA_customSurveys_v1";
+export const BUILTIN_REPORT_TEXTS_KEY = "eruQA_builtinReportTexts_v1";
 
 export const SCALE_TYPES = {
   "likert-3": {
@@ -105,6 +106,22 @@ export function createMetadata(overrides = {}) {
   };
 }
 
+export function createReportTexts(overrides = {}) {
+  return {
+    reportTitle: "",
+    reportSubtitle: "",
+    introduction: "",
+    variablesText: "",
+    methodologyText: "",
+    resultsHeading: "",
+    summaryHeading: "",
+    recommendationsHeading: "",
+    noRecommendationsText: "",
+    recommendationTemplate: "",
+    ...overrides,
+  };
+}
+
 export function createSurvey(overrides = {}) {
   const now = new Date().toISOString();
   return {
@@ -117,6 +134,7 @@ export function createSurvey(overrides = {}) {
     scaleType: "likert-5",
     sections: [],
     metadata: createMetadata(),
+    reportTexts: createReportTexts(),
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -134,7 +152,7 @@ export function loadCustomSurveys() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const list = JSON.parse(raw);
-      return list.map(s => ({ metadata: createMetadata(), ...s }));
+      return list.map(s => ({ ...s, metadata: createMetadata(s.metadata), reportTexts: createReportTexts(s.reportTexts) }));
     }
   } catch { /* ignore */ }
   return [];
@@ -219,7 +237,7 @@ export function importSurveysBackup(jsonText) {
   try { incoming = JSON.parse(jsonText); } catch { throw new Error("الملف ليس JSON صالحاً."); }
   if (!Array.isArray(incoming)) throw new Error("تنسيق الملف غير صالح — يجب أن يكون مصفوفة استبيانات.");
   const byId = new Map(loadCustomSurveys().map(s => [s.id, s]));
-  for (const s of incoming) byId.set(s.id, { metadata: createMetadata(), ...s });
+  for (const s of incoming) byId.set(s.id, { ...s, metadata: createMetadata(s.metadata), reportTexts: createReportTexts(s.reportTexts) });
   const merged = [...byId.values()];
   persist(merged);
   return merged.length;
@@ -345,6 +363,9 @@ export function buildSurveyTemplateBlob() {
     ["الإصدار", "1.0.0"],
     ["نوع الاستبيان", ""],
     ["نوع المقياس (اكتب: مقياس ثلاثي أو مقياس خماسي)", "مقياس خماسي"],
+    ["عنوان التقرير (اختياري)", ""],
+    ["العنوان الفرعي للتقرير (اختياري)", ""],
+    ["مقدمة التقرير (اختياري)", ""],
   ];
   const questionRows = [
     ["المحور (اتركه فارغاً إن لم يوجد محاور لهذا الاستبيان)", "السؤال *", "اسم العمود في Excel (اختياري)", "نوع السؤال (مقياس / نص / رقمي)", "إلزامي (نعم/لا)", "الفئة (اختياري)", "الوزن (اختياري)"],
@@ -366,10 +387,13 @@ const INFO_LABEL_MAP = [
   { key: "version", words: ["الاصدار"] },
   { key: "surveyType", words: ["نوع الاستبيان"] },
   { key: "scaleType", words: ["نوع المقياس", "المقياس"] },
+  { key: "reportTitle", words: ["عنوان التقرير"] },
+  { key: "reportSubtitle", words: ["العنوان الفرعي للتقرير", "العنوان الفرعي"] },
+  { key: "introduction", words: ["مقدمة التقرير", "المقدمة"] },
 ];
 
 function parseTemplateInfoRows(rows) {
-  const info = { name: "", description: "", version: "1.0.0", surveyType: "", scaleType: "likert-5" };
+  const info = { name: "", description: "", version: "1.0.0", surveyType: "", scaleType: "likert-5", reportTitle: "", reportSubtitle: "", introduction: "" };
   for (const row of rows ?? []) {
     const label = normalizeHeader(row?.[0]);
     const rawValue = row?.[1];
@@ -431,6 +455,7 @@ export function buildSurveyFromTemplateRows(infoRows, questionRows) {
     version: info.version || "1.0.0",
     surveyType: info.surveyType,
     scaleType: info.scaleType,
+    reportTexts: createReportTexts({ reportTitle: info.reportTitle, reportSubtitle: info.reportSubtitle, introduction: info.introduction }),
     sections,
   });
 }
@@ -495,6 +520,7 @@ export function toAnalysisSchema(survey) {
     fileHints: [survey.name, survey.surveyType].filter(Boolean),
     scale: { type: scaleType, values: scaleDef.values, agreementCodes: scaleDef.agreementCodes },
     metadata,
+    reportTexts: createReportTexts(survey.reportTexts),
     interpretation: DEFAULT_INTERPRETATION[scaleType],
     axes,
   };
@@ -530,7 +556,64 @@ export function getActiveCustomAnalysisSchemas() {
 // everywhere the app currently uses the static SCHEMAS import — it's a
 // superset, so behavior for the 5 built-in ids is unchanged.
 export function getAllAnalysisSchemas() {
-  return { ...BUILTIN_SCHEMAS, ...getActiveCustomAnalysisSchemas() };
+  const textOverrides = loadBuiltInReportTexts();
+  const builtIns = Object.fromEntries(Object.entries(BUILTIN_SCHEMAS).map(([id, schema]) => [id, {
+    ...schema,
+    reportTexts: createReportTexts(textOverrides[id]),
+  }]));
+  return { ...builtIns, ...getActiveCustomAnalysisSchemas() };
+}
+
+export function loadBuiltInReportTexts() {
+  try { return JSON.parse(localStorage.getItem(BUILTIN_REPORT_TEXTS_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+export function saveBuiltInReportTexts(id, reportTexts) {
+  const all = loadBuiltInReportTexts();
+  all[id] = createReportTexts(reportTexts);
+  try { localStorage.setItem(BUILTIN_REPORT_TEXTS_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  return all[id];
+}
+
+export function getBuiltInSurveyCatalog() {
+  const textOverrides = loadBuiltInReportTexts();
+  return Object.values(BUILTIN_SCHEMAS).map(schema => ({
+    id: schema.id,
+    name: schema.label,
+    description: schema.desc || schema.description || "استبيان مدمج وجاهز للتحليل وإصدار التقارير.",
+    status: "active",
+    scaleType: schema.scale?.type,
+    sections: schema.axes ?? [],
+    version: schema.version || "مدمج",
+    updatedAt: null,
+    builtIn: true,
+    isFlat: schema.isFlat === true,
+    reportTexts: createReportTexts(textOverrides[schema.id]),
+    programs: schema.programs || [],
+  }));
+}
+
+export function createCustomSurveyFromBuiltIn(id) {
+  const schema = BUILTIN_SCHEMAS[id];
+  if (!schema) return null;
+  return createSurvey({
+    name: `${schema.label} — نسخة مخصصة`,
+    description: "نسخة قابلة للتعديل مبنية على الاستبيان المدمج.",
+    surveyType: schema.label,
+    scaleType: schema.scale?.type || "likert-5",
+    metadata: createMetadata(schema.metadata),
+    sections: (schema.axes ?? []).map(axis => createSection({
+      name: axis.name,
+      description: axis.description || "",
+      questions: (axis.questions ?? []).map(question => createQuestion({
+        text: question.text,
+        excelColumn: question.text,
+        type: "likert",
+        required: true,
+      })),
+    })),
+  });
 }
 
 // Same hint-match-then-fuzzy-similarity algorithm as analyze.js's

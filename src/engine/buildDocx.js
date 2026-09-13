@@ -31,6 +31,7 @@ const COLOR_THEMES = {
   green:  { ...COLORS, primary: "1a4731", secondary: "2d6a4f", lightBlue: "a8d5b5", light: "d4edda", lighter: "eaf6ee" },
   purple: { ...COLORS, primary: "4a235a", secondary: "7d3c98", lightBlue: "d7bde2", light: "e8daef", lighter: "f5eef8" },
   dark:   { ...COLORS, primary: "1c1c1c", secondary: "444444", lightBlue: "c0c0c0", light: "e0e0e0", lighter: "f5f5f5" },
+  red:    { ...COLORS, primary: "b3373a", secondary: "cf5a5d", lightBlue: "e6a9a9", light: "f6d7d7", lighter: "fbeaea" },
 };
 let _C = COLORS;
 
@@ -76,6 +77,7 @@ export const DEFAULT_SETTINGS = {
   includeRecommendations: true,
   includeEvaluatorsTable: true,
   includeParticipants:    true,
+  includeVisionMission:   true,
   recommendationsCount:   5,
   includePdfCharts:          true,
   recommendationsThreshold:  70,
@@ -163,6 +165,19 @@ const bodyPara = (text, opts = {}) =>
 
 const spacer = () => rp([], { spacing: { before: 60, after: 60 } });
 
+function reportText(result, key, fallback, meta = {}) {
+  const raw = result.reportTexts?.[key]?.trim() || fallback;
+  const values = {
+    "{اسم_الاستبيان}": result.schemaLabel ?? "",
+    "{عدد_المشاركين}": result.n ?? "",
+    "{عدد_الأسئلة}": result.totalQuestions ?? "",
+    "{عدد_المحاور}": result.axes?.length ?? "",
+    "{العام}": meta.year ?? "",
+    "{البرنامج}": meta.program ?? "",
+  };
+  return Object.entries(values).reduce((text, [token, value]) => text.split(token).join(String(value)), raw);
+}
+
 function axisFill(agreePct) {
   if (agreePct >= 85) return _C.lightBlue;
   if (agreePct >= 70) return _C.yellow;
@@ -229,6 +244,20 @@ function buildHeader(logoData, s) {
 
 // ── Page footer ───────────────────────────────────────────────────────────────
 function buildFooter(s) {
+  const identity = s.includeVisionMission === false ? [] : [
+    new Paragraph({
+      bidirectional: true,
+      alignment: cellAlign(AlignmentType.RIGHT),
+      spacing: { before: 20, after: 0 },
+      children: [new TextRun({ text: s.vision, font: _font, size: 13, color: _C.darkGray, rightToLeft: true })],
+    }),
+    new Paragraph({
+      bidirectional: true,
+      alignment: cellAlign(AlignmentType.RIGHT),
+      spacing: { before: 20, after: 20 },
+      children: [new TextRun({ text: s.mission, font: _font, size: 13, color: _C.darkGray, rightToLeft: true })],
+    }),
+  ];
   return new Footer({
     children: [
       new Paragraph({
@@ -236,18 +265,7 @@ function buildFooter(s) {
         border: { top: { style: BorderStyle.SINGLE, size: 4, color: _C.lightBlue } },
         children: [],
       }),
-      new Paragraph({
-        bidirectional: true,
-        alignment: cellAlign(AlignmentType.RIGHT),
-        spacing: { before: 20, after: 0 },
-        children: [new TextRun({ text: s.vision, font: _font, size: 13, color: _C.darkGray, rightToLeft: true })],
-      }),
-      new Paragraph({
-        bidirectional: true,
-        alignment: cellAlign(AlignmentType.RIGHT),
-        spacing: { before: 20, after: 20 },
-        children: [new TextRun({ text: s.mission, font: _font, size: 13, color: _C.darkGray, rightToLeft: true })],
-      }),
+      ...identity,
       new Paragraph({
         alignment: AlignmentType.CENTER,
         children: [new TextRun({ text: s.email, font: _font, size: 14, color: _C.primary })],
@@ -261,9 +279,9 @@ function buildCoverPage(result, meta) {
   const { n, schemaLabel } = result;
   const nodes = [
     spacer(),
-    bodyPara("نتائج تحليل استبيان",
+    bodyPara(reportText(result, "reportTitle", "نتائج تحليل استبيان", meta),
       { bold: true, size: 36, color: _C.primary, align: AlignmentType.CENTER, before: 400, after: 60 }),
-    bodyPara(`قياس آراء ورضا ${schemaLabel}`,
+    bodyPara(reportText(result, "reportSubtitle", `قياس آراء ورضا ${schemaLabel}`, meta),
       { bold: true, size: 28, color: _C.darkGray, align: AlignmentType.CENTER, before: 40, after: 40 }),
     bodyPara(`للعام الدراسي ${meta.year}`,
       { bold: true, size: 22, color: _C.secondary, align: AlignmentType.CENTER, before: 40, after: 60 }),
@@ -273,6 +291,10 @@ function buildCoverPage(result, meta) {
 
   if (meta.program) {
     nodes.push(bodyPara(`البرنامج / القسم: ${meta.program}`, { bold: true, size: 22, color: _C.secondary, align: AlignmentType.CENTER }));
+  }
+
+  if (result.reportTexts?.introduction?.trim()) {
+    nodes.push(bodyPara(reportText(result, "introduction", "", meta), { size: 20, align: AlignmentType.CENTER, before: 80, after: 80 }));
   }
 
   nodes.push(
@@ -317,13 +339,26 @@ function buildEvaluatorsSection(meta, s) {
   ];
 }
 
+function buildCustomAfterEvaluatorsSection(result) {
+  const section = result.reportSections?.afterEvaluators;
+  if (!section) return [];
+  return [
+    sectionHeading(`  ${section.title}  `),
+    spacer(),
+    ...(section.intro ? [bodyPara(section.intro, { size: 22 })] : []),
+    ...(section.items ?? []).map((item, index) => bodyPara(`${index + 1}. ${item}`, { size: 21, before: 60, after: 60 })),
+    spacer(),
+  ];
+}
+
 // ── Survey variables (أولاً) ──────────────────────────────────────────────────
 function buildVariablesSection(result) {
+  const ordinal = result.reportSections?.afterEvaluators ? "ثانياً" : "أولاً";
   return [
-    sectionHeading("  أولاً: متغيرات الاستبيان  "),
+    sectionHeading(`  ${ordinal}: متغيرات الاستبيان  `),
     spacer(),
     bodyPara(
-      `اشتمل الاستبيان على (${result.totalQuestions}) عبارة تتمثل في (${result.axes.length}) محور رئيسي.`,
+      reportText(result, "variablesText", `اشتمل الاستبيان على (${result.totalQuestions}) عبارة تتمثل في (${result.axes.length}) محور رئيسي.`),
       { size: 22 }
     ),
     spacer(),
@@ -333,10 +368,11 @@ function buildVariablesSection(result) {
 // ── Statistical methodology (ثانياً) ──────────────────────────────────────────
 function buildMethodologySection(result) {
   const text = result.scaleType === "likert-5" ? "النسب والمتوسط الحسابي." : "النسب.";
+  const ordinal = result.reportSections?.afterEvaluators ? "ثالثاً" : "ثانياً";
   return [
-    sectionHeading("  ثانياً: المعالجة الإحصائية المستخدمة  "),
+    sectionHeading(`  ${ordinal}: المعالجة الإحصائية المستخدمة  `),
     spacer(),
-    bodyPara(text, { size: 22, bold: true }),
+    bodyPara(reportText(result, "methodologyText", text), { size: 22, bold: true }),
     spacer(),
   ];
 }
@@ -420,7 +456,8 @@ function buildParticipantsSection(result) {
     const isCoord = result.schemaId === "coordinator";
     const crossTitle = isCoord ? "توزيع المشاركين حسب الوظيفة والتخصص:" : "توزيع المشاركين حسب المسمى الوظيفي والقسم:";
     const rowLabel  = isCoord ? "الوظيفة / التخصص" : "المسمى الوظيفي / القسم";
-    nodes.push(sectionHeading("  ثالثاً: بيان بعدد المشاركين بالاستبيان  "));
+    const ordinal = result.reportSections?.afterEvaluators ? "رابعاً" : "ثالثاً";
+    nodes.push(sectionHeading(`  ${ordinal}: بيان بعدد المشاركين بالاستبيان  `));
     nodes.push(bodyPara(`بلغ إجمالي المشاركين في الاستبيان (${n}) مشاركاً.`, { bold: true }));
     nodes.push(spacer(), bodyPara(crossTitle, { bold: true }));
     nodes.push(buildCrosstabTable(crossDegreeByDept, rowLabel));
@@ -500,8 +537,11 @@ function buildDetailedSection(result) {
   const colCount = cw.length;
 
   // Header labels in RTL declaration order (index 0 = rightmost cell)
+  const scale5Labels = result.scaleValues?.length === 5
+    ? [...result.scaleValues].reverse().map(v => v.label)
+    : ["أوافق بشدة", "أوافق", "محايد", "لا أوافق", "لا أوافق بشدة"];
   const headerLabels = is5
-    ? ["أوافق بشدة", "أوافق", "محايد", "لا أوافق", "لا أوافق بشدة", "العبارات", "م"]
+    ? scale5Labels.concat(["العبارات", "م"])
     : ["أوافق %", "محايد %", "لا أوافق %", "العبارات", "م"];
 
   const headerRow = new TableRow({
@@ -522,7 +562,7 @@ function buildDetailedSection(result) {
 
   axes.forEach(ax => {
     // Axis-name row: single cell merged across all columns
-    allRows.push(new TableRow({
+    if (!result.isFlat) allRows.push(new TableRow({
       children: [cell(
         [rp([mk(ax.name, { size: 18, bold: true, color: _C.primary })], { alignment: _textAlign })],
         { fill: ACADEMIC.headRowFill, w: CW, columnSpan: colCount }
@@ -561,7 +601,7 @@ function buildDetailedSection(result) {
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading("  رابعاً: عرض النتائج وتحليلها ومناقشتها  "),
+    sectionHeading(`  ${reportText(result, "resultsHeading", result.reportSections?.afterEvaluators ? "خامساً: عرض النتائج وتحليلها ومناقشتها" : "رابعاً: عرض النتائج وتحليلها ومناقشتها")}  `),
     spacer(),
     new Table({
       width: { size: CW, type: WidthType.DXA },
@@ -574,51 +614,36 @@ function buildDetailedSection(result) {
 
 // ── Summary table (خامساً) ────────────────────────────────────────────────────
 function buildSummarySection(result) {
-  const { axes, overallAgreePct, overallMean, overallDirection, scaleType } = result;
-  const is5 = scaleType === "likert-5";
-  const cw = is5
-    ? [Math.floor(CW * 0.15), Math.floor(CW * 0.15), Math.floor(CW * 0.15), Math.floor(CW * 0.47), Math.floor(CW * 0.08)]
-    : [Math.floor(CW * 0.20), Math.floor(CW * 0.15),                         Math.floor(CW * 0.57), Math.floor(CW * 0.08)];
+  const { axes, n, overallAgreePct, overallDirection } = result;
+  const cw = [Math.floor(CW * 0.46), Math.floor(CW * 0.14), Math.floor(CW * 0.18), Math.floor(CW * 0.22)];
 
   const axisCol = cell(
     [rp([mk("المحور", { size: 17, bold: true, color: "FFFFFF" })], { alignment: _textAlign })],
-    { fill: _C.primary, w: is5 ? cw[3] : cw[2] }
+    { fill: _C.primary, w: cw[0] }
   );
 
-  const headerCells = is5
-    ? [hCell("الاتجاه العام", cw[0]), hCell("النسبة", cw[1]), hCell("المتوسط الحسابي", cw[2]), axisCol, hCell("م", cw[4])]
-    : [hCell("الاتجاه العام", cw[0]), hCell("النسبة", cw[1]), axisCol, hCell("م", cw[3])];
+  const headerCells = [axisCol, hCell("العدد", cw[1]), hCell("النسبة", cw[2]), hCell("الاتجاه العام", cw[3])];
 
   const dataRows = axes.map((ax, i) => {
     const bg = i % 2 === 0 ? _C.white : ACADEMIC.zebra;
-    return new TableRow({ children: is5
-      ? [tc(ax.direction,                 { fill: bg, w: cw[0], size: 17 }),
-         tcNum(`${ax.axisAgreePct}%`,     { fill: bg, w: cw[1], size: 17, bold: true }),
-         tcNum(String(ax.axisMean ?? ""), { fill: bg, bold: true, w: cw[2], size: 17 }),
-         textCell(ax.name, bg, cw[3], true),
-         tcNum(`${i + 1}-`,               { fill: bg, w: cw[4], size: 17 })]
-      : [tc(ax.direction,                 { fill: bg, w: cw[0], size: 17 }),
-         tcNum(`${ax.axisAgreePct}%`,     { fill: bg, w: cw[1], size: 17, bold: true }),
-         textCell(ax.name, bg, cw[2], true),
-         tcNum(`${i + 1}-`,               { fill: bg, w: cw[3], size: 17 })]
-    });
+    return new TableRow({ children: [
+      textCell(ax.name, bg, cw[0], true),
+      tcNum(String(n), { fill: bg, w: cw[1], size: 17 }),
+      tcNum(`${ax.axisAgreePct}%`, { fill: bg, w: cw[2], size: 17, bold: true }),
+      tc(ax.direction, { fill: bg, w: cw[3], size: 17 }),
+    ] });
   });
 
-  const totalRow = new TableRow({ children: is5
-    ? [tc(overallDirection,             { fill: ACADEMIC.total, bold: true, w: cw[0], size: 18 }),
-       tcNum(`${overallAgreePct}%`,     { fill: ACADEMIC.total, bold: true, w: cw[1], size: 18 }),
-       tcNum(String(overallMean ?? ""), { fill: ACADEMIC.total, bold: true, w: cw[2], size: 18 }),
-       tc("متوسط الرضا",                { fill: ACADEMIC.total, bold: true, w: cw[3], size: 18 }),
-       tcNum("",                         { fill: ACADEMIC.total, w: cw[4] })]
-    : [tc(overallDirection,             { fill: ACADEMIC.total, bold: true, w: cw[0], size: 18 }),
-       tcNum(`${overallAgreePct}%`,     { fill: ACADEMIC.total, bold: true, w: cw[1], size: 18 }),
-       tc("متوسط الرضا",                { fill: ACADEMIC.total, bold: true, w: cw[2], size: 18 }),
-       tcNum("",                         { fill: ACADEMIC.total, w: cw[3] })]
-  });
+  const totalRow = new TableRow({ children: [
+    tc("المتوسط العام", { fill: ACADEMIC.total, bold: true, w: cw[0], size: 18 }),
+    tcNum(String(n), { fill: ACADEMIC.total, bold: true, w: cw[1], size: 18 }),
+    tcNum(`${overallAgreePct}%`, { fill: ACADEMIC.total, bold: true, w: cw[2], size: 18 }),
+    tc(overallDirection, { fill: ACADEMIC.total, bold: true, w: cw[3], size: 18 }),
+  ] });
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading("  خامساً: ملخص النتائج  "),
+    sectionHeading(`  ${reportText(result, "summaryHeading", result.reportSections?.afterEvaluators ? "سادساً: ملخص النتائج" : "خامساً: ملخص النتائج")}  `),
     spacer(),
     new Table({ width: { size: CW, type: WidthType.DXA }, columnWidths: cw,
       rows: [new TableRow({ tableHeader: true, children: headerCells }), ...dataRows, totalRow] }),
@@ -634,9 +659,9 @@ function buildRecommendationsSection(result, s) {
   if (candidates.length === 0) {
     return [
       spacer(),
-      sectionHeading("  أخيراً: التوصيات  "),
+      sectionHeading(`  ${reportText(result, "recommendationsHeading", "أخيراً: التوصيات")}  `),
       spacer(),
-      bodyPara("لا يوجد توصيات.", { bold: true, size: 22 }),
+      bodyPara(reportText(result, "noRecommendationsText", "لا يوجد توصيات."), { bold: true, size: 22 }),
     ];
   }
 
@@ -645,11 +670,14 @@ function buildRecommendationsSection(result, s) {
 
   return [
     spacer(),
-    sectionHeading("  أخيراً: التوصيات  "),
+    sectionHeading(`  ${reportText(result, "recommendationsHeading", "أخيراً: التوصيات")}  `),
     spacer(),
     ...lowAxes.flatMap(ax => {
-      const text = ax.recommendation
-        ?? `مراجعة محور "${ax.name}" لأنه سجل نسبة موافقة ${ax.axisAgreePct}%.`;
+      const text = ax.recommendation ?? (result.reportTexts?.recommendationTemplate?.trim()
+        ? result.reportTexts.recommendationTemplate
+            .split("{اسم_المحور}").join(ax.name)
+            .split("{النسبة}").join(String(ax.axisAgreePct))
+        : `مراجعة محور "${ax.name}" لأنه سجل نسبة موافقة ${ax.axisAgreePct}%.`);
       return [
         bodyPara(`• ${ax.name} (${ax.axisAgreePct}%)`, { bold: true, size: 21, color: _C.primary }),
         bodyPara(text, { size: 20 }),
@@ -909,13 +937,15 @@ function applyDesign(s) {
 
 // ── Exported builders ─────────────────────────────────────────────────────────
 export async function buildAnnualDocx(result, meta, settings = {}) {
-  const s = { ...DEFAULT_SETTINGS, ...settings };
+  const perSurvey = settings.surveyReportOptions?.[result.schemaId] ?? {};
+  const s = { ...DEFAULT_SETTINGS, ...settings, ...perSurvey };
   applyDesign(s);
   const logoData = await getLogoData(s);
   const isCoord = result.schemaId === "coordinator";
   const children = [
     ...buildCoverPage(result, meta),
     ...(s.includeEvaluatorsTable ? buildEvaluatorsSection(meta, s) : []),
+    ...buildCustomAfterEvaluatorsSection(result),
     ...(s.includeParticipants ? buildFixedParticipantsSection(result) : []), // قبل أولاً
     ...buildVariablesSection(result),                                       // أولاً
     ...buildMethodologySection(result),                                     // ثانياً

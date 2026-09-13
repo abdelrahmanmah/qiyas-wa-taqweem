@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from "./engine/analyze.js";
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
-import { downloadBrandedReportPdf } from "./engine/buildReportPdf.js";
+import { buildBrandedReportPdf, downloadBrandedReportPdf } from "./engine/buildReportPdf.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
 import EnhancedReportView from "./EnhancedReportView.jsx";
 import SurveyManagement from "./SurveyManagement.jsx";
@@ -9,7 +9,7 @@ import SemesterSurveys from "./SemesterSurveys.jsx";
 import SemesterFormPicker from "./SemesterFormPicker.jsx";
 import CourseEvaluationHub from "./CourseEvaluationHub.jsx";
 import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
-import { saveStoredToken, getStoredToken, clearStoredToken } from "./engine/semesterSurveyModel.js";
+import { saveStoredToken, getStoredToken, clearStoredToken, getForm, listAllResponses, responsesToRows, departmentFromSurveyName, SEMESTER_SCOPE, SEMESTER_TOKEN_KEY } from "./engine/semesterSurveyModel.js";
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -146,25 +146,40 @@ select.input option:checked{background:#1a5276;color:#fff}
 @keyframes stepPop{0%{transform:scale(1)}45%{transform:scale(1.18)}100%{transform:scale(1)}}
 @keyframes activePulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(26,188,156,.4)}60%{opacity:.7;box-shadow:0 0 0 6px rgba(26,188,156,0)}}
 @keyframes progressFlow{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+@keyframes loaderOrbit{to{transform:rotate(360deg)}}
+@keyframes loaderFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes loaderDot{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+@keyframes rowShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .proc-overlay{animation:fadeInUp .35s cubic-bezier(.22,1,.36,1)}
 .proc-step-active .proc-icon{animation:activePulse 1.1s ease infinite}
 .proc-step-done   .proc-icon{animation:stepPop .3s ease}
+.loader-visual{position:relative;width:78px;height:78px;margin:0 auto 16px;display:grid;place-items:center;animation:loaderFloat 2.4s ease-in-out infinite}
+.loader-ring{position:absolute;inset:0;border:2px solid rgba(26,188,156,.15);border-top-color:#5eead4;border-right-color:#2874a6;border-radius:50%;animation:loaderOrbit 1.25s linear infinite}
+.loader-ring.inner{inset:10px;animation-duration:.9s;animation-direction:reverse;border-top-color:#a78bfa;border-right-color:#5eead4}
+.loader-dots{display:inline-flex;gap:4px;margin-inline-start:7px}.loader-dots i{width:4px;height:4px;border-radius:50%;background:#71e8d4;animation:loaderDot 1.2s infinite}.loader-dots i:nth-child(2){animation-delay:.15s}.loader-dots i:nth-child(3){animation-delay:.3s}
+.batch-row.active{background:linear-gradient(90deg,rgba(26,188,156,.12),rgba(255,255,255,.035),rgba(26,188,156,.12));background-size:220% 100%;animation:rowShimmer 2s linear infinite}
 
 /* ── Badges ── */
 .badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700}
 
-/* ── Step bar ── */
-.step-bar{display:flex;gap:0;margin-bottom:32px;border-radius:14px;overflow:hidden;
-  border:1px solid var(--border-soft)}
-.step-item{flex:1;padding:11px 6px 13px;text-align:center;font-size:11.5px;font-weight:700;
-  background:var(--surface-soft);color:var(--text-muted);transition:all .2s;
-  border-left:1px solid rgba(255,255,255,.06);position:relative;
-  display:flex;flex-direction:column;align-items:center;gap:3px}
-.step-item:last-child{border-left:none}
-.step-item-num{font-size:10px;font-weight:900;opacity:.65}
-.step-item.active{background:rgba(26,188,156,.18);color:var(--accent);border-color:rgba(26,188,156,.2)}
-.step-item.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--accent)}
-.step-item.done{background:rgba(26,188,156,.07);color:rgba(26,188,156,.7)}
+/* ── Analysis journey ── */
+.step-bar{display:flex;gap:8px;margin-bottom:32px;padding:8px;border-radius:18px;
+  border:1px solid var(--border-soft);background:rgba(5,18,35,.36)}
+.step-item{flex:1;min-width:0;padding:10px 6px 11px;text-align:center;font-size:11px;font-weight:700;
+  background:transparent;color:var(--text-muted);transition:all .22s;border:0;position:relative;
+  display:flex;flex-direction:column;align-items:center;gap:6px;border-radius:12px}
+.step-item-icon{width:31px;height:31px;border-radius:10px;display:grid;place-items:center;
+  color:rgba(255,255,255,.42);background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);transition:all .22s}
+.step-item-icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.step-item-num{font-size:9px;font-weight:900;line-height:1;opacity:.72}
+.step-item.active{background:rgba(26,188,156,.14);color:#d8fff7;box-shadow:inset 0 0 0 1px rgba(26,188,156,.24)}
+.step-item.active .step-item-icon{color:#fff;background:linear-gradient(135deg,#1abc9c,#16977f);border-color:transparent;box-shadow:0 5px 13px rgba(26,188,156,.24)}
+.step-item.active::after{content:'';position:absolute;bottom:3px;width:24px;height:3px;border-radius:3px;background:#1abc9c}
+.step-item.done{color:rgba(156,238,221,.8)}
+.step-item.done .step-item-icon{color:#8be5d2;background:rgba(26,188,156,.1);border-color:rgba(26,188,156,.2)}
+.workflow-header{display:flex;align-items:center;gap:13px;margin-bottom:20px;padding:14px 16px;border-radius:15px;background:linear-gradient(120deg,rgba(26,188,156,.1),rgba(40,116,166,.07));border:1px solid rgba(26,188,156,.16)}
+.workflow-header-icon{width:40px;height:40px;padding:10px;display:grid;place-items:center;flex:0 0 auto;border-radius:12px;color:#d7fff7;background:linear-gradient(135deg,#1abc9c,#167d94);box-shadow:0 7px 16px rgba(26,188,156,.16)}
+.workflow-header-kicker{color:#71e8d4;font-size:10px;font-weight:900}.workflow-header-title{color:#fff;font-size:18px;font-weight:900}.workflow-header-copy{color:rgba(255,255,255,.5);font-size:11.5px;margin-top:2px}
 
 /* ── Type/mode cards ── */
 .type-card{flex:1;padding:24px 18px;border-radius:16px;border:2px solid rgba(255,255,255,.1);
@@ -218,7 +233,7 @@ html,body{overflow-x:hidden;width:100%}
   .type-card-row{flex-direction:column !important}
   .type-card{padding:16px 18px !important}
   .step-bar{flex-wrap:wrap}
-  .step-item{font-size:10px;padding:9px 4px;flex-basis:33%}
+  .step-item{font-size:10px;padding:9px 4px;flex-basis:31%}
   .mini-table{font-size:11.5px}
   .mini-table th,.mini-table td{padding:6px 6px}
 }
@@ -237,15 +252,147 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .header-nav-group{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
   background:var(--surface-soft);border:1px solid var(--border-soft);border-radius:var(--radius-pill);padding:5px}
 .header-nav-group .btn{padding:7px 16px;font-size:12.5px}
+
+/* ── Collapsible tool sidebar ── */
+.app-shell{display:block;direction:rtl;min-height:calc(100vh - 75px)}
+.tool-sidebar{position:fixed;right:0;top:0;bottom:0;width:254px;height:auto;box-sizing:border-box;padding:0 13px 18px;
+  display:flex;flex-direction:column;border-left:1px solid rgba(255,255,255,.08);background:rgba(5,20,36,.48);
+  backdrop-filter:blur(18px);transition:width .24s ease,transform .24s ease;z-index:35;overflow:hidden}
+.tool-sidebar.collapsed{width:76px;padding-inline:10px}
+.sidebar-brand{height:75px;display:flex;align-items:center;gap:9px;flex:0 0 75px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:17px;white-space:nowrap}
+.sidebar-brand-mark{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:11px;color:#fff;background:linear-gradient(145deg,#20c5a4,#197ca4)}
+.sidebar-brand-copy{min-width:0;flex:1;color:#fff;font-size:11.5px;font-weight:900;line-height:1.45;overflow:hidden}
+.sidebar-brand-copy small{display:block;color:rgba(255,255,255,.34);font-size:7px;letter-spacing:.3px}
+.tool-sidebar.collapsed .sidebar-brand{justify-content:center}
+.tool-sidebar.collapsed .sidebar-brand-mark,.tool-sidebar.collapsed .sidebar-brand-copy{display:none}
+.sidebar-heading{padding:0 10px 12px;color:rgba(255,255,255,.33);font-size:9.5px;font-weight:900;white-space:nowrap;letter-spacing:.2px}
+.sidebar-nav{display:flex;flex-direction:column;gap:6px}
+.sidebar-item{width:100%;min-height:46px;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:13px;border:1px solid transparent;
+  color:rgba(232,240,254,.59);background:transparent;font-family:inherit;font-size:12px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
+.sidebar-item:hover{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.07)}
+.sidebar-item.active{color:#eafffb;background:linear-gradient(125deg,rgba(26,188,156,.2),rgba(40,116,166,.12));border-color:rgba(94,234,212,.22)}
+.sidebar-icon{width:28px;height:28px;display:grid;place-items:center;flex:0 0 28px;color:currentColor}
+.sidebar-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-label{overflow:hidden;opacity:1;transition:opacity .16s ease}
+.tool-sidebar.collapsed .sidebar-label,.tool-sidebar.collapsed .sidebar-heading{display:none}
+.tool-sidebar.collapsed .sidebar-item{justify-content:center;padding-inline:0;gap:0}
+.sidebar-separator{height:1px;background:rgba(255,255,255,.07);margin:13px 8px}
+.sidebar-bottom{margin-top:auto}
+.sidebar-toggle{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+  color:#dffbf5;background:rgba(255,255,255,.055);cursor:pointer;transition:.18s}
+.sidebar-toggle:hover{background:rgba(26,188,156,.14);border-color:rgba(94,234,212,.24)}
+.app-content{min-width:0;margin-right:254px;transition:margin-right .24s ease}
+.app-shell.sidebar-closed .app-content{margin-right:76px}
+.quality-header.sidebar-open{margin-right:254px}.quality-header.sidebar-closed{margin-right:76px}
+.quality-header{min-height:75px;transition:margin-right .24s ease}
+.google-global-btn{display:inline-flex;align-items:center;gap:9px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.12);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;transition:.18s}
+.google-global-btn.disconnected{color:#e8f0fe;background:rgba(255,255,255,.06)}
+.google-global-btn.connected{color:#9ff5df;background:rgba(26,188,156,.1);border-color:rgba(94,234,212,.22);cursor:pointer}
+.google-status-dot{width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.1)}
+.mobile-nav-toggle{display:none}
+.upload-workspace{padding:24px 28px!important;text-align:right!important;overflow:visible}
+.upload-source-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+.upload-source-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:rgba(255,255,255,.52);font-family:inherit;text-align:right;cursor:pointer;transition:.2s}
+.upload-source-card:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}.upload-source-card.active{color:#eafffb;border-color:rgba(94,234,212,.3);background:linear-gradient(125deg,rgba(26,188,156,.15),rgba(40,116,166,.08));box-shadow:inset 0 -2px #1abc9c}
+.upload-source-icon{width:38px;height:38px;display:grid;place-items:center;flex:0 0 38px;border-radius:11px;color:#7cebd5;background:rgba(26,188,156,.1)}.upload-source-card strong{display:block;font-size:12.5px}.upload-source-card small{display:block;color:rgba(255,255,255,.36);font-size:9px;margin-top:2px}
+.drive-control-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;margin-bottom:12px;border-radius:13px;border:1px solid rgba(94,234,212,.18);background:rgba(26,188,156,.07)}
+.drive-view-switch{display:flex;gap:4px;padding:4px;border-radius:10px;background:rgba(4,18,34,.3);border:1px solid rgba(255,255,255,.075)}.drive-view-btn{padding:6px 10px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.42);font-family:inherit;font-size:9.5px;font-weight:800;cursor:pointer;white-space:nowrap}.drive-view-btn.active{color:#bafff1;background:rgba(26,188,156,.17)}
+.drive-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px;margin-bottom:9px}.drive-search-field{width:100%;background:rgba(4,18,34,.48);color:#e8f0fe;border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:11px 13px;font-family:inherit;font-size:11.5px;direction:rtl;margin-bottom:10px;outline:none}.drive-search-field:focus{border-color:rgba(94,234,212,.42);box-shadow:0 0 0 3px rgba(26,188,156,.07)}
+.drive-batch-toolbar{position:sticky;top:88px;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 13px;margin-bottom:11px;border-radius:13px;border:1px solid rgba(94,234,212,.18);background:rgba(9,31,49,.94);backdrop-filter:blur(16px);box-shadow:0 9px 25px rgba(2,12,27,.14)}
+.drive-file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:9px;max-height:440px;overflow-y:auto;padding:2px 3px 8px}
+.drive-file-card{position:relative;min-height:150px;display:flex;flex-direction:column;padding:14px;border-radius:15px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.025));cursor:pointer;transition:.2s;text-align:right;animation:fadeInUp .3s ease both;outline:none}.drive-file-card:hover,.drive-file-card:focus-visible{transform:translateY(-2px);border-color:rgba(96,165,250,.28);box-shadow:0 12px 28px rgba(2,12,27,.18)}.drive-file-card.selected{border-color:rgba(94,234,212,.48);background:linear-gradient(145deg,rgba(26,188,156,.13),rgba(40,116,166,.05));box-shadow:inset 0 0 0 1px rgba(94,234,212,.1)}
+.drive-file-select{position:absolute;left:12px;top:12px;width:25px;height:25px;display:grid;place-items:center;border-radius:8px;color:rgba(255,255,255,.34);background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08)}.drive-file-card.selected .drive-file-select{color:#052e2b;background:#5eead4;border-color:#5eead4}.drive-file-kind{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;color:#8bd8ff;background:rgba(59,130,246,.1)}
+.drive-file-name{color:#edf5ff;font-size:11.5px;font-weight:800;line-height:1.7;margin:10px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.drive-file-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto}.drive-file-tag{font-size:8.5px;color:#72e5cf;background:rgba(26,188,156,.09);border-radius:6px;padding:2px 6px}.drive-file-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.055)}.drive-file-date{color:rgba(255,255,255,.3);font-size:8.5px}.drive-file-analyze{opacity:0;transform:translateY(2px);padding:6px 9px;border-radius:8px;border:1px solid rgba(94,234,212,.2);background:rgba(26,188,156,.1);color:#8cf2dc;font-family:inherit;font-size:9px;font-weight:800;cursor:pointer;transition:.18s}.drive-file-card:hover .drive-file-analyze,.drive-file-card:focus-within .drive-file-analyze,.drive-file-card.selected .drive-file-analyze{opacity:1;transform:none}
+.upload-drop-modern{max-width:720px!important;min-height:280px;margin:0 auto!important;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 50% 15%,rgba(26,188,156,.1),transparent 45%),rgba(255,255,255,.025)!important}.upload-drop-icon{width:66px;height:66px;display:grid;place-items:center;margin:0 auto 15px;border-radius:20px;color:#bafff1;background:linear-gradient(145deg,rgba(26,188,156,.2),rgba(40,116,166,.16));border:1px solid rgba(94,234,212,.2)}
+@media(max-width:760px){
+  .app-content,.app-shell.sidebar-closed .app-content{margin-right:0}
+  .quality-header.sidebar-open,.quality-header.sidebar-closed{margin-right:0}
+  .tool-sidebar{top:10px;right:10px;bottom:10px;height:auto;border:1px solid rgba(255,255,255,.11);border-radius:18px;box-shadow:0 28px 70px rgba(0,0,0,.48);background:rgba(7,25,42,.96)}
+  .tool-sidebar.collapsed{transform:translateX(calc(100% + 24px));width:254px;padding-inline:13px}
+  .tool-sidebar.collapsed .sidebar-label,.tool-sidebar.collapsed .sidebar-heading{display:block}
+  .tool-sidebar.collapsed .sidebar-item{justify-content:flex-start;padding-inline:11px;gap:11px}
+  .tool-sidebar.collapsed .sidebar-brand-mark{display:grid}.tool-sidebar.collapsed .sidebar-brand-copy{display:block}
+  .mobile-nav-toggle{display:grid}
+  .upload-workspace{padding:16px!important}.upload-source-grid{grid-template-columns:1fr}.drive-control-bar{align-items:flex-start;flex-direction:column}.drive-view-switch{width:100%;overflow-x:auto}.drive-view-btn{flex:1}.drive-filter-grid{grid-template-columns:1fr 1fr}.drive-filter-grid>*:nth-child(3){grid-column:1/-1}.drive-batch-toolbar{top:8px;align-items:stretch;flex-direction:column}.drive-file-grid{grid-template-columns:1fr;max-height:none}.drive-file-analyze{opacity:1;transform:none}.upload-drop-modern{min-height:230px}.app-main{padding:18px 12px!important}
+}
+@media(max-width:460px){.drive-filter-grid{grid-template-columns:1fr}.drive-filter-grid>*:nth-child(3){grid-column:auto}.drive-batch-toolbar .btn{width:100%;justify-content:center}.upload-source-card small{display:none}}
+
+/* ── Quality hub shell ── */
+.quality-app{position:relative;isolation:isolate}
+.quality-app::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(circle at 84% 8%,rgba(26,188,156,.13),transparent 30%),
+    radial-gradient(circle at 8% 88%,rgba(59,130,246,.11),transparent 27%)}
+.quality-header{position:sticky;top:0;z-index:40;background:rgba(10,27,45,.86);
+  backdrop-filter:blur(20px);box-shadow:0 10px 35px rgba(2,12,27,.16)}
+.brand-mark{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;
+  color:#fff;background:linear-gradient(145deg,#20c5a4,#197ca4);box-shadow:0 10px 24px rgba(26,188,156,.22)}
+.hub{animation:fadeInUp .4s cubic-bezier(.22,1,.36,1)}
+.hub-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(290px,.55fr);
+  gap:32px;padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:28px;
+  background:linear-gradient(125deg,rgba(15,49,74,.98),rgba(13,66,61,.94));
+  box-shadow:0 28px 70px rgba(2,12,27,.22)}
+.hub-hero::after{content:'';position:absolute;width:360px;height:360px;border-radius:50%;left:-110px;top:-180px;
+  border:70px solid rgba(255,255,255,.025);box-shadow:0 0 0 40px rgba(26,188,156,.025)}
+.hub-eyebrow{display:inline-flex;align-items:center;gap:8px;width:max-content;padding:6px 12px;border-radius:999px;
+  color:#6ee7cf;background:rgba(26,188,156,.1);border:1px solid rgba(110,231,207,.22);font-size:11px;font-weight:800}
+.hub-title{color:#fff;font-size:clamp(28px,4vw,46px);line-height:1.25;font-weight:900;margin:16px 0 10px;letter-spacing:-.8px}
+.hub-subtitle{color:rgba(232,240,254,.65);font-size:15px;line-height:1.9;max-width:680px}
+.hub-hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:25px}
+.hub-snapshot{position:relative;z-index:1;align-self:stretch;display:flex;flex-direction:column;justify-content:space-between;
+  padding:22px;border:1px solid rgba(255,255,255,.1);border-radius:20px;background:rgba(4,19,33,.27)}
+.hub-snapshot-top{display:flex;align-items:center;justify-content:space-between;color:#fff;font-size:13px;font-weight:800}
+.hub-live{display:inline-flex;align-items:center;gap:6px;color:#76e6d0;font-size:10px}
+.hub-live::before{content:'';width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 5px rgba(52,211,153,.1)}
+.hub-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
+.hub-stat{padding:15px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.07)}
+.hub-stat strong{display:block;color:#fff;font-size:21px;line-height:1.2}
+.hub-stat span{color:rgba(255,255,255,.45);font-size:10px}
+.hub-section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin:34px 2px 17px}
+.hub-section-head h2{color:#fff;font-size:20px;font-weight:900;margin:0}
+.hub-section-head p{color:rgba(255,255,255,.43);font-size:12px;margin-top:3px}
+.tool-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:15px}
+.tool-card{grid-column:span 4;position:relative;overflow:hidden;min-height:230px;padding:24px;text-align:right;
+  color:inherit;font-family:inherit;border-radius:20px;border:1px solid rgba(255,255,255,.1);
+  background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));cursor:pointer;
+  transition:transform .24s,border-color .24s,background .24s,box-shadow .24s;display:flex;flex-direction:column;align-items:stretch}
+.tool-card:hover{transform:translateY(-5px);border-color:rgba(110,231,207,.38);
+  background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.055));box-shadow:0 20px 42px rgba(2,12,27,.2)}
+.tool-card.featured{grid-column:span 6;background:linear-gradient(145deg,rgba(26,188,156,.17),rgba(255,255,255,.045))}
+.tool-card-icon{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;margin-bottom:20px;
+  color:var(--tool-color,#65d8c0);background:color-mix(in srgb,var(--tool-color,#65d8c0) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--tool-color,#65d8c0) 27%,transparent)}
+.tool-card-icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tool-card h3{display:block;color:#fff;font-size:17px;font-weight:900;line-height:1.5;margin:0 0 7px}
+.tool-card p{display:block;color:rgba(255,255,255,.48);font-size:12px;line-height:1.85;margin:0 0 18px;max-width:440px}
+.tool-card-foot{position:relative;margin-top:auto;padding-top:12px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,.055)}
+.tool-tag{color:rgba(255,255,255,.4);font-size:10px;font-weight:700}
+.tool-arrow{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:#fff;
+  background:rgba(255,255,255,.08);transition:transform .2s,background .2s}
+.tool-card:hover .tool-arrow{transform:translateX(-4px);background:rgba(26,188,156,.22)}
+.hub-note{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:18px 22px;
+  border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(255,255,255,.035)}
+.hub-note-copy{display:flex;align-items:center;gap:13px;color:rgba(255,255,255,.66);font-size:12px}
+.hub-note-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;
+  background:rgba(96,165,250,.12);color:#93c5fd}
+@media(max-width:900px){.hub-hero{grid-template-columns:1fr;padding:30px}.tool-card,.tool-card.featured{grid-column:span 6}}
+@media(max-width:640px){.quality-header .brand-copy small{display:none}.quality-header{position:relative}.hub-hero{padding:24px;border-radius:22px}
+  .hub-snapshot{display:none}.tool-card,.tool-card.featured{grid-column:1/-1;min-height:205px}.hub-section-head{align-items:start;flex-direction:column;gap:3px}.hub-note{align-items:flex-start;flex-direction:column}}
 `;
 
-const STEPS = ["نوع التقرير", "رفع الملف", "التحقق", "معاينة البيانات", "بيانات التقرير", "النتائج"];
+const STEPS = [
+  { label: "نوع التقرير", icon: "layout" },
+  { label: "رفع الملف", icon: "upload" },
+  { label: "التحقق", icon: "shield" },
+  { label: "معاينة البيانات", icon: "table" },
+  { label: "بيانات التقرير", icon: "edit" },
+  { label: "النتائج", icon: "chart" },
+];
 const SETTINGS_KEY = "eruQA_settings_v1";
 const AI_KEY       = "eruQA_ai_v1";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
-const DRIVE_SCOPE      = "https://www.googleapis.com/auth/drive.readonly";
-const DRIVE_TOKEN_KEY  = "eruQA_driveToken_v1";
+const DRIVE_SCOPE      = SEMESTER_SCOPE;
+const DRIVE_TOKEN_KEY  = SEMESTER_TOKEN_KEY;
 const GSHEETS_MIME     = "application/vnd.google-apps.spreadsheet";
 const DRIVE_FILE_MIMES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -267,7 +414,11 @@ function loadGisScript() {
 const PROGRAMS = [
   "محاسبة",
   "اقتصاد",
-  "إدارة",
+  "إدارة الأعمال",
+  "تحليل الأعمال",
+  "نظم المعلومات الإدارية",
+  "الذكاء التسويقي",
+  "التكنولوجيا المالية الرقمية",
   "علوم سياسية",
   "تكنولوجيا أعمال",
 ];
@@ -282,9 +433,11 @@ function dirColor(tier) {
 
 function downloadBlob(blob, filename) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.download = filename;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function readFileAsBuffer(file) {
@@ -294,6 +447,49 @@ function readFileAsBuffer(file) {
     r.onerror = () => reject(new Error("فشل قراءة الملف"));
     r.readAsArrayBuffer(file);
   });
+}
+
+async function downloadDriveBuffer(file, token) {
+  const isGSheet = file.mimeType === GSHEETS_MIME;
+  const url = isGSheet
+    ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+    : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`تعذر تحميل الملف (${res.status})`);
+  return {
+    buffer: await res.arrayBuffer(),
+    filename: isGSheet && !file.name.endsWith(".xlsx") ? `${file.name}.xlsx` : file.name,
+  };
+}
+
+async function uploadReportNextToSource(blob, filename, sourceFile, token) {
+  const mimeType = blob.type || (filename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  const metadata = { name: filename, mimeType };
+  if (sourceFile.parents?.[0]) metadata.parents = [sourceFile.parents[0]];
+  const body = new FormData();
+  body.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json; charset=UTF-8" }));
+  body.append("file", blob, filename);
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    const suffix = res.status === 403 ? " — افصل Drive وأعد ربطه لمنح صلاحية إنشاء التقارير." : "";
+    throw new Error((data.error?.message || `فشل رفع التقرير (${res.status})`) + suffix);
+  }
+  return data;
+}
+
+function safeReportName(sourceName) {
+  const base = String(sourceName || "استبيان").replace(/\.(xlsx|xls|csv)$/i, "").trim();
+  return `تقرير تحليل - ${base}.docx`;
+}
+
+function safePdfReportName(sourceName) {
+  const base = String(sourceName || "استبيان").replace(/\.(xlsx|xls|csv)$/i, "").trim();
+  return `تقرير تحليل - ${base}.pdf`;
 }
 
 // Filename → program detector. Inline Arabic normalization so we don't depend on engine internals.
@@ -520,6 +716,40 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
         )}
       </div>
 
+      <div className="settings-section">
+        <div className="settings-section-title">🧩 إعدادات كل استبيان</div>
+        <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12, marginBottom: 14 }}>
+          تحكم مستقل في صفحة الرؤية والرسالة ولون التقرير لكل استبيان، ويُطبق على Word وPDF.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {Object.values(allSchemas()).map(sc => {
+            const opts = settings.surveyReportOptions?.[sc.id] ?? {};
+            const includeVM = opts.includeVisionMission ?? settings.includeVisionMission ?? true;
+            const theme = opts.colorTheme ?? settings.colorTheme ?? "default";
+            const update = patch => set("surveyReportOptions", {
+              ...(settings.surveyReportOptions ?? {}),
+              [sc.id]: { ...opts, ...patch },
+            });
+            return (
+              <div key={sc.id} style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.5fr) minmax(180px,1fr) minmax(180px,1fr)", gap: 12, alignItems: "center", padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.025)" }}>
+                <div style={{ color: "#eef5ff", fontSize: 13, fontWeight: 700 }}>{sc.icon ?? "📋"} {sc.label}</div>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, color: "rgba(255,255,255,.7)", fontSize: 12 }}>
+                  إظهار الرؤية والرسالة
+                  <button className={`toggle ${includeVM ? "on" : "off"}`} onClick={() => update({ includeVisionMission: !includeVM })} />
+                </label>
+                <select className="input" value={theme} onChange={e => update({ colorTheme: e.target.value })} style={{ cursor: "pointer" }} aria-label={`لون تقرير ${sc.label}`}>
+                  <option value="default">أزرق</option>
+                  <option value="green">أخضر</option>
+                  <option value="purple">بنفسجي</option>
+                  <option value="dark">رمادي</option>
+                  <option value="red">أحمر</option>
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Section 4b — Branded PDF Options */}
       <div className="settings-section">
         <div className="settings-section-title">🖨️ تقرير PDF المصمم</div>
@@ -543,7 +773,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
 
       {/* Section 5 — Report Design */}
       <div className="settings-section">
-        <div className="settings-section-title">🎨 تصميم التقرير (Word)</div>
+        <div className="settings-section-title">🎨 التصميم الافتراضي للتقرير (Word وPDF)</div>
 
         {/* Font */}
         <div style={{ marginBottom: 16 }}>
@@ -610,6 +840,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
               { id: "green",   label: "أخضر",           primary: "#1a4731", secondary: "#2d6a4f" },
               { id: "purple",  label: "بنفسجي",         primary: "#4a235a", secondary: "#7d3c98" },
               { id: "dark",    label: "رمادي",          primary: "#1c1c1c", secondary: "#444444" },
+              { id: "red",     label: "أحمر",           primary: "#b3373a", secondary: "#cf5a5d" },
             ].map(t => (
               <button key={t.id}
                 onClick={() => set("colorTheme", t.id)}
@@ -1491,6 +1722,7 @@ function TutorialOverlay({ onClose }) {
 function ProcessingOverlay({ steps, filename }) {
   const doneCount = steps.filter(s => s.status === "done").length;
   const pct = Math.round((doneCount / steps.length) * 100);
+  const activeLabel = steps.find(s => s.status === "active")?.label || "إنهاء المعالجة";
 
   return (
     <div style={{
@@ -1508,14 +1740,13 @@ function ProcessingOverlay({ steps, filename }) {
       }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 18,
-            background: "linear-gradient(135deg,#1abc9c22,#2874a622)",
-            border: "1px solid rgba(26,188,156,.3)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 28, margin: "0 auto 14px",
-          }}>📊</div>
-          <div style={{ color: "#fff", fontWeight: 900, fontSize: 18, marginBottom: 6 }}>جاري المعالجة…</div>
+          <div className="loader-visual">
+            <span className="loader-ring"/><span className="loader-ring inner"/>
+            <span style={{ width: 26, height: 26, color: "#d8fff7" }}><StepIcon name="chart" /></span>
+          </div>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
+            {activeLabel}<span className="loader-dots"><i/><i/><i/></span>
+          </div>
           {filename && (
             <div style={{
               color: "rgba(255,255,255,.35)", fontSize: 11,
@@ -1615,13 +1846,13 @@ function LoadingOverlay({ message = "جاري المعالجة…", progress }) 
       display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", gap: 24, fontFamily: "'Cairo',sans-serif",
     }}>
-      <div style={{
-        width: 68, height: 68, borderRadius: "50%",
-        border: "4px solid rgba(26,188,156,.2)",
-        borderTop: "4px solid #1abc9c",
-        animation: "spin 0.85s linear infinite",
-      }} />
-      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center" }}>{message}</div>
+      <div className="loader-visual" style={{ margin: 0 }}>
+        <span className="loader-ring"/><span className="loader-ring inner"/>
+        <span style={{ width: 26, height: 26, color: "#d8fff7" }}><StepIcon name="edit" /></span>
+      </div>
+      <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center" }}>
+        {message}<span className="loader-dots"><i/><i/><i/></span>
+      </div>
       {hasProgress ? (
         <div style={{ width: 280 }}>
           <div style={{ height: 8, background: "rgba(255,255,255,.1)", borderRadius: 4, overflow: "hidden" }}>
@@ -1644,11 +1875,76 @@ function LoadingOverlay({ message = "جاري المعالجة…", progress }) 
   );
 }
 
+function DriveBatchOverlay({ state, onClose }) {
+  if (!state) return null;
+  const doneCount = state.items.filter(item => item.status === "done").length;
+  const errorCount = state.items.filter(item => item.status === "error").length;
+  const downloadableItems = state.items.filter(item => item.status === "done" && item.localBlob);
+  const finished = doneCount + errorCount;
+  const pct = state.total ? Math.round((finished / state.total) * 100) : 0;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 8950, background: "rgba(5,14,28,.94)", backdropFilter: "blur(15px)", display: "grid", placeItems: "center", padding: 18 }}>
+      <div className="proc-overlay" style={{ width: "min(650px,100%)", maxHeight: "min(720px,92vh)", display: "flex", flexDirection: "column", background: "linear-gradient(150deg,#10253e,#0b1b2f)", border: "1px solid rgba(255,255,255,.13)", borderRadius: 24, padding: 26, boxShadow: "0 36px 90px rgba(0,0,0,.58)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+          <div className="loader-visual" style={{ width: 58, height: 58, margin: 0, flexShrink: 0 }}>
+            <span className="loader-ring" style={state.done ? { animation: "none", borderColor: errorCount ? "#f59e0b" : "#1abc9c" } : undefined}/>
+            <span style={{ width: 21, height: 21, color: state.done ? (errorCount ? "#fbbf24" : "#71e8d4") : "#d8fff7" }}><StepIcon name={state.done ? "shield" : "upload"}/></span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>{state.done ? "اكتملت تقارير PDF" : "تحليل الاستبيانات وإنشاء PDF"}</div>
+            <div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginTop: 3 }}>
+              {state.done ? `تم رفع ${doneCount} تقرير${errorCount ? ` وتعذر ${errorCount}` : ""}` : `جاري معالجة الملف ${state.current} من ${state.total}`}
+            </div>
+          </div>
+          {state.done && <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            {!!downloadableItems.length && <button className="btn btn-primary btn-sm" onClick={() => downloadableItems.forEach((item, index) => setTimeout(() => downloadBlob(item.localBlob, item.reportName || `report-${index + 1}.pdf`), index * 180))}>تحميل الكل ({downloadableItems.length})</button>}
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>إغلاق</button>
+          </div>}
+        </div>
+        <div style={{ height: 7, borderRadius: 7, background: "rgba(255,255,255,.07)", overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ width: `${pct}%`, height: "100%", borderRadius: 7, transition: "width .35s ease", background: errorCount ? "linear-gradient(90deg,#1abc9c,#f59e0b)" : "linear-gradient(90deg,#1abc9c,#2874a6,#1abc9c)", backgroundSize: "200% 100%", animation: !state.done ? "progressFlow 1.8s linear infinite" : "none" }}/>
+        </div>
+        <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 7, paddingLeft: 3 }}>
+          {state.items.map(item => (
+            <div key={item.id} className={`batch-row ${item.status}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 11, border: `1px solid ${item.status === "done" ? "rgba(26,188,156,.25)" : item.status === "error" ? "rgba(231,76,60,.3)" : "rgba(255,255,255,.07)"}`, backgroundColor: item.status === "done" ? "rgba(26,188,156,.08)" : item.status === "error" ? "rgba(231,76,60,.08)" : "rgba(255,255,255,.025)" }}>
+              <span style={{ width: 25, height: 25, display: "grid", placeItems: "center", flexShrink: 0, color: item.status === "done" ? "#5eead4" : item.status === "error" ? "#ff8a80" : "rgba(255,255,255,.35)" }}>
+                {item.status === "active" ? <svg className="spin" viewBox="0 0 20 20" style={{ width: 18, height: 18 }}><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28 12"/></svg> : item.status === "done" ? "✓" : item.status === "error" ? "!" : "○"}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "#e8f0fe", fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
+                <div style={{ color: item.status === "error" ? "#ff9d96" : "rgba(255,255,255,.38)", fontSize: 10.5, marginTop: 2 }}>{item.stage}</div>
+              </div>
+              {item.status === "done" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                  {item.report?.webViewLink && <a href={item.report.webViewLink} target="_blank" rel="noreferrer" style={{ color: "#71e8d4", fontSize: 10.5, textDecoration: "none" }}>فتح على Drive</a>}
+                  {item.localBlob && <button type="button" onClick={() => downloadBlob(item.localBlob, item.reportName || "report.pdf")} style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid rgba(96,165,250,.22)", background: "rgba(59,130,246,.1)", color: "#a9d1ff", fontFamily: "inherit", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>تحميل PDF</button>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── StepBar ───────────────────────────────────────────────────────────────────
+function StepIcon({ name }) {
+  const paths = {
+    layout: <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 9v12"/></>,
+    upload: <><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></>,
+    shield: <><path d="M12 3l7 3v5c0 4.4-3 7.7-7 10-4-2.3-7-5.6-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></>,
+    table: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16M15 10v10"/></>,
+    edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5Z"/></>,
+    chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+  };
+  return <svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: "100%", height: "100%", fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" }}>{paths[name] ?? paths.layout}</svg>;
+}
+
 function StepBar({ step }) {
   return (
     <div className="step-bar" role="list" aria-label="خطوات إنشاء التقرير">
-      {STEPS.map((label, i) => {
+      {STEPS.map(({ label, icon }, i) => {
         const status = i === step ? "active" : i < step ? "done" : "pending";
         return (
           <div
@@ -1657,7 +1953,8 @@ function StepBar({ step }) {
             className={`step-item ${status}`}
             aria-current={status === "active" ? "step" : undefined}
           >
-            <span className="step-item-num">{status === "done" ? "✓" : String(i + 1).padStart(2, "0")}</span>
+            <span className="step-item-icon"><StepIcon name={status === "done" ? "shield" : icon} /></span>
+            <span className="step-item-num">{status === "done" ? "مكتمل" : `خطوة ${i + 1}`}</span>
             <span>{label}</span>
           </div>
         );
@@ -1666,20 +1963,27 @@ function StepBar({ step }) {
   );
 }
 
+function WorkflowHeader({ step, icon, title, description }) {
+  return <div className="workflow-header">
+    <span className="workflow-header-icon"><StepIcon name={icon}/></span>
+    <div><div className="workflow-header-kicker">خطوة {step} من 6</div><div className="workflow-header-title">{title}</div><div className="workflow-header-copy">{description}</div></div>
+  </div>;
+}
+
 // ── ReportModePicker ──────────────────────────────────────────────────────────
 function ReportModePicker({ value, onChange }) {
   const MODES = [
-    { id: "annual",   icon: "📊", label: "تقرير سنة واحدة", desc: "تحليل عام دراسي محدد" },
-    { id: "compare2", icon: "📈", label: "مقارنة سنتين",     desc: "مقارنة عامين دراسيين" },
-    { id: "compare3", icon: "📉", label: "مقارنة 3 سنوات",   desc: "مقارنة ثلاثة أعوام" },
+    { id: "annual",   icon: "chart", label: "تقرير سنة واحدة", desc: "تحليل عام دراسي محدد" },
+    { id: "compare2", icon: "table", label: "مقارنة سنتين",     desc: "مقارنة عامين دراسيين" },
+    { id: "compare3", icon: "layout", label: "مقارنة 3 سنوات",  desc: "مقارنة ثلاثة أعوام" },
   ];
   return (
     <div className="card" style={{ padding: 36 }}>
-      <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, marginBottom: 28, textAlign: "center" }}>نوع التقرير</div>
+      <WorkflowHeader step="1" icon="layout" title="نوع التقرير" description="اختر نطاق التحليل؛ يمكنك الرجوع وتغييره لاحقًا." />
       <div className="type-card-row" style={{ display: "flex", gap: 16 }}>
         {MODES.map(m => (
           <div key={m.id} className={`type-card ${value === m.id ? "selected" : ""}`} onClick={() => onChange(m.id)}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>{m.icon}</div>
+            <div style={{ width: 34, height: 34, margin: "0 auto 10px", color: value === m.id ? "#71e8d4" : "rgba(255,255,255,.58)" }}><StepIcon name={m.icon}/></div>
             <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{m.label}</div>
             <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12 }}>{m.desc}</div>
           </div>
@@ -1929,7 +2233,7 @@ function MetadataForm({ meta, onChange }) {
   );
   return (
     <div className="card" style={{ padding: 32 }}>
-      <div style={{ color: "#fff", fontSize: 20, fontWeight: 900, marginBottom: 20, textAlign: "center" }}>بيانات التقرير</div>
+      <WorkflowHeader step="5" icon="edit" title="بيانات التقرير" description="أكمل البيانات التي ستظهر في غلاف التقرير والتوقيعات." />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
         <div>
           <label className="label">اسم البرنامج / القسم</label>
@@ -2254,6 +2558,142 @@ function ComparisonPreview({ comparison }) {
 const LOCAL_STEPS = ["قراءة البيانات", "تنظيف البيانات", "كشف نوع الاستبيان", "حساب المؤشرات", "تجهيز العرض"];
 const DRIVE_STEPS = ["تحميل الملف من Drive", "قراءة البيانات", "تنظيف البيانات", "كشف نوع الاستبيان", "تجهيز العرض"];
 
+const HUB_ICONS = {
+  home: <><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
+  analytics: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 7 6-4 6 5 4-3"/></>,
+  surveys: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6M9 8h6M9 12h6M9 16h4"/></>,
+  semester: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
+  dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
+  courses: <><path d="m3 6 9-4 9 4-9 4-9-4Z"/><path d="M7 8.2v5.3c0 1.7 2.2 3 5 3s5-1.3 5-3V8.2M21 6v7"/></>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.36.5.75 1 .97.35.16.73.24 1.1.23h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></>,
+  help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.45-1.2.9-1.2 2M12 17h.01"/></>,
+};
+
+function HubIcon({ name }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{HUB_ICONS[name]}</svg>;
+}
+
+function QualityHub({ onOpen }) {
+  const toolCards = [
+    {
+      id: "analytics", icon: "analytics", color: "#5eead4", featured: true,
+      title: "تحليل الاستبيانات", tag: "ملف أو Google Drive",
+      description: "ارفع ملف الاستجابات أو اتصل بـ Google Drive، ثم راجع البيانات وأنشئ تقرير Word أو PDF.",
+    },
+    {
+      id: "semester-create", icon: "semester", color: "#60a5fa", featured: true,
+      title: "إنشاء استبيانات الفصل الدراسي", tag: "Google Forms",
+      description: "اختر القوالب والسنة والفصل، وأنشئ كل استبيانات الفصل منظمةً تلقائياً على Google Drive.",
+    },
+    {
+      id: "semester-quick-analysis", icon: "analytics", color: "#fbbf24", featured: true,
+      title: "تحليل سريع", tag: "PDF إلى Google Drive",
+      description: "اختر السنة والفصل، ثم حلّل كل الاستبيانات أو مجموعة محددة وارفع تقارير PDF تلقائياً.",
+    },
+    {
+      id: "courses", icon: "courses", color: "#a78bfa", featured: true,
+      title: "تقييم المقررات", tag: "دورة تقييم متكاملة",
+      description: "جهّز بيانات المقررات، تابع نسب المشاركة، قسّم ملفات التقييم وراجع التوصيات من مساحة واحدة.",
+    },
+  ];
+
+  return (
+    <section className="hub" aria-label="الصفحة الرئيسية لوحدة ضمان الجودة">
+      <div className="hub-hero">
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="hub-eyebrow"><span>◆</span> مركز العمليات الأكاديمية</div>
+          <h1 className="hub-title">كل أدوات الجودة<br/>في مساحة عمل واحدة</h1>
+          <p className="hub-subtitle">
+            منصة موحّدة تساعد فريق وحدة ضمان الجودة على إدارة الاستبيانات، تحليل النتائج،
+            وتشغيل دورة تقييم المقررات بكفاءة ووضوح.
+          </p>
+          <div className="hub-hero-actions">
+            <button className="btn btn-primary" onClick={() => onOpen("semester-quick-analysis")}>ابدأ تحليلًا سريعًا ←</button>
+            <button className="btn btn-ghost" onClick={() => onOpen("semester-dashboard")}>افتح لوحة التحكم</button>
+          </div>
+        </div>
+        <aside className="hub-snapshot" aria-label="ملخص المنصة">
+          <div className="hub-snapshot-top"><span>جاهزية مساحة العمل</span><span className="hub-live">متاحة الآن</span></div>
+          <div className="hub-stats">
+            <div className="hub-stat"><strong>{Object.keys(allSchemas()).length}</strong><span>أنواع تحليل جاهزة</span></div>
+            <div className="hub-stat"><strong>4</strong><span>مسارات عمل رئيسية</span></div>
+            <div className="hub-stat"><strong>3</strong><span>صيغ تصدير رئيسية</span></div>
+            <div className="hub-stat"><strong>RTL</strong><span>تقارير عربية متكاملة</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <div className="hub-section-head">
+        <div><h2>أدوات وحدة الجودة</h2><p>اختر المهمة التي تريد إنجازها الآن</p></div>
+        <span className="hub-eyebrow">{toolCards.length} مساحات عمل</span>
+      </div>
+      <div className="tool-grid">
+        {toolCards.map(tool => (
+          <button key={tool.id} className={`tool-card ${tool.featured ? "featured" : ""}`}
+            style={{ "--tool-color": tool.color }} onClick={() => onOpen(tool.id)}>
+            <span className="tool-card-icon"><HubIcon name={tool.icon} /></span>
+            <h3>{tool.title}</h3>
+            <p>{tool.description}</p>
+            <span className="tool-card-foot"><span className="tool-tag">{tool.tag}</span><span className="tool-arrow">←</span></span>
+          </button>
+        ))}
+      </div>
+
+      <div className="hub-note">
+        <div className="hub-note-copy"><span className="hub-note-icon">✦</span><span><b style={{ color: "#fff" }}>مسار عمل مقترح:</b> أنشئ الاستبيان، اجمع الاستجابات، ثم استخدم أداة التحليل لإصدار التقرير النهائي.</span></div>
+        <button className="btn btn-ghost btn-sm" onClick={() => onOpen("tutorial")}>عرض دليل الاستخدام</button>
+      </div>
+    </section>
+  );
+}
+
+const SIDEBAR_ITEMS = [
+  { id: "home", icon: "home", label: "الرئيسية" },
+  { id: "analytics", icon: "analytics", label: "تحليل الاستبيانات" },
+  { id: "semester-create", icon: "semester", label: "إنشاء استبيانات الفصل" },
+  { id: "semester-quick-analysis", icon: "analytics", label: "تحليل سريع" },
+  { id: "semester-dashboard", icon: "dashboard", label: "لوحة التحكم" },
+  { id: "courses", icon: "courses", label: "تقييم المقررات" },
+];
+
+function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
+  return (
+    <aside className={`tool-sidebar ${open ? "open" : "collapsed"}`} aria-label="التنقل بين أدوات الجودة">
+      <div className="sidebar-brand">
+        <span className="sidebar-brand-mark"><HubIcon name="home" /></span>
+        <span className="sidebar-brand-copy">بوابة وحدة ضمان الجودة<small>ERU · QUALITY HUB</small></span>
+        <button type="button" className="sidebar-toggle" onClick={onToggle} aria-label={open ? "طي القائمة الجانبية" : "فتح القائمة الجانبية"} title={open ? "طي القائمة" : "فتح القائمة"}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+      <div className="sidebar-heading">مساحات العمل</div>
+      <nav className="sidebar-nav">
+        {SIDEBAR_ITEMS.map(item => (
+          <button key={item.id} type="button" className={`sidebar-item ${active === item.id ? "active" : ""}`} onClick={() => onNavigate(item.id)} title={!open ? item.label : undefined}>
+            <span className="sidebar-icon"><HubIcon name={item.icon} /></span>
+            <span className="sidebar-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-separator" />
+      <div className="sidebar-heading">أدوات إضافية</div>
+      <nav className="sidebar-nav">
+        <button type="button" className={`sidebar-item ${active === "surveys" ? "active" : ""}`} onClick={() => onNavigate("surveys")} title={!open ? "تصميم الاستبيانات" : undefined}>
+          <span className="sidebar-icon"><HubIcon name="surveys" /></span><span className="sidebar-label">تصميم الاستبيانات</span>
+        </button>
+      </nav>
+      <div className="sidebar-bottom sidebar-nav">
+        <button type="button" className="sidebar-item" onClick={onTutorial} title={!open ? "دليل الاستخدام" : undefined}>
+          <span className="sidebar-icon"><HubIcon name="help" /></span><span className="sidebar-label">دليل الاستخدام</span>
+        </button>
+        <button type="button" className={`sidebar-item ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")} title={!open ? "الإعدادات" : undefined}>
+          <span className="sidebar-icon"><HubIcon name="settings" /></span><span className="sidebar-label">الإعدادات</span>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [step, setStep]         = useState(0);
@@ -2268,7 +2708,10 @@ export default function App() {
   const [showSurveyManagement, setShowSurveyManagement] = useState(false);
   const [showSemesterSurveys, setShowSemesterSurveys] = useState(false);
   const [showCourseEval, setShowCourseEval] = useState(false);
+  const [showHub, setShowHub] = useState(true);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 760);
+  const [semesterInitialTab, setSemesterInitialTab] = useState("generate");
   const [settings, setSettings]         = useState(loadSettings);
   const [aiSettings, setAiSettings]     = useState(loadAiSettings);
   const [pdfIncludeCharts, setPdfIncludeCharts] = useState(() => loadSettings().includePdfCharts !== false);
@@ -2315,11 +2758,16 @@ export default function App() {
   // Upload source tab
   const [uploadTab,         setUploadTab]         = useState("upload");
   const [driveToken,        setDriveToken]        = useState(() => getStoredToken(DRIVE_TOKEN_KEY));
+  const [driveConnecting,   setDriveConnecting]   = useState(false);
+  const [driveConnection,   setDriveConnection]   = useState(() => getStoredToken(DRIVE_TOKEN_KEY) ? "checking" : "disconnected");
+  const [driveAccount,      setDriveAccount]      = useState("");
   const [driveFiles,        setDriveFiles]        = useState([]);
   const [driveSearch,       setDriveSearch]       = useState("");
   const [driveLoading,      setDriveLoading]      = useState(false);
   const [driveSelected,     setDriveSelected]     = useState(null);
+  const [driveSelectedIds,  setDriveSelectedIds]  = useState(() => new Set());
   const [driveProcessing,   setDriveProcessing]   = useState(false);
+  const [driveBatchState,   setDriveBatchState]   = useState(null);
   const [driveFilterType,   setDriveFilterType]   = useState("");
   const [driveFilterYear,   setDriveFilterYear]   = useState("");
   const [driveFilterProgram,setDriveFilterProgram]= useState("");
@@ -2360,9 +2808,9 @@ export default function App() {
       const q = DRIVE_FILE_MIMES.map(m => `mimeType='${m}'`).join(" or ");
       const params = new URLSearchParams({
         q: `(${q}) and trashed=false`,
-        fields: "files(id,name,mimeType,modifiedTime)",
+        fields: "files(id,name,mimeType,modifiedTime,parents,webViewLink)",
         orderBy: "modifiedTime desc",
-        pageSize: "50",
+        pageSize: "1000",
       });
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -2389,9 +2837,13 @@ export default function App() {
             // A silent background attempt failing is normal (no prior session/consent) —
             // only surface an error banner for an explicit, user-clicked connect.
             if (explicitDriveRef.current) setError("فشل الاتصال بـ Google Drive: " + resp.error);
+            setDriveConnecting(false);
+            setDriveConnection("disconnected");
             return;
           }
           setDriveToken(resp.access_token);
+          setDriveConnecting(false);
+          setDriveConnection("connected");
           saveStoredToken(DRIVE_TOKEN_KEY, resp.access_token, resp.expires_in);
           await fetchDriveFiles(resp.access_token);
         },
@@ -2401,11 +2853,58 @@ export default function App() {
   }, [fetchDriveFiles]);
 
   const connectDrive = useCallback(async () => {
-    if (!GOOGLE_CLIENT_ID) return;
-    const client = await ensureDriveTokenClient();
-    explicitDriveRef.current = true;
-    client.requestAccessToken({ prompt: "select_account" });
+    if (!GOOGLE_CLIENT_ID) {
+      setError("تعذر الاتصال: VITE_GOOGLE_CLIENT_ID غير مضبوط في إعدادات المشروع.");
+      setDriveConnection("disconnected");
+      return;
+    }
+    setDriveConnecting(true);
+    setDriveConnection("connecting");
+    try {
+      const client = await ensureDriveTokenClient();
+      explicitDriveRef.current = true;
+      client.requestAccessToken({ prompt: "select_account" });
+    } catch (e) {
+      setDriveConnecting(false);
+      setDriveConnection("disconnected");
+      setError("فشل الاتصال بـ Google Drive: " + e.message);
+    }
   }, [ensureDriveTokenClient]);
+
+  const disconnectDrive = useCallback(() => {
+    setDriveToken(null);
+    setDriveConnection("disconnected");
+    setDriveAccount("");
+    clearStoredToken(DRIVE_TOKEN_KEY);
+    setDriveFiles([]);
+    setDriveSelected(null);
+    setDriveSelectedIds(new Set());
+    setDriveViewMode("list");
+  }, []);
+
+  useEffect(() => {
+    if (!driveToken) { setDriveConnection("disconnected"); setDriveAccount(""); return; }
+    let cancelled = false;
+    setDriveConnection("checking");
+    fetch("https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)", {
+      headers: { Authorization: `Bearer ${driveToken}` },
+    }).then(async res => {
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (!cancelled) {
+        setDriveAccount(data.user?.emailAddress || data.user?.displayName || "");
+        setDriveConnection("connected");
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      setDriveToken(null);
+      clearStoredToken(DRIVE_TOKEN_KEY);
+      setDriveFiles([]);
+      setDriveConnection("disconnected");
+      setDriveAccount("");
+    });
+    return () => { cancelled = true; };
+  }, [driveToken]);
 
   // Token persisted from a previous visit? Great, no Google call needed at all. Otherwise,
   // once on mount, try a silent refresh (no popup) before ever showing the connect button.
@@ -2437,16 +2936,7 @@ export default function App() {
     // Show step 0 (download) as active immediately
     setProcSteps(DRIVE_STEPS.map((label, i) => ({ label, status: i === 0 ? "active" : "pending" })));
     try {
-      const isGSheet = file.mimeType === GSHEETS_MIME;
-      const url = isGSheet
-        ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-        : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${driveToken}` } });
-      if (!res.ok) throw new Error(`خطأ في التحميل (${res.status})`);
-      const buf = await res.arrayBuffer();
-      const filename = isGSheet
-        ? (file.name.endsWith(".xlsx") ? file.name : file.name + ".xlsx")
-        : file.name;
+      const { buffer: buf, filename } = await downloadDriveBuffer(file, driveToken);
 
       setSingleFile({ name: filename });
       const rows = readExcel(buf);
@@ -2468,6 +2958,93 @@ export default function App() {
       setError(err.message ?? "خطأ في تحميل الملف من Drive");
     }
   }, [driveToken, runStepAnim]);
+
+  const handleDriveBatchReports = useCallback(async (files) => {
+    const selectedFiles = (files ?? []).filter(Boolean);
+    if (!driveToken || !selectedFiles.length || driveProcessing) return;
+    setDriveProcessing(true);
+    setError("");
+    setDriveBatchState({
+      done: false,
+      current: 0,
+      total: selectedFiles.length,
+      items: selectedFiles.map(file => ({ id: file.id, name: file.name, stage: "في الانتظار", status: "pending" })),
+    });
+    const updateItem = (id, patch) => setDriveBatchState(prev => prev ? ({
+      ...prev,
+      items: prev.items.map(item => item.id === id ? { ...item, ...patch } : item),
+    }) : prev);
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      setDriveBatchState(prev => prev ? { ...prev, current: i + 1 } : prev);
+      try {
+        updateItem(file.id, { status: "active", stage: "تحميل الاستجابات" });
+        const { buffer, filename } = await downloadDriveBuffer(file, driveToken);
+        updateItem(file.id, { stage: "تحليل البيانات" });
+        const rows = readExcel(buffer);
+        const type = detectSurveyType(filename, rows[0]);
+        const targetSchema = allSchemas()[type];
+        if (!targetSchema) throw new Error("تعذر تحديد نوع الاستبيان تلقائيًا");
+        const result = analyze(rows, targetSchema);
+        updateItem(file.id, { stage: "تجهيز صفحات تقرير PDF" });
+        const reportMeta = {
+          year: detectYearFromFilename(filename) || meta.year,
+          program: detectProgramFromFilename(filename) || meta.program,
+          preparedBy: settings.surveyResponsible?.[type] ?? meta.preparedBy,
+          reviewer: meta.reviewer,
+        };
+        const builtPdf = await buildBrandedReportPdf(result, reportMeta, settings, (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }));
+        const reportName = safePdfReportName(filename);
+        updateItem(file.id, { stage: "رفع التقرير إلى Drive" });
+        const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, file, driveToken);
+        updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+      } catch (err) {
+        updateItem(file.id, { status: "error", stage: err.message || "فشلت المعالجة" });
+      }
+    }
+    setDriveBatchState(prev => prev ? { ...prev, done: true } : prev);
+    setDriveProcessing(false);
+  }, [driveToken, driveProcessing, meta, settings]);
+
+  const handleSemesterFormsBatch = useCallback(async (forms, token) => {
+    const selectedForms = (forms ?? []).filter(Boolean);
+    if (!token || !selectedForms.length || driveProcessing) return;
+    setDriveProcessing(true);
+    setError("");
+    setDriveBatchState({ done: false, current: 0, total: selectedForms.length, items: selectedForms.map(f => ({ id: f.id, name: f.name, stage: "في الانتظار", status: "pending" })) });
+    const updateItem = (id, patch) => setDriveBatchState(prev => prev ? ({ ...prev, items: prev.items.map(item => item.id === id ? { ...item, ...patch } : item) }) : prev);
+    for (let i = 0; i < selectedForms.length; i++) {
+      const file = selectedForms[i];
+      setDriveBatchState(prev => prev ? { ...prev, current: i + 1 } : prev);
+      try {
+        updateItem(file.id, { status: "active", stage: "قراءة ردود Google Form" });
+        const [form, responses] = await Promise.all([getForm(token, file.id), listAllResponses(token, file.id)]);
+        const rows = responsesToRows(form, responses);
+        updateItem(file.id, { stage: "تحليل البيانات" });
+        const type = detectSurveyType(file.name, rows[0]);
+        const targetSchema = allSchemas()[type];
+        if (!targetSchema) throw new Error("تعذر تحديد نوع الاستبيان تلقائيًا");
+        const result = analyze(rows, targetSchema);
+        updateItem(file.id, { stage: "تجهيز صفحات تقرير PDF" });
+        const reportMeta = {
+          year: detectYearFromFilename(file.name) || meta.year,
+          program: departmentFromSurveyName(file.name) || detectProgramFromFilename(file.name) || meta.program,
+          preparedBy: settings.surveyResponsible?.[type] ?? meta.preparedBy,
+          reviewer: meta.reviewer,
+        };
+        const builtPdf = await buildBrandedReportPdf(result, reportMeta, settings, (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }));
+        const reportName = safePdfReportName(file.name);
+        updateItem(file.id, { stage: "رفع التقرير بجوار النموذج" });
+        const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, { parents: [file.parentId] }, token);
+        updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+      } catch (err) {
+        updateItem(file.id, { status: "error", stage: err.message || "فشلت المعالجة" });
+      }
+    }
+    setDriveBatchState(prev => prev ? { ...prev, done: true } : prev);
+    setDriveProcessing(false);
+  }, [driveProcessing, meta, settings]);
 
   // Same tail as handleDriveFileSelect, but for a survey picked via SemesterFormPicker —
   // rows are already fetched (Forms API responses converted to Excel-row shape) by the
@@ -2676,7 +3253,7 @@ export default function App() {
     setSingleHeaders(null); setSingleAllRows(null); setSingleSchema(null);
     setSingleMetaCols(null); setSingleRemoved(new Set());
     setSingleFilters({ dept: "", degree: "" });
-    setDetecting(false); setDetectedAutoType(null); setRawRows(null);
+    setDetectedAutoType(null); setRawRows(null);
     setBatchMode(false); setBatchFiles([]);
     setUploadTab("upload"); setDriveSelected(null); setDriveViewMode("list");
     setDriveFilterType(""); setDriveFilterYear(""); setDriveFilterProgram("");
@@ -2685,88 +3262,93 @@ export default function App() {
   const isAnnual = mode === "annual";
   const canProceed = isAnnual ? !!singleFile : slots.slice(0, slotCount).every(s => s._file);
 
+  const openHubTool = (tool) => {
+    if (tool === "tutorial") { setShowTutorial(true); return; }
+    if (tool === "home") { goToHub(); return; }
+    const isSemesterTool = tool === "semester" || tool === "semester-create" || tool === "semester-quick-analysis" || tool === "semester-dashboard";
+    if (tool === "semester-create") setSemesterInitialTab("generate");
+    if (tool === "semester-quick-analysis") setSemesterInitialTab("quick-analysis");
+    if (tool === "semester-dashboard") setSemesterInitialTab("dashboard");
+    setShowHub(false);
+    setShowSurveyManagement(tool === "surveys");
+    setShowSemesterSurveys(isSemesterTool);
+    setShowCourseEval(tool === "courses");
+    setShowSettings(tool === "settings");
+    if (tool === "analytics") reset();
+    if (window.innerWidth <= 760) setSidebarOpen(false);
+  };
+
+  const openSemesterAnalysis = () => {
+    openHubTool("analytics");
+    setMode("annual");
+    setStep(1);
+    setUploadTab("drive");
+    setDriveViewMode("semester");
+  };
+
+  const goToHub = () => {
+    setShowSurveyManagement(false);
+    setShowSemesterSurveys(false);
+    setShowCourseEval(false);
+    setShowSettings(false);
+    setShowHub(true);
+  };
+
+  const activeTool = showHub
+    ? "home"
+    : showSurveyManagement
+      ? "surveys"
+    : showSemesterSurveys
+        ? (semesterInitialTab === "dashboard" ? "semester-dashboard" : semesterInitialTab === "quick-analysis" ? "semester-quick-analysis" : "semester-create")
+        : showCourseEval
+          ? "courses"
+          : showSettings
+            ? "settings"
+            : "analytics";
+  const activeToolTitle = activeTool === "settings"
+    ? "الإعدادات"
+    : activeTool === "surveys"
+      ? "تصميم الاستبيانات"
+      : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة وحدة ضمان الجودة";
+
   return (
-    <div style={{
+    <div className="quality-app" style={{
       minHeight: "100vh",
-      background: "linear-gradient(135deg,#0f2035 0%,#1a3a5c 50%,#0d3b2e 100%)",
+      background: "linear-gradient(145deg,#091a2d 0%,#102f4b 58%,#0b352f 100%)",
       fontFamily: "'Cairo',sans-serif", direction: "rtl",
     }}>
       <style>{CSS}</style>
 
       {/* Header */}
-      <div className="app-header" style={{ padding: "18px 32px", borderBottom: "1px solid rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(135deg,#1abc9c,#2874a6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>📊</div>
-          <div>
-            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>محلل الاستبيانات الأكاديمية</div>
-            <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11 }}>ERU – وحدة ضمان الجودة</div>
-          </div>
+      <header className={`app-header quality-header ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`} style={{ padding: "14px 24px", borderBottom: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, color: "#fff", fontSize: 14, fontWeight: 900 }}>
+          <button type="button" className="sidebar-toggle mobile-nav-toggle" onClick={() => setSidebarOpen(true)} aria-label="فتح القائمة الجانبية" title="فتح القائمة">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <span>{activeToolTitle}</span>
         </div>
-        <div className="app-header-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {/* Help button */}
-          <button
-            onClick={() => setShowTutorial(true)}
-            title="دليل الاستخدام"
-            aria-label="فتح دليل الاستخدام"
-            style={{
-              width: 36, height: 36, borderRadius: "50%",
-              border: "1px solid rgba(255,255,255,.18)",
-              background: "rgba(255,255,255,.08)",
-              color: "rgba(255,255,255,.7)", fontWeight: 900, fontSize: 16,
-              cursor: "pointer", display: "flex", alignItems: "center",
-              justifyContent: "center", transition: "all .18s",
-              fontFamily: "'Cairo',sans-serif",
-            }}
-            onMouseOver={e => { e.currentTarget.style.background = "rgba(26,188,156,.25)"; e.currentTarget.style.borderColor = "rgba(26,188,156,.5)"; e.currentTarget.style.color = "#1abc9c"; }}
-            onMouseOut={e  => { e.currentTarget.style.background = "rgba(255,255,255,.08)"; e.currentTarget.style.borderColor = "rgba(255,255,255,.18)"; e.currentTarget.style.color = "rgba(255,255,255,.7)"; }}
-          >?</button>
-          <nav className="header-nav-group" aria-label="أقسام النظام">
-            <button
-              className={`btn btn-sm ${showSurveyManagement ? "btn-primary" : "btn-ghost"}`}
-              aria-current={showSurveyManagement ? "page" : undefined}
-              title="إدارة الاستبيانات"
-              onClick={() => { setShowSurveyManagement(v => !v); setShowSettings(false); setShowSemesterSurveys(false); setShowCourseEval(false); }}
-            >
-              🗂️ إدارة الاستبيانات
-            </button>
-            <button
-              className={`btn btn-sm ${showSemesterSurveys ? "btn-primary" : "btn-ghost"}`}
-              aria-current={showSemesterSurveys ? "page" : undefined}
-              title="استبيانات الفصل الدراسي"
-              onClick={() => { setShowSemesterSurveys(v => !v); setShowSettings(false); setShowSurveyManagement(false); setShowCourseEval(false); }}
-            >
-              📆 استبيانات الفصل الدراسي
-            </button>
-            <button
-              className={`btn btn-sm ${showCourseEval ? "btn-primary" : "btn-ghost"}`}
-              aria-current={showCourseEval ? "page" : undefined}
-              title="تقييم المقررات"
-              onClick={() => { setShowCourseEval(v => !v); setShowSettings(false); setShowSurveyManagement(false); setShowSemesterSurveys(false); }}
-            >
-              📚 تقييم المقررات
-            </button>
-            <button
-              className={`btn btn-sm ${showSettings ? "btn-primary" : "btn-ghost"}`}
-              aria-current={showSettings ? "page" : undefined}
-              title="الإعدادات"
-              onClick={() => { setShowSettings(v => !v); setShowSurveyManagement(false); setShowSemesterSurveys(false); setShowCourseEval(false); }}
-            >
-              ⚙ الإعدادات
-            </button>
-          </nav>
-          {(step > 0 || showSettings || showSurveyManagement || showSemesterSurveys || showCourseEval) && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setShowSurveyManagement(false); setShowSemesterSurveys(false); setShowCourseEval(false); reset(); }}>↩ بدء جديد</button>
-          )}
-        </div>
-      </div>
+        {driveConnection === "connected" ? (
+          <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><span className="google-status-dot" /> {driveAccount || "Google Drive متصل"}</button>
+        ) : (
+          <button type="button" className="google-global-btn disconnected" disabled={driveConnecting || driveConnection === "checking"} onClick={connectDrive}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7.5 4h9L21 12l-4.5 8h-9L3 12Z"/><path d="m7.5 4 9 16M16.5 4 7.5 20M3 12h18"/></svg>
+            {driveConnection === "checking" ? <>جاري التحقق<span className="loader-dots"><i/><i/><i/></span></> : driveConnecting ? <>جاري الاتصال<span className="loader-dots"><i/><i/><i/></span></> : "ربط Google Drive"}
+          </button>
+        )}
+      </header>
 
-      <div className="app-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
+      <div className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+        <ToolSidebar open={sidebarOpen} active={activeTool} onNavigate={openHubTool} onTutorial={() => setShowTutorial(true)} onToggle={() => setSidebarOpen(v => !v)} />
+        <div className="app-content">
+          <div className="app-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
 
         {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
-        {showSurveyManagement ? (
+        {showHub ? (
+          <QualityHub onOpen={openHubTool} />
+        ) : showSurveyManagement ? (
           <SurveyManagement />
         ) : showSemesterSurveys ? (
-          <SemesterSurveys />
+          <SemesterSurveys key={semesterInitialTab} initialTab={semesterInitialTab} onOpenAnalysis={openSemesterAnalysis} onAnalyzeForms={handleSemesterFormsBatch} onSectionChange={setSemesterInitialTab} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
         ) : showCourseEval ? (
           <CourseEvaluationHub />
         ) : showSettings ? (
@@ -2808,55 +3390,41 @@ export default function App() {
 
             {/* ══ STEP 1 — Upload file(s) ══ */}
             {step === 1 && isAnnual && (
-              <div className="card" style={{ padding: uploadTab === "drive" && driveToken ? "24px 32px" : 44, textAlign: "center" }}>
+              <div className="card upload-workspace">
+                <WorkflowHeader step="2" icon="upload" title="رفع ملف الاستبيان" description="اختر من الجهاز أو Drive، وسيتم التعرف على نوعه تلقائيًا." />
                 {!(uploadTab === "drive" && driveToken) && (<>
-                  <div style={{ fontSize: 52, marginBottom: 16 }}>📂</div>
-                  <div style={{ color: "#fff", fontSize: 22, fontWeight: 900, marginBottom: 8 }}>
-                    ارفع ملف الاستبيان
-                  </div>
                   <div style={{ color: "rgba(255,255,255,.45)", fontSize: 13, marginBottom: 24 }}>
                     يُكتشف نوع الاستبيان تلقائياً من الأعمدة · يدعم .xlsx / .xls / .csv
                   </div>
                 </>)}
 
                 {/* Source tabs */}
-                <div style={{
-                  display: "flex", maxWidth: uploadTab === "drive" && driveToken ? "100%" : 520,
-                  margin: uploadTab === "drive" && driveToken ? "0 0 20px" : "0 auto 28px",
-                  borderRadius: 12, overflow: "hidden",
-                  border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.04)",
-                }}>
-                  {[
-                    { id: "upload", label: "📁 رفع ملف" },
-                    { id: "drive",  label: "☁️ Google Drive" },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setUploadTab(t.id)} style={{
-                      flex: 1, padding: "13px 8px", border: "none", cursor: "pointer",
-                      fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 14,
-                      background: uploadTab === t.id ? "rgba(26,188,156,.2)" : "transparent",
-                      color:      uploadTab === t.id ? "#1abc9c" : "rgba(255,255,255,.45)",
-                      borderBottom: uploadTab === t.id ? "2px solid #1abc9c" : "2px solid transparent",
-                      transition: "all .2s",
-                    }}>{t.label}</button>
-                  ))}
+                <div className="upload-source-grid">
+                  <button className={`upload-source-card ${uploadTab === "upload" ? "active" : ""}`} onClick={() => setUploadTab("upload")}>
+                    <span className="upload-source-icon"><StepIcon name="upload" /></span>
+                    <span><strong>رفع ملف من الجهاز</strong><small>Excel أو CSV من جهازك، مع دعم اختيار عدة ملفات</small></span>
+                  </button>
+                  <button className={`upload-source-card ${uploadTab === "drive" ? "active" : ""}`} onClick={() => setUploadTab("drive")}>
+                    <span className="upload-source-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 17h9.5a3.5 3.5 0 0 0 .6-6.95A6 6 0 0 0 6.6 8.7 4.2 4.2 0 0 0 8 17Z"/><path d="m12 9-3 3m3-3 3 3m-3-3v7"/></svg></span>
+                    <span><strong>Google Drive</strong><small>ابحث واختر الاستبيانات المحفوظة على حسابك</small></span>
+                  </button>
                 </div>
 
                 {/* ── Upload tab ── */}
                 {uploadTab === "upload" && (
                   <div
-                    className={`upload-zone ${dragging ? "drag" : ""}`}
-                    style={{ maxWidth: 640, margin: "0 auto" }}
+                    className={`upload-zone upload-drop-modern ${dragging ? "drag" : ""}`}
                     onDragOver={e => { e.preventDefault(); setDragging(true); }}
                     onDragLeave={() => setDragging(false)}
                     onDrop={handleDropSingle}
                     onClick={() => singleRef.current.click()}
                   >
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>📊</div>
+                    <div className="upload-drop-icon"><StepIcon name="upload" /></div>
                     <div style={{ color: "#fff", fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
-                      اسحب الملف هنا أو اضغط للاختيار
+                      اسحب الملفات هنا أو اضغط للاختيار
                     </div>
                     <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>
-                      ملف استجابات Google Forms · يمكن اختيار أكثر من ملف للمعالجة الدفعية
+                      يدعم Excel وCSV، ويمكن اختيار عدة ملفات للتحليل الجماعي
                     </div>
                     <input ref={singleRef} type="file" accept=".xlsx,.xls,.csv" multiple
                       style={{ display: "none" }}
@@ -2918,36 +3486,24 @@ export default function App() {
                     ) : driveLoading ? (
                       /* Loading files */
                       <div style={{ textAlign: "center", padding: "36px 0", color: "rgba(255,255,255,.5)" }}>
-                        <svg className="spin" width="38" height="38" viewBox="0 0 38 38" style={{ display: "block", margin: "0 auto 14px" }}>
-                          <circle cx="19" cy="19" r="15" fill="none" stroke="#1abc9c" strokeWidth="3" strokeDasharray="60 20"/>
-                        </svg>
-                        جاري تحميل الملفات…
+                        <div className="loader-visual" style={{ width: 58, height: 58 }}><span className="loader-ring"/><span className="loader-ring inner"/><span style={{ width: 20, height: 20, color: "#d8fff7" }}><StepIcon name="upload"/></span></div>
+                        جاري قراءة ملفات Drive<span className="loader-dots"><i/><i/><i/></span>
                       </div>
                     ) : (
                       /* File list */
                       <div>
                         {/* Connected bar */}
-                        <div style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          background: "rgba(26,188,156,.1)", border: "1px solid rgba(26,188,156,.25)",
-                          borderRadius: 10, padding: "10px 14px", marginBottom: 12,
-                        }}>
-                          <span style={{ color: "#1abc9c", fontWeight: 700, fontSize: 13 }}>✅ متصل بـ Google Drive</span>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <div className="drive-control-bar">
+                          <span style={{ color: "#75efd8", fontWeight: 800, fontSize: 12 }}>Google Drive متصل <span aria-hidden="true">●</span></span>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: "100%" }}>
                             {/* View toggle */}
-                            <div style={{ display: "flex", background: "rgba(255,255,255,.06)", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.1)" }}>
+                            <div className="drive-view-switch">
                               {[
-                                { id: "list",     label: "📁 قائمة" },
-                                { id: "dashboard",label: "📊 لوحة"  },
-                                { id: "semester", label: "🗓️ الفصل الدراسي" },
+                                { id: "list", label: "الملفات" },
+                                { id: "dashboard", label: "لوحة التحكم" },
+                                { id: "semester", label: "استبيانات الفصل" },
                               ].map(v => (
-                                <button key={v.id} onClick={() => setDriveViewMode(v.id)} style={{
-                                  padding: "4px 11px", border: "none", cursor: "pointer",
-                                  fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 11,
-                                  background: driveViewMode === v.id ? "rgba(26,188,156,.3)" : "transparent",
-                                  color: driveViewMode === v.id ? "#1abc9c" : "rgba(255,255,255,.45)",
-                                  transition: "all .15s", whiteSpace: "nowrap",
-                                }}>{v.label}</button>
+                                <button key={v.id} className={`drive-view-btn ${driveViewMode === v.id ? "active" : ""}`} onClick={() => setDriveViewMode(v.id)}>{v.label}</button>
                               ))}
                             </div>
                             <button onClick={() => fetchDriveFiles(driveToken)} style={{
@@ -2955,7 +3511,7 @@ export default function App() {
                               borderRadius: 8, padding: "5px 11px", color: "rgba(255,255,255,.6)",
                               cursor: "pointer", fontSize: 12, fontFamily: "'Cairo',sans-serif",
                             }}>🔄</button>
-                            <button onClick={() => { setDriveToken(null); clearStoredToken(DRIVE_TOKEN_KEY); setDriveFiles([]); setDriveSelected(null); setDriveViewMode("list"); }} style={{
+                            <button onClick={disconnectDrive} style={{
                               background: "rgba(231,76,60,.1)", border: "1px solid rgba(231,76,60,.25)",
                               borderRadius: 8, padding: "5px 11px", color: "#ff6b6b",
                               cursor: "pointer", fontSize: 12, fontFamily: "'Cairo',sans-serif",
@@ -2971,7 +3527,7 @@ export default function App() {
                             onSelectFile={(f) => { setDriveViewMode("list"); handleDriveFileSelect(f); }}
                           />
                         ) : driveViewMode === "semester" ? (
-                          <SemesterFormPicker onFormSelected={handleDriveFormSelect} />
+                          <SemesterFormPicker onFormSelected={handleDriveFormSelect} onAnalyzeForms={handleSemesterFormsBatch} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
                         ) : (<>
                         {/* Filters row */}
                         {(() => {
@@ -2988,7 +3544,7 @@ export default function App() {
                           });
                           const hasFilter = driveFilterType || driveFilterYear || driveFilterProgram;
                           return (
-                            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                            <div className="drive-filter-grid">
                               <select value={driveFilterType}
                                 onChange={e => { setDriveFilterType(e.target.value); setDriveSelected(null); }}
                                 style={selStyle(!!driveFilterType)}>
@@ -3022,12 +3578,10 @@ export default function App() {
                         <input
                           value={driveSearch}
                           onChange={e => { setDriveSearch(e.target.value); setDriveSelected(null); }}
-                          placeholder="🔍 ابحث باسم الملف…"
+                          placeholder="ابحث باسم الملف أو البرنامج..."
+                          className="drive-search-field"
                           style={{
-                            width: "100%", background: "#0d1f33", color: "#e8f0fe",
-                            border: "1px solid rgba(255,255,255,.18)", borderRadius: 10,
-                            padding: "10px 14px", fontFamily: "'Cairo',sans-serif",
-                            fontSize: 13, direction: "rtl", marginBottom: 8, outline: "none",
+                            direction: "rtl",
                           }}
                         />
 
@@ -3041,8 +3595,31 @@ export default function App() {
                             return true;
                           });
                           const hasAnyFilter = driveSearch || driveFilterType || driveFilterYear || driveFilterProgram;
+                          const selectedFiles = filtered.filter(f => driveSelectedIds.has(f.id));
                           return (
                             <>
+                              {!!filtered.length && (
+                                <div className="drive-batch-toolbar">
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                    <span style={{ color: "#b9fff2", fontSize: 12, fontWeight: 800 }}>{selectedFiles.length} محدد</span>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setDriveSelectedIds(prev => {
+                                      const next = new Set(prev); filtered.forEach(f => next.add(f.id)); return next;
+                                    })}>تحديد الظاهر</button>
+                                    {!!driveSelectedIds.size && <button className="btn btn-ghost btn-sm" onClick={() => setDriveSelectedIds(new Set())}>إلغاء التحديد</button>}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                    <button className="btn btn-ghost btn-sm" disabled={!selectedFiles.length || driveProcessing}
+                                      style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
+                                      onClick={() => handleDriveBatchReports(selectedFiles)}>
+                                      إنشاء PDF للمحدد ورفعه ({selectedFiles.length})
+                                    </button>
+                                    <button className="btn btn-primary btn-sm" disabled={driveProcessing}
+                                      onClick={() => handleDriveBatchReports(filtered)}>
+                                      إنشاء PDF للكل ورفعه
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                               {hasAnyFilter && (
                                 <div style={{ color: "rgba(255,255,255,.35)", fontSize: 11, marginBottom: 6, textAlign: "right" }}>
                                   {filtered.length} من {driveFiles.length} ملف
@@ -3053,42 +3630,38 @@ export default function App() {
                                   {driveFiles.length ? "لا توجد ملفات تطابق الفلاتر" : "لا توجد ملفات Excel أو CSV في Drive"}
                                 </div>
                               ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-                                  {filtered.map(f => {
-                                    const icon = f.mimeType === GSHEETS_MIME ? "📊" : f.mimeType === "text/csv" ? "📋" : "📄";
-                                    const isSelected = driveSelected?.id === f.id;
+                                <div className="drive-file-grid">
+                                  {filtered.map((f, index) => {
+                                    const isChecked = driveSelectedIds.has(f.id);
+                                    const prog = detectProgramFromFilename(f.name);
+                                    const yr = detectYearFromFilename(f.name);
+                                    const type = detectTypeHintFromFilename(f.name);
+                                    const tags = [type && allSchemas()[type]?.label, yr, prog].filter(Boolean);
+                                    const toggleFile = () => {
+                                      setDriveSelected(f);
+                                      setDriveSelectedIds(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(f.id)) next.delete(f.id); else next.add(f.id);
+                                        return next;
+                                      });
+                                    };
                                     return (
-                                      <div key={f.id} onClick={() => setDriveSelected(f)} style={{
-                                        display: "flex", alignItems: "center", gap: 10,
-                                        background: isSelected ? "rgba(26,188,156,.15)" : "rgba(255,255,255,.04)",
-                                        border: `1px solid ${isSelected ? "rgba(26,188,156,.5)" : "rgba(255,255,255,.08)"}`,
-                                        borderRadius: 10, padding: "10px 14px", cursor: "pointer", transition: "all .15s",
-                                      }}>
-                                        <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-                                        <div style={{ flex: 1, textAlign: "right" }}>
-                                          <div style={{ color: "#e8f0fe", fontSize: 13 }}>{f.name}</div>
-                                          {(() => {
-                                            const prog = detectProgramFromFilename(f.name);
-                                            const yr   = detectYearFromFilename(f.name);
-                                            const type = detectTypeHintFromFilename(f.name);
-                                            const tags = [
-                                              type && allSchemas()[type]?.label,
-                                              yr,
-                                              prog,
-                                            ].filter(Boolean);
-                                            return tags.length ? (
-                                              <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                                                {tags.map((t, i) => (
-                                                  <span key={i} style={{ fontSize: 10, color: "#1abc9c", background: "rgba(26,188,156,.12)", borderRadius: 6, padding: "1px 7px" }}>{t}</span>
-                                                ))}
-                                              </div>
-                                            ) : null;
-                                          })()}
-                                        </div>
-                                        <span style={{ color: "rgba(255,255,255,.3)", fontSize: 11, whiteSpace: "nowrap", flexShrink: 0 }}>
-                                          {f.modifiedTime?.slice(0, 10) ?? ""}
+                                      <article key={f.id} className={`drive-file-card ${isChecked ? "selected" : ""}`}
+                                        role="button" tabIndex={0} aria-pressed={isChecked}
+                                        style={{ animationDelay: `${Math.min(index * 25, 250)}ms` }}
+                                        onClick={toggleFile}
+                                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFile(); } }}>
+                                        <span className="drive-file-select" aria-hidden="true">{isChecked ? "✓" : "+"}</span>
+                                        <span className="drive-file-kind" aria-hidden="true">
+                                          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 2h9l3 3v17H6z"/><path d="M9 11h6M9 15h6M9 7h3"/></svg>
                                         </span>
-                                      </div>
+                                        <div className="drive-file-name">{f.name}</div>
+                                        {!!tags.length && <div className="drive-file-meta">{tags.map((tag, i) => <span className="drive-file-tag" key={`${tag}-${i}`}>{tag}</span>)}</div>}
+                                        <div className="drive-file-foot">
+                                          <span className="drive-file-date">{f.modifiedTime?.slice(0, 10) ?? ""}</span>
+                                          <button className="drive-file-analyze" onClick={e => { e.stopPropagation(); handleDriveFileSelect(f); }}>تحليل الملف</button>
+                                        </div>
+                                      </article>
                                     );
                                   })}
                                 </div>
@@ -3097,19 +3670,6 @@ export default function App() {
                           );
                         })()}
 
-                        {/* Confirm button */}
-                        {driveSelected && (
-                          <button
-                            className="btn btn-primary"
-                            style={{ width: "100%", marginTop: 14, justifyContent: "center", opacity: driveProcessing ? 0.7 : 1 }}
-                            disabled={driveProcessing}
-                            onClick={() => handleDriveFileSelect(driveSelected)}
-                          >
-                            {driveProcessing
-                              ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="white" strokeWidth="2" strokeDasharray="22 8"/></svg> جاري التحميل…</>
-                              : `✔ تحليل: ${driveSelected.name}`}
-                          </button>
-                        )}
                         </>)}
                       </div>
                     )}
@@ -3212,14 +3772,7 @@ export default function App() {
               ).length;
               return (
                 <div className="card" style={{ padding: 36 }}>
-                  <div style={{ color: "#fff", fontSize: 20, fontWeight: 900,
-                                textAlign: "center", marginBottom: 6 }}>
-                    التحقق من نوع الاستبيان
-                  </div>
-                  <div style={{ color: "rgba(255,255,255,.4)", fontSize: 13,
-                                textAlign: "center", marginBottom: 28 }}>
-                    تحقق من صحة الاكتشاف التلقائي قبل المتابعة
-                  </div>
+                  <WorkflowHeader step="3" icon="shield" title="التحقق من نوع الاستبيان" description="راجع النتيجة المختصرة وافتح التفاصيل فقط إذا احتجت تعديلًا." />
 
                   {/* Detected schema card */}
                   <div style={{
@@ -3285,12 +3838,8 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Column headers preview */}
-                  <div style={{ marginBottom: 24 }}>
-                    <div style={{ color: "rgba(255,255,255,.55)", fontSize: 12, fontWeight: 700,
-                                  marginBottom: 10, letterSpacing: .3 }}>
-                      أول الأعمدة المكتشفة في الملف:
-                    </div>
+                  <CollapsibleSection title="تفاصيل الأعمدة المكتشفة" defaultOpen={false}
+                    badge={<span style={{ color: "rgba(255,255,255,.4)", fontSize: 11 }}>{colHeaders.length} عمود</span>}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {colHeaders.slice(0, 9).map((h, i) => (
                         <span key={i} style={{
@@ -3306,13 +3855,10 @@ export default function App() {
                         }}>+{colHeaders.length - 9} أخرى</span>
                       )}
                     </div>
-                  </div>
+                  </CollapsibleSection>
 
-                  {/* Override section */}
-                  <div style={{
-                    background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)",
-                    borderRadius: 14, padding: "18px 20px", marginBottom: 24,
-                  }}>
+                  <CollapsibleSection title="تغيير نوع الاستبيان يدويًا" defaultOpen={false}
+                    badge={<span style={{ color: "rgba(255,255,255,.4)", fontSize: 11 }}>عند الحاجة فقط</span>}>
                     <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, fontWeight: 700,
                                   marginBottom: 12 }}>
                       النوع غير صحيح؟ اختر يدوياً:
@@ -3333,7 +3879,7 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </CollapsibleSection>
 
                   {error && (
                     <div style={{ color: "#e74c3c", marginBottom: 16, textAlign: "center", fontSize: 13 }}>
@@ -3374,14 +3920,7 @@ export default function App() {
                       while trimming rows below, with Next/Previous right underneath it so
                       the user never has to scroll past the row table to move on. */}
                   <div className="card" style={{ padding: 28, marginBottom: 18 }}>
-                    <div style={{ color: "#fff", fontSize: 20, fontWeight: 900,
-                                  textAlign: "center", marginBottom: 6 }}>
-                      📈 لوحة التحليل التفاعلية
-                    </div>
-                    <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13,
-                                  textAlign: "center", marginBottom: 22 }}>
-                      تتحدث تلقائياً مع كل صف تحذفه أو فلتر تطبّقه
-                    </div>
+                    <WorkflowHeader step="4" icon="table" title="معاينة البيانات" description="راجع الملخص، وافتح جدول الصفوف فقط للحذف أو التصفية." />
                     {liveResult ? (
                       <QuickStatsRow result={liveResult} />
                     ) : (
@@ -3405,7 +3944,7 @@ export default function App() {
                   {/* Row-level data preview — collapsible, sits below the dashboard */}
                   <CollapsibleSection
                     title="🔍 معاينة البيانات"
-                    defaultOpen={true}
+                    defaultOpen={false}
                     badge={
                       <span style={{ color: "rgba(255,255,255,.4)", fontSize: 12, fontWeight: 400 }}>
                         راجع البيانات واحذف الصفوف غير المرغوبة
@@ -3445,6 +3984,7 @@ export default function App() {
             {/* ══ STEP 5 — Results ══ */}
             {step === 5 && (
               <div>
+                <WorkflowHeader step="6" icon="chart" title="النتائج والتصدير" description="راجع الملخص ثم نزّل Word أو PDF أو افتح المعاينة المحسّنة." />
                 {isAnnual && singleResult && (
                   <div>
                     <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14, marginBottom: 18, textAlign: "center" }}>
@@ -3524,6 +4064,8 @@ export default function App() {
             )}
           </>
         )}
+          </div>
+        </div>
       </div>
 
       {/* ── Tutorial overlay ── */}
@@ -3531,6 +4073,9 @@ export default function App() {
 
       {/* ── Processing steps overlay ── */}
       {procSteps && <ProcessingOverlay steps={procSteps} filename={procFile} />}
+
+      {/* ── Drive multi-report progress ── */}
+      {driveBatchState && <DriveBatchOverlay state={driveBatchState} onClose={() => setDriveBatchState(null)} />}
 
       {/* ── Branded PDF generation overlay ── */}
       {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} />}

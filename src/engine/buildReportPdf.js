@@ -24,11 +24,31 @@ const ACCENT     = "#b3373a";
 const TEXT_DARK  = "#22262b";
 const TEXT_MUTED = "#6b7280";
 const BAR_COLORS = ["#e74c3c", "#f39c12", "#27ae60", "#17a2b8", "#9b59b6", "#2980b9", "#e67e22", "#16a085"];
+const PDF_THEMES = {
+  default: { accent: "#1f3864", soft: "#ebf3fb", heading: "#d6e4f0", line: "#9fbad0" },
+  green:   { accent: "#1a4731", soft: "#eaf6ee", heading: "#d4edda", line: "#a8d5b5" },
+  purple:  { accent: "#4a235a", soft: "#f5eef8", heading: "#e8daef", line: "#d7bde2" },
+  dark:    { accent: "#1c1c1c", soft: "#f5f5f5", heading: "#e0e0e0", line: "#c0c0c0" },
+  red:     { accent: ACCENT, soft: PINK_SOFT, heading: PINK, line: PINK_LINE },
+};
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+function reportText(result, key, fallback, meta = {}) {
+  const raw = result.reportTexts?.[key]?.trim() || fallback;
+  const values = {
+    "{اسم_الاستبيان}": result.schemaLabel ?? "",
+    "{عدد_المشاركين}": result.n ?? "",
+    "{عدد_الأسئلة}": result.totalQuestions ?? "",
+    "{عدد_المحاور}": result.axes?.length ?? "",
+    "{العام}": meta.year ?? "",
+    "{البرنامج}": meta.program ?? "",
+  };
+  return Object.entries(values).reduce((text, [token, value]) => text.split(token).join(String(value)), raw);
 }
 
 function barColor(i) {
@@ -126,10 +146,11 @@ function buildCoverPage(result, meta, s, logoSrc) {
     ${pageOpen("pdf-cover")}
       ${pageHeader(s, logoSrc)}
       <div class="pdf-cover-title-wrap">
-        <div class="pdf-cover-title">استبيان ${esc(schemaLabel)}</div>
-        <div class="pdf-cover-subtitle">تقرير نتائج تحليل الاستبيانات</div>
+        <div class="pdf-cover-title">${esc(reportText(result, "reportTitle", `استبيان ${schemaLabel}`, meta))}</div>
+        <div class="pdf-cover-subtitle">${esc(reportText(result, "reportSubtitle", "تقرير نتائج تحليل الاستبيانات", meta))}</div>
         <div class="pdf-cover-committee">${esc(s.committeeName)}</div>
       </div>
+      ${result.reportTexts?.introduction?.trim() ? `<p class="pdf-cover-intro">${esc(reportText(result, "introduction", "", meta))}</p>` : ""}
       ${sectionHeading("البيانات الأساسية")}
       <div class="pdf-info-table">
         ${rows.map(([l, v], i) => infoRow(l, v, i)).join("")}
@@ -164,6 +185,20 @@ function buildVisionPage(s, logoSrc) {
         <div class="pdf-vm-text">${esc(s.mission)}</div>
       </div>
       <div class="pdf-vm-footer">${esc(s.email)}</div>
+    ${pageClose}`;
+}
+
+function buildCustomReportSectionPage(result, s, logoSrc) {
+  const section = result.reportSections?.afterEvaluators;
+  if (!section) return "";
+  return `
+    ${pageOpen()}
+      ${pageHeader(s, logoSrc)}
+      ${sectionHeading(section.title)}
+      ${section.intro ? `<p class="pdf-body-text">${esc(section.intro)}</p>` : ""}
+      <ol class="pdf-procedure-list">
+        ${(section.items ?? []).map(item => `<li>${esc(item)}</li>`).join("")}
+      </ol>
     ${pageClose}`;
 }
 
@@ -223,15 +258,15 @@ function buildMethodologyPage(result, s, logoSrc) {
       ${pageHeader(s, logoSrc)}
       ${sectionHeading(`نتائج تحليل ${esc(result.schemaLabel)}`)}
       <p class="pdf-body-text">
-        يتم إجراء التحليل الإحصائي لتقييم الاستبيان وفقاً لعدد من الخطوات، بدءاً بقيام الطلاب/المشاركين
+        ${esc(reportText(result, "methodologyText", `يتم إجراء التحليل الإحصائي لتقييم الاستبيان وفقاً لعدد من الخطوات، بدءاً بقيام الطلاب/المشاركين
         بتعبئة الاستبيان، ثم تجميع البيانات ومعالجتها إحصائياً باستخدام المعايير والمؤشرات
         المناسبة، وذلك بهدف تقييم جودة العملية التي يقيسها الاستبيان وتحديد نقاط القوة والجوانب
-        التي تتطلب التحسين أو التطوير.
+        التي تتطلب التحسين أو التطوير.`))}
       </p>
 
       ${sectionHeading("متغيرات الاستبيان")}
       <p class="pdf-body-text">
-        اشتمل الاستبيان على (${totalQuestions}) عبارة تتمثل في (${axes.length}) محور رئيسي.
+        ${esc(reportText(result, "variablesText", `اشتمل الاستبيان على (${totalQuestions}) عبارة تتمثل في (${axes.length}) محور رئيسي.`))}
       </p>
 
       ${sectionHeading("المعالجة الإحصائية المستخدمة")}
@@ -260,25 +295,25 @@ function buildSummaryTablePages(result, s, logoSrc) {
     return `
       ${pageOpen()}
         ${pageHeader(s, logoSrc)}
-        ${sectionHeading(pageIdx === 0 ? "ملخص النتائج" : "ملخص النتائج (تابع)")}
+        ${sectionHeading(pageIdx === 0 ? reportText(result, "summaryHeading", "ملخص النتائج") : `${reportText(result, "summaryHeading", "ملخص النتائج")} (تابع)`)}
         <table class="pdf-table">
           <thead>
-            <tr><th>الاتجاه العام</th><th>النسبة</th><th>العدد</th><th class="pdf-th-wide">المحاور</th></tr>
+            <tr><th class="pdf-th-wide">المحور</th><th>العدد</th><th>النسبة</th><th>الاتجاه العام</th></tr>
           </thead>
           <tbody>
             ${pageAxes.map((ax, i) => `
               <tr class="${i % 2 === 0 ? "alt" : ""}">
-                <td>${esc(ax.direction)}</td>
-                <td class="pdf-td-strong">${ax.axisAgreePct}%</td>
-                <td>${n}</td>
                 <td class="pdf-td-right">${esc(ax.name)}</td>
+                <td>${n}</td>
+                <td class="pdf-td-strong">${ax.axisAgreePct}%</td>
+                <td>${esc(ax.direction)}</td>
               </tr>`).join("")}
             ${isLast ? `
               <tr class="pdf-total-row">
-                <td>${esc(overallDirection)}</td>
-                <td>${overallAgreePct}%</td>
-                <td>${n}</td>
                 <td class="pdf-td-right">المتوسط العام</td>
+                <td>${n}</td>
+                <td>${overallAgreePct}%</td>
+                <td>${esc(overallDirection)}</td>
               </tr>` : ""}
           </tbody>
         </table>
@@ -298,14 +333,17 @@ function buildChartPages(result, s, logoSrc) {
 
 function buildAxisBlock(ax, result, includeCharts) {
   const is5 = result.scaleType === "likert-5";
+  const scale5Labels = result.scaleValues?.length === 5
+    ? result.scaleValues.map(v => v.label)
+    : ["لا أوافق بشدة", "لا أوافق", "محايد", "أوافق", "أوافق بشدة"];
   const headerLabels = is5
-    ? ["م", "العبارات", "لا أوافق بشدة", "لا أوافق", "محايد", "أوافق", "أوافق بشدة"]
+    ? ["م", "العبارات", ...scale5Labels]
     : ["م", "العبارات", "لا أوافق %", "محايد %", "أوافق %"];
 
   const fmtPct = v => (v === 0 || v == null) ? "-" : `${v}%`;
 
   return `
-    ${sectionHeading(ax.name)}
+    ${result.isFlat ? "" : sectionHeading(ax.name)}
     <table class="pdf-table pdf-table-detail">
       <thead>
         <tr>${headerLabels.map(l => `<th>${esc(l)}</th>`).join("")}</tr>
@@ -384,9 +422,10 @@ function buildAxisDetailPages(result, s, logoSrc, includeCharts) {
   });
   if (current.length > 0) groups.push(current);
 
-  return groups.map(group => `
+  return groups.map((group, groupIndex) => `
     ${pageOpen()}
       ${pageHeader(s, logoSrc)}
+      ${groupIndex === 0 && (result.isFlat || result.reportTexts?.resultsHeading?.trim()) ? sectionHeading(reportText(result, "resultsHeading", "عرض النتائج وتحليلها")) : ""}
       ${group.map(ax => buildAxisBlock(ax, result, includeCharts)).join("")}
     ${pageClose}`).join("");
 }
@@ -426,8 +465,8 @@ function buildRecommendationsPages(result, s, logoSrc) {
     return `
       ${pageOpen()}
         ${pageHeader(s, logoSrc)}
-        ${sectionHeading("التوصيات")}
-        <div class="pdf-no-recs">لا توجد توصيات</div>
+        ${sectionHeading(reportText(result, "recommendationsHeading", "التوصيات"))}
+        <div class="pdf-no-recs">${esc(reportText(result, "noRecommendationsText", "لا توجد توصيات"))}</div>
         ${buildSignaturesBlock(s)}
       ${pageClose}`;
   }
@@ -438,7 +477,7 @@ function buildRecommendationsPages(result, s, logoSrc) {
     return `
       ${pageOpen()}
         ${pageHeader(s, logoSrc)}
-        ${sectionHeading(pageIdx === 0 ? `التوصيات (أقل من ${threshold}%)` : "التوصيات (تابع)")}
+        ${sectionHeading(pageIdx === 0 ? `${reportText(result, "recommendationsHeading", "التوصيات")} (أقل من ${threshold}%)` : `${reportText(result, "recommendationsHeading", "التوصيات")} (تابع)`)}
         <table class="pdf-table">
           <thead>
             <tr><th>النسبة</th><th class="pdf-th-wide">العبارة</th><th>المحور</th></tr>
@@ -478,6 +517,7 @@ const PDF_CSS = `
 
   .pdf-cover-title-wrap { text-align: center; margin: 30px 0 26px; }
   .pdf-cover-title { display: inline-block; font-size: 26px; font-weight: 900; padding: 6px 22px; background: ${PINK}; border-radius: 6px; color: ${TEXT_DARK}; }
+  .pdf-cover-intro { margin: -8px auto 22px; max-width: 620px; color: ${TEXT_MUTED}; font-size: 12px; line-height: 1.9; text-align: center; }
   .pdf-cover-subtitle { font-size: 15px; color: ${TEXT_MUTED}; margin-top: 12px; }
   .pdf-cover-committee { font-size: 17px; font-weight: 800; margin-top: 6px; color: ${ACCENT}; }
 
@@ -507,14 +547,17 @@ const PDF_CSS = `
   .pdf-formula-note { font-size: 11px; color: ${TEXT_MUTED}; text-align: center; }
 
   .pdf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .pdf-table th { background: ${ACCENT}; color: #fff; padding: 8px 6px; font-weight: 800; }
-  .pdf-table td { padding: 7px 6px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+  .pdf-table { table-layout: fixed; border: 1px solid #d8d8d8; }
+  .pdf-table th { background: ${ACCENT}; color: #fff; padding: 9px 7px; font-weight: 800; border: 1px solid rgba(255,255,255,.28); }
+  .pdf-table td { padding: 8px 7px; text-align: center; border: 1px solid #e1e1e1; }
   .pdf-table tr.alt td { background: ${PINK_SOFT}; }
   .pdf-table .pdf-th-wide { text-align: right; padding-right: 12px; }
   .pdf-table .pdf-td-right { text-align: right; padding-right: 12px; }
   .pdf-table .pdf-td-strong { font-weight: 800; }
   .pdf-total-row td { background: ${PINK}; font-weight: 900; }
   .pdf-table-detail td { font-size: 11.5px; }
+  .pdf-table-detail th:first-child, .pdf-table-detail td:first-child { width: 6%; }
+  .pdf-table-detail th:nth-child(2), .pdf-table-detail td:nth-child(2) { width: 49%; }
 
   .pdf-vchart { display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; height: 220px; margin-top: 14px; padding: 0 6px; }
   .pdf-vchart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
@@ -533,7 +576,18 @@ const PDF_CSS = `
   .pdf-axis-spacer { height: 22px; }
 
   .pdf-no-recs { text-align: center; font-weight: 800; color: ${ACCENT}; font-size: 15px; margin-top: 30px; }
+  .pdf-procedure-list { direction: rtl; list-style-position: inside; margin: 18px 0 0; padding: 0 18px 0 0; color: ${TEXT_DARK}; font-size: 13px; line-height: 2.05; text-align: right; }
+  .pdf-procedure-list li { direction: rtl; padding-right: 7px; margin-bottom: 8px; text-align: right; }
 `;
+
+function themedPdfCss(themeId) {
+  const t = PDF_THEMES[themeId] ?? PDF_THEMES.default;
+  return PDF_CSS
+    .replaceAll(ACCENT, t.accent)
+    .replaceAll(PINK_SOFT, t.soft)
+    .replaceAll(PINK_LINE, t.line)
+    .replaceAll(PINK, t.heading);
+}
 
 // ── main export ─────────────────────────────────────────────────────────────────
 // Renders one .pdf-page at a time (rather than one giant html2canvas capture of
@@ -542,19 +596,21 @@ const PDF_CSS = `
 // canvas height (~65535px in Chromium) at 2x scale, which silently yields a
 // fully transparent canvas with no thrown error. Per-page capture keeps each
 // canvas well under that limit regardless of how many axes a schema has.
-export async function downloadBrandedReportPdf(result, meta, settings, onProgress) {
+export async function buildBrandedReportPdf(result, meta, settings, onProgress) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import("html2canvas"),
     import("jspdf"),
   ]);
 
+  const perSurvey = settings.surveyReportOptions?.[result.schemaId] ?? {};
+  settings = { ...settings, ...perSurvey };
   let logoSrc = settings.logoDataUrl || "/logo.png";
 
   const container = document.createElement("div");
   container.style.cssText = "position:absolute;top:0;left:-3000px;width:850px;";
 
   const styleEl = document.createElement("style");
-  styleEl.textContent = PDF_CSS;
+  styleEl.textContent = themedPdfCss(settings.colorTheme);
   container.appendChild(styleEl);
 
   const root = document.createElement("div");
@@ -574,7 +630,8 @@ export async function downloadBrandedReportPdf(result, meta, settings, onProgres
   // right before the recommendations — not summary-then-detail.
   root.innerHTML = [
     buildCoverPage(result, meta, settings, logoSrc),
-    buildVisionPage(settings, logoSrc),
+    buildCustomReportSectionPage(result, settings, logoSrc),
+    settings.includeVisionMission !== false ? buildVisionPage(settings, logoSrc) : "",
     buildMethodologyPage(result, settings, logoSrc),
     buildAxisDetailPages(result, settings, logoSrc, includeCharts),
     buildSummaryTablePages(result, settings, logoSrc),
@@ -624,8 +681,21 @@ export async function downloadBrandedReportPdf(result, meta, settings, onProgres
       }
     }
 
-    pdf.save(filename);
+    return { blob: pdf.output("blob"), filename };
   } finally {
     document.body.removeChild(container);
   }
+}
+
+export async function downloadBrandedReportPdf(result, meta, settings, onProgress) {
+  const built = await buildBrandedReportPdf(result, meta, settings, onProgress);
+  const url = URL.createObjectURL(built.blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = built.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return built;
 }

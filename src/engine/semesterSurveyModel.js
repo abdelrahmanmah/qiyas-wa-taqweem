@@ -87,7 +87,10 @@ export function loadGisScript() {
 // 2) once it expires, try a *silent* requestAccessToken({prompt:""}) first (no popup,
 //    works if the browser still has an active Google session + prior consent) before
 //    ever falling back to the visible account-picker button.
-export const SEMESTER_TOKEN_KEY = "eruQA_semesterToken_v1";
+// Shared by the entire app (Drive uploads, Forms creation/responses and dashboards).
+// Versioned separately from the former per-screen tokens so an older, narrower token
+// is never mistaken for a fully-authorized global connection.
+export const SEMESTER_TOKEN_KEY = "eruQA_googleWorkspaceToken_v1";
 
 export function saveStoredToken(key, accessToken, expiresInSec) {
   try {
@@ -366,16 +369,16 @@ export async function listSemesterSurveysWithStats(token, semesterFolderId) {
   const typeFolders = await listSubfolders(token, semesterFolderId);
   const perType = await runBatched(typeFolders, async tf => {
     const files = await listFormsInFolder(token, tf.id);
-    return files.map(f => ({ ...f, surveyType: tf.name }));
+    return files.map(f => ({ ...f, surveyType: tf.name, parentId: tf.id }));
   }, 4);
   const allFiles = perType.flat();
   return runBatched(allFiles, async f => {
     try {
       const [form, responses] = await Promise.all([getForm(token, f.id), listAllResponses(token, f.id)]);
       const stats = computeResponseStats(responses);
-      return { id: f.id, name: f.name, surveyType: f.surveyType, responses: stats.count, last: stats.lastSubmittedTime, formUrl: form.responderUri || formViewUrl(f.id), error: null };
+      return { id: f.id, name: f.name, surveyType: f.surveyType, parentId: f.parentId, responses: stats.count, last: stats.lastSubmittedTime, formUrl: form.responderUri || formViewUrl(f.id), error: null };
     } catch (e) {
-      return { id: f.id, name: f.name, surveyType: f.surveyType, responses: 0, last: null, formUrl: formViewUrl(f.id), error: e.message };
+      return { id: f.id, name: f.name, surveyType: f.surveyType, parentId: f.parentId, responses: 0, last: null, formUrl: formViewUrl(f.id), error: e.message };
     }
   }, 4);
 }
