@@ -385,26 +385,32 @@ function buildAxisBlock(ax, result, includeCharts) {
 // attached-but-hidden `.pdf-page` probe rather than estimated — a fixed
 // per-row px guess undercounts headers like "لا أوافق بشدة" that wrap onto
 // two lines in a narrow column, which caused pages to overflow anyway.
-function measureBlockHeightsPx(htmlBlocks) {
+async function measureBlockHeightsPx(htmlBlocks, shouldCancel) {
   const probe = document.createElement("div");
   probe.className = "pdf-page";
   probe.style.cssText = "position:absolute;visibility:hidden;left:-9999px;top:0;min-height:0;padding:0;border:0;";
   document.body.appendChild(probe);
-  const heights = htmlBlocks.map(html => {
-    probe.innerHTML = html;
-    return probe.getBoundingClientRect().height;
-  });
-  document.body.removeChild(probe);
-  return heights;
+  const heights = [];
+  try {
+    for (let i = 0; i < htmlBlocks.length; i++) {
+      throwIfCancelled(shouldCancel);
+      probe.innerHTML = htmlBlocks[i];
+      heights.push(probe.getBoundingClientRect().height);
+      if (i % 3 === 2) await yieldToBrowser();
+    }
+    return heights;
+  } finally {
+    probe.remove();
+  }
 }
 
 // Available content height per page: .pdf-page min-height (1080) minus the
 // header block (~110) and top/bottom padding (~68), with a safety margin.
 const AXIS_PAGE_BUDGET_PX = 850;
 
-function buildAxisDetailPages(result, s, logoSrc, includeCharts) {
+async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCancel) {
   const blocks = result.axes.map(ax => buildAxisBlock(ax, result, includeCharts));
-  const heights = measureBlockHeightsPx(blocks);
+  const heights = await measureBlockHeightsPx(blocks, shouldCancel);
 
   const groups = [];
   let current = [];
@@ -589,6 +595,22 @@ function themedPdfCss(themeId) {
     .replaceAll(PINK, t.heading);
 }
 
+function cancellationError() {
+  const error = new Error("تم إلغاء إنشاء ملف PDF");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfCancelled(shouldCancel) {
+  if (shouldCancel?.()) throw cancellationError();
+}
+
+// html2canvas and jsPDF both do substantial work on the main thread. Yielding
+// between pages/slices lets React paint progress and lets cancel clicks run.
+function yieldToBrowser() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
 // ── main export ─────────────────────────────────────────────────────────────────
 // Renders one .pdf-page at a time (rather than one giant html2canvas capture of
 // the whole multi-page report) because a long report — e.g. the 25-axis
@@ -596,11 +618,14 @@ function themedPdfCss(themeId) {
 // canvas height (~65535px in Chromium) at 2x scale, which silently yields a
 // fully transparent canvas with no thrown error. Per-page capture keeps each
 // canvas well under that limit regardless of how many axes a schema has.
-export async function buildBrandedReportPdf(result, meta, settings, onProgress) {
+export async function buildBrandedReportPdf(result, meta, settings, onProgress, options = {}) {
+  const shouldCancel = options.shouldCancel;
+  throwIfCancelled(shouldCancel);
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import("html2canvas"),
     import("jspdf"),
   ]);
+  throwIfCancelled(shouldCancel);
 
   const perSurvey = settings.surveyReportOptions?.[result.schemaId] ?? {};
   settings = { ...settings, ...perSurvey };
@@ -628,16 +653,25 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress) 
   // Section order mirrors buildAnnualDocx() in buildDocx.js: detailed
   // per-axis breakdown (رابعاً) first, then the results summary (خامساً)
   // right before the recommendations — not summary-then-detail.
-  root.innerHTML = [
+  const leadingPages = [
     buildCoverPage(result, meta, settings, logoSrc),
     buildCustomReportSectionPage(result, settings, logoSrc),
     settings.includeVisionMission !== false ? buildVisionPage(settings, logoSrc) : "",
     buildMethodologyPage(result, settings, logoSrc),
-    buildAxisDetailPages(result, settings, logoSrc, includeCharts),
+  ];
+  const axisPages = await buildAxisDetailPages(result, settings, logoSrc, includeCharts, shouldCancel);
+  await yieldToBrowser();
+  throwIfCancelled(shouldCancel);
+  root.innerHTML = [
+    ...leadingPages,
+    axisPages,
     buildSummaryTablePages(result, settings, logoSrc),
     includeCharts ? buildChartPages(result, settings, logoSrc) : "",
     buildRecommendationsPages(result, settings, logoSrc),
   ].join("");
+
+  await yieldToBrowser();
+  throwIfCancelled(shouldCancel);
 
   const filename = `تقرير_${result.schemaLabel || "استبيان"}_${meta.program || ""}_${meta.year || ""}.pdf`;
 
@@ -650,11 +684,20 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress) 
     let pageIndex = 0;
 
     for (const el of pageEls) {
+      throwIfCancelled(shouldCancel);
       pageIndex++;
       onProgress?.(pageIndex, pageEls.length);
+      await yieldToBrowser();
+      throwIfCancelled(shouldCancel);
       const canvas = await html2canvas(el, {
-        scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0,
+        // 1.5x is sharp enough for A4 text while using ~44% less pixel work
+        // than 2x. This materially reduces long UI stalls on large reports.
+        scale: Math.min(2, Math.max(1, Number(settings.pdfRenderScale) || 1.5)),
+        useCORS: true, logging: false, backgroundColor: "#ffffff",
+        scrollX: 0, scrollY: 0, imageTimeout: 4000,
       });
+      await yieldToBrowser();
+      throwIfCancelled(shouldCancel);
       const fullHeightMm = (canvas.height * pageWidthMm) / canvas.width;
       // A section can render taller than one physical A4 page (e.g. a 25-axis
       // summary table) — slice the canvas across as many PDF pages as needed
@@ -663,6 +706,8 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress) 
       const sliceHeightPx = Math.ceil(canvas.height / sliceCount);
 
       for (let s = 0; s < sliceCount; s++) {
+        throwIfCancelled(shouldCancel);
+        await yieldToBrowser();
         const sliceCanvas = document.createElement("canvas");
         sliceCanvas.width = canvas.width;
         sliceCanvas.height = sliceHeightPx;
@@ -673,22 +718,28 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress) 
           canvas, 0, s * sliceHeightPx, canvas.width, sliceHeightPx,
           0, 0, canvas.width, sliceHeightPx
         );
-        const sliceImgData = sliceCanvas.toDataURL("image/jpeg", 0.95);
+        const sliceImgData = sliceCanvas.toDataURL("image/jpeg", 0.9);
         const sliceHeightMm = (sliceHeightPx * pageWidthMm) / canvas.width;
         if (!firstImage) pdf.addPage();
         firstImage = false;
         pdf.addImage(sliceImgData, "JPEG", 0, 0, pageWidthMm, sliceHeightMm);
+        sliceCanvas.width = 1;
+        sliceCanvas.height = 1;
       }
+      canvas.width = 1;
+      canvas.height = 1;
     }
 
+    await yieldToBrowser();
+    throwIfCancelled(shouldCancel);
     return { blob: pdf.output("blob"), filename };
   } finally {
     document.body.removeChild(container);
   }
 }
 
-export async function downloadBrandedReportPdf(result, meta, settings, onProgress) {
-  const built = await buildBrandedReportPdf(result, meta, settings, onProgress);
+export async function downloadBrandedReportPdf(result, meta, settings, onProgress, options) {
+  const built = await buildBrandedReportPdf(result, meta, settings, onProgress, options);
   const url = URL.createObjectURL(built.blob);
   const a = document.createElement("a");
   a.href = url;

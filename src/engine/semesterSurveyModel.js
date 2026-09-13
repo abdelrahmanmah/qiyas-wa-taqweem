@@ -253,9 +253,10 @@ export async function runBatched(items, worker, batchSize = 4) {
   return results;
 }
 
-export function buildSurveyName(templateName, semester, academicYear, department) {
-  return department
-    ? `${templateName} - ${department} - ${semester} - ${academicYear}`
+export function buildSurveyName(templateName, semester, academicYear, department, program = null) {
+  const unit = [department, program].filter(Boolean).join(" - ");
+  return unit
+    ? `${templateName} - ${unit} - ${semester} - ${academicYear}`
     : `${templateName} - ${semester} - ${academicYear}`;
 }
 
@@ -319,38 +320,66 @@ export function buildGenerationJobs(templates, departments) {
     const mode = t.mode || "general";
     if (mode === "departments" || mode === "programs") {
       const units = expandDepartmentUnits(departments, mode);
-      for (const u of units) jobList.push({ key: `${t.id}:${u.label}`, template: t, department: u.label });
+      for (const u of units) jobList.push({
+        key: `${t.id}:${u.label}`,
+        template: t,
+        department: u.department,
+        program: u.program,
+        unitLabel: u.label,
+      });
     } else {
-      jobList.push({ key: t.id, template: t, department: null });
+      jobList.push({ key: t.id, template: t, department: null, program: null, unitLabel: null });
     }
   }
   return jobList;
 }
 
-// Runs a prebuilt job list: creates/reuses the {year}/{semester}/{templateName} folder
-// structure, then copies/moves/renames/publishes each job's form copy, in batches of 4.
+// Creates {year}/{semester}/{department}/{survey folder}/{form}. Program-level
+// forms live together inside the survey folder for their department; a program is
+// represented in the form name and never gets its own folder. General surveys use
+// {year}/{semester}/{survey folder}/{form} because they have no department.
 // onJobUpdate(key, status) is optional — lets callers drive a live progress UI.
 export async function runGenerationJobs(token, jobList, { year, semester }, onJobUpdate) {
   const yFolder = await getOrCreateFolder(token, ROOT_SURVEYS_FOLDER_ID, yearFolderName(year));
   const semFolder = await getOrCreateFolder(token, yFolder.id, semester);
 
-  const uniqueTemplates = [...new Map(jobList.map(j => [j.template.id, j.template])).values()];
-  const templateFolders = {};
-  await Promise.all(uniqueTemplates.map(async t => {
-    templateFolders[t.id] = await getOrCreateFolder(token, semFolder.id, t.name);
+  const departmentNames = [...new Set(jobList.map(j => j.department).filter(Boolean))];
+  const departmentFolders = {};
+  await Promise.all(departmentNames.map(async department => {
+    departmentFolders[department] = await getOrCreateFolder(token, semFolder.id, department);
+  }));
+
+  const destinationFolders = {};
+  const uniqueDestinations = [...new Map(jobList.map(job => [
+    JSON.stringify([job.department || null, job.template.id]),
+    job,
+  ])).entries()];
+  await Promise.all(uniqueDestinations.map(async ([key, job]) => {
+    const parent = job.department ? departmentFolders[job.department] : semFolder;
+    destinationFolders[key] = await getOrCreateFolder(token, parent.id, job.template.name);
   }));
 
   const done = await runBatched(jobList, async job => {
     onJobUpdate?.(job.key, "active");
     try {
-      const newName = buildSurveyName(job.template.name, semester, year, job.department);
+      const newName = buildSurveyName(job.template.name, semester, year, job.department, job.program);
       const copy = await copyFile(token, job.template.id, newName);
-      await moveFile(token, copy.id, templateFolders[job.template.id].id, copy.parents);
+      const destinationKey = JSON.stringify([job.department || null, job.template.id]);
+      const destinationFolder = destinationFolders[destinationKey];
+      await moveFile(token, copy.id, destinationFolder.id, copy.parents);
       await updateFormTitle(token, copy.id, newName);
       await publishForm(token, copy.id);
       const form = await getForm(token, copy.id);
       onJobUpdate?.(job.key, "done");
-      return { ok: true, row: { key: job.key, name: newName, formId: copy.id, formUrl: form.responderUri || formViewUrl(copy.id) } };
+      return { ok: true, row: {
+        key: job.key,
+        name: newName,
+        department: job.department,
+        program: job.program,
+        surveyFolder: job.template.name,
+        formId: copy.id,
+        formUrl: form.responderUri || formViewUrl(copy.id),
+      } };
     } catch (e) {
       onJobUpdate?.(job.key, "error");
       return { ok: false, key: job.key, error: e.message };
@@ -362,16 +391,44 @@ export async function runGenerationJobs(token, jobList, { year, semester }, onJo
   return { successRows, failCount };
 }
 
-// Lists every form inside a semester folder's per-survey-type subfolders, with response
-// stats for each — the shared read path behind DashboardView and the chatbot's
-// list_semester_surveys / analyze_semester_surveys tools.
+// Reads the current two-level department/survey layout, plus direct forms and the
+// previous one-level layout so already-generated surveys remain visible.
 export async function listSemesterSurveysWithStats(token, semesterFolderId) {
-  const typeFolders = await listSubfolders(token, semesterFolderId);
-  const perType = await runBatched(typeFolders, async tf => {
-    const files = await listFormsInFolder(token, tf.id);
-    return files.map(f => ({ ...f, surveyType: tf.name, parentId: tf.id }));
+  const [directForms, childFolders] = await Promise.all([
+    listFormsInFolder(token, semesterFolderId),
+    listSubfolders(token, semesterFolderId),
+  ]);
+  const perFolder = await runBatched(childFolders, async topFolder => {
+    const [files, surveyFolders] = await Promise.all([
+      listFormsInFolder(token, topFolder.id),
+      listSubfolders(token, topFolder.id),
+    ]);
+    const directInFolder = files.map(f => ({
+      ...f,
+      department: null,
+      surveyType: topFolder.name,
+      parentId: topFolder.id,
+    }));
+    const nested = await runBatched(surveyFolders, async surveyFolder => {
+      const nestedFiles = await listFormsInFolder(token, surveyFolder.id);
+      return nestedFiles.map(f => ({
+        ...f,
+        department: topFolder.name,
+        surveyType: surveyFolder.name,
+        parentId: surveyFolder.id,
+      }));
+    }, 4);
+    return [...directInFolder, ...nested.flat()];
   }, 4);
-  const allFiles = perType.flat();
+  const allFiles = [
+    ...directForms.map(f => ({
+      ...f,
+      department: null,
+      surveyType: "استبيان عام",
+      parentId: semesterFolderId,
+    })),
+    ...perFolder.flat(),
+  ];
   return runBatched(allFiles, async f => {
     try {
       const [form, responses] = await Promise.all([getForm(token, f.id), listAllResponses(token, f.id)]);

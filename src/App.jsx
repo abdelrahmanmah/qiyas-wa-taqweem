@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import JSZip from "jszip";
 import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from "./engine/analyze.js";
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
-import { buildBrandedReportPdf, downloadBrandedReportPdf } from "./engine/buildReportPdf.js";
+import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
 import EnhancedReportView from "./EnhancedReportView.jsx";
 import SurveyManagement from "./SurveyManagement.jsx";
@@ -221,7 +222,10 @@ select.input option:checked{background:#1a5276;color:#fff}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.35)}
 
 /* ── Mobile responsiveness ── */
-html,body{overflow-x:hidden;width:100%}
+html,body,#root{overflow-x:clip;width:100%;max-width:100%;min-height:100%;background:#091a2d}
+body{min-height:100vh;background:linear-gradient(145deg,#091a2d 0%,#102f4b 58%,#0b352f 100%) fixed;overscroll-behavior-y:none}
+.quality-app,.app-shell,.app-content,.app-main{max-width:100%;min-width:0}
+.quality-app{min-height:100vh;min-height:100dvh;background-color:#091a2d}
 .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
 @media (max-width:640px){
   .app-header{padding:14px 16px !important;gap:10px !important}
@@ -256,7 +260,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
 /* ── Collapsible tool sidebar ── */
 .app-shell{display:block;direction:rtl;min-height:calc(100vh - 75px)}
-.tool-sidebar{position:fixed;right:0;top:0;bottom:0;width:254px;height:auto;box-sizing:border-box;padding:0 13px 18px;
+.tool-sidebar{position:fixed;right:0;top:0;bottom:0;width:254px;max-width:calc(100vw - 20px);height:auto;box-sizing:border-box;padding:0 13px 18px;
   display:flex;flex-direction:column;border-left:1px solid rgba(255,255,255,.08);background:rgba(5,20,36,.48);
   backdrop-filter:blur(18px);transition:width .24s ease,transform .24s ease;z-index:35;overflow:hidden}
 .tool-sidebar.collapsed{width:76px;padding-inline:10px}
@@ -266,10 +270,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sidebar-brand-copy small{display:block;color:rgba(255,255,255,.34);font-size:7px;letter-spacing:.3px}
 .tool-sidebar.collapsed .sidebar-brand{justify-content:center}
 .tool-sidebar.collapsed .sidebar-brand-mark,.tool-sidebar.collapsed .sidebar-brand-copy{display:none}
-.sidebar-heading{padding:0 10px 12px;color:rgba(255,255,255,.33);font-size:9.5px;font-weight:900;white-space:nowrap;letter-spacing:.2px}
+.sidebar-heading{padding:0 10px 12px;color:rgba(255,255,255,.58);font-size:10.5px;font-weight:900;white-space:nowrap;letter-spacing:.2px}
 .sidebar-nav{display:flex;flex-direction:column;gap:6px}
 .sidebar-item{width:100%;min-height:46px;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:13px;border:1px solid transparent;
-  color:rgba(232,240,254,.59);background:transparent;font-family:inherit;font-size:12px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
+  color:rgba(232,240,254,.75);background:transparent;font-family:inherit;font-size:13px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
 .sidebar-item:hover{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.07)}
 .sidebar-item.active{color:#eafffb;background:linear-gradient(125deg,rgba(26,188,156,.2),rgba(40,116,166,.12));border-color:rgba(94,234,212,.22)}
 .sidebar-icon{width:32px;height:32px;display:grid;place-items:center;flex:0 0 32px;color:currentColor}
@@ -285,7 +289,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .app-content{min-width:0;margin-right:254px;transition:margin-right .24s ease}
 .app-shell.sidebar-closed .app-content{margin-right:76px}
 .quality-header.sidebar-open{margin-right:254px}.quality-header.sidebar-closed{margin-right:76px}
-.quality-header{min-height:75px;transition:margin-right .24s ease}
+.quality-header{min-height:75px;min-width:0;transition:margin-right .24s ease}
 .google-global-btn{display:inline-flex;align-items:center;gap:9px;min-height:40px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.12);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;transition:.18s}
 .google-global-btn.disconnected{color:#e8f0fe;background:rgba(255,255,255,.06)}
 .google-global-btn.connected{color:#9ff5df;background:rgba(26,188,156,.1);border-color:rgba(94,234,212,.22);cursor:pointer}
@@ -295,7 +299,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .upload-source-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
 .upload-source-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:rgba(255,255,255,.52);font-family:inherit;text-align:right;cursor:pointer;transition:.2s}
 .upload-source-card:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}.upload-source-card.active{color:#eafffb;border-color:rgba(94,234,212,.3);background:linear-gradient(125deg,rgba(26,188,156,.15),rgba(40,116,166,.08));box-shadow:inset 0 -2px #1abc9c}
-.upload-source-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:12px;color:#7cebd5;background:rgba(26,188,156,.1)}.upload-source-icon>svg{width:22px;height:22px}.upload-source-card strong{display:block;font-size:12.5px}.upload-source-card small{display:block;color:rgba(255,255,255,.36);font-size:9px;margin-top:2px}
+.upload-source-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:12px;color:#7cebd5;background:rgba(26,188,156,.1)}.upload-source-icon>svg{width:22px;height:22px}.upload-source-card strong{display:block;font-size:13.5px}.upload-source-card small{display:block;color:rgba(255,255,255,.66);font-size:11.5px;margin-top:2px}
 .drive-control-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;margin-bottom:12px;border-radius:13px;border:1px solid rgba(94,234,212,.18);background:rgba(26,188,156,.07)}
 .drive-view-switch{display:flex;gap:4px;padding:4px;border-radius:10px;background:rgba(4,18,34,.3);border:1px solid rgba(255,255,255,.075)}.drive-view-btn{padding:6px 10px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.42);font-family:inherit;font-size:9.5px;font-weight:800;cursor:pointer;white-space:nowrap}.drive-view-btn.active{color:#bafff1;background:rgba(26,188,156,.17)}
 .drive-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px;margin-bottom:9px}.drive-search-field{width:100%;background:rgba(4,18,34,.48);color:#e8f0fe;border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:11px 13px;font-family:inherit;font-size:11.5px;direction:rtl;margin-bottom:10px;outline:none}.drive-search-field:focus{border-color:rgba(94,234,212,.42);box-shadow:0 0 0 3px rgba(26,188,156,.07)}
@@ -303,20 +307,31 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .drive-file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:9px;max-height:440px;overflow-y:auto;padding:2px 3px 8px}
 .drive-file-card{position:relative;min-height:150px;display:flex;flex-direction:column;padding:14px;border-radius:15px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.025));cursor:pointer;transition:.2s;text-align:right;animation:fadeInUp .3s ease both;outline:none}.drive-file-card:hover,.drive-file-card:focus-visible{transform:translateY(-2px);border-color:rgba(96,165,250,.28);box-shadow:0 12px 28px rgba(2,12,27,.18)}.drive-file-card.selected{border-color:rgba(94,234,212,.48);background:linear-gradient(145deg,rgba(26,188,156,.13),rgba(40,116,166,.05));box-shadow:inset 0 0 0 1px rgba(94,234,212,.1)}
 .drive-file-select{position:absolute;left:12px;top:12px;width:25px;height:25px;display:grid;place-items:center;border-radius:8px;color:rgba(255,255,255,.34);background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08)}.drive-file-card.selected .drive-file-select{color:#052e2b;background:#5eead4;border-color:#5eead4}.drive-file-kind{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;color:#8bd8ff;background:rgba(59,130,246,.1)}
-.drive-file-name{color:#edf5ff;font-size:11.5px;font-weight:800;line-height:1.7;margin:10px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.drive-file-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto}.drive-file-tag{font-size:8.5px;color:#72e5cf;background:rgba(26,188,156,.09);border-radius:6px;padding:2px 6px}.drive-file-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.055)}.drive-file-date{color:rgba(255,255,255,.3);font-size:8.5px}.drive-file-analyze{opacity:0;transform:translateY(2px);padding:6px 9px;border-radius:8px;border:1px solid rgba(94,234,212,.2);background:rgba(26,188,156,.1);color:#8cf2dc;font-family:inherit;font-size:9px;font-weight:800;cursor:pointer;transition:.18s}.drive-file-card:hover .drive-file-analyze,.drive-file-card:focus-within .drive-file-analyze,.drive-file-card.selected .drive-file-analyze{opacity:1;transform:none}
+.drive-file-name{color:#edf5ff;font-size:13px;font-weight:800;line-height:1.7;margin:10px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.drive-file-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto}.drive-file-tag{font-size:11px;color:#72e5cf;background:rgba(26,188,156,.09);border-radius:6px;padding:3px 7px}.drive-file-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.055)}.drive-file-date{color:rgba(255,255,255,.58);font-size:11px}.drive-file-analyze{opacity:0;transform:translateY(2px);padding:7px 10px;border-radius:8px;border:1px solid rgba(94,234,212,.2);background:rgba(26,188,156,.1);color:#8cf2dc;font-family:inherit;font-size:11px;font-weight:800;cursor:pointer;transition:.18s}.drive-file-card:hover .drive-file-analyze,.drive-file-card:focus-within .drive-file-analyze,.drive-file-card.selected .drive-file-analyze{opacity:1;transform:none}
 .upload-drop-modern{max-width:720px!important;min-height:280px;margin:0 auto!important;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 50% 15%,rgba(26,188,156,.1),transparent 45%),rgba(255,255,255,.025)!important}.upload-drop-icon{width:66px;height:66px;display:grid;place-items:center;margin:0 auto 15px;border-radius:20px;color:#bafff1;background:linear-gradient(145deg,rgba(26,188,156,.2),rgba(40,116,166,.16));border:1px solid rgba(94,234,212,.2)}
 @media(max-width:760px){
-  .app-content,.app-shell.sidebar-closed .app-content{margin-right:0}
+  .app-shell,.app-content,.app-shell.sidebar-closed .app-content{margin-right:0;width:100%}
   .quality-header.sidebar-open,.quality-header.sidebar-closed{margin-right:0}
   .tool-sidebar{top:10px;right:10px;bottom:10px;height:auto;border:1px solid rgba(255,255,255,.11);border-radius:18px;box-shadow:0 28px 70px rgba(0,0,0,.48);background:rgba(7,25,42,.96)}
-  .tool-sidebar.collapsed{transform:translateX(calc(100% + 24px));width:254px;padding-inline:13px}
+  .tool-sidebar.collapsed{display:none;transform:none;width:254px;padding-inline:13px}
+  .tool-sidebar.open{display:flex;transform:none}
   .tool-sidebar.collapsed .sidebar-label,.tool-sidebar.collapsed .sidebar-heading{display:block}
   .tool-sidebar.collapsed .sidebar-item{justify-content:flex-start;padding-inline:11px;gap:11px}
   .tool-sidebar.collapsed .sidebar-brand-mark{display:grid}.tool-sidebar.collapsed .sidebar-brand-copy{display:block}
-  .mobile-nav-toggle{display:grid}
+  .mobile-nav-toggle{display:grid;flex:0 0 40px}
+  .quality-header{padding:11px 12px!important;gap:8px!important}
+  .quality-header>div:first-child{min-width:0;flex:1;overflow:hidden}
+  .quality-header>div:first-child>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .google-global-btn{flex:0 0 auto;min-height:40px;padding:7px 10px;font-size:11px}
+  .google-global-btn .google-global-label{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .upload-workspace{padding:16px!important}.upload-source-grid{grid-template-columns:1fr}.drive-control-bar{align-items:flex-start;flex-direction:column}.drive-view-switch{width:100%;overflow-x:auto}.drive-view-btn{flex:1}.drive-filter-grid{grid-template-columns:1fr 1fr}.drive-filter-grid>*:nth-child(3){grid-column:1/-1}.drive-batch-toolbar{top:8px;align-items:stretch;flex-direction:column}.drive-file-grid{grid-template-columns:1fr;max-height:none}.drive-file-analyze{opacity:1;transform:none}.upload-drop-modern{min-height:230px}.app-main{padding:18px 12px!important}
+  .step-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .step-item{width:100%;font-size:11px;min-width:0}
+  .workflow-header{align-items:flex-start;padding:13px}
+  .workflow-header-title{font-size:16px}.workflow-header-copy{font-size:12px;line-height:1.65}
+  .btn{min-height:44px;justify-content:center}
 }
-@media(max-width:460px){.drive-filter-grid{grid-template-columns:1fr}.drive-filter-grid>*:nth-child(3){grid-column:auto}.drive-batch-toolbar .btn{width:100%;justify-content:center}.upload-source-card small{display:none}}
+@media(max-width:460px){.drive-filter-grid{grid-template-columns:1fr}.drive-filter-grid>*:nth-child(3){grid-column:auto}.drive-batch-toolbar .btn{width:100%;justify-content:center}.upload-source-card small{display:block;font-size:12px}.google-global-btn .google-global-label{max-width:74px}}
 
 /* ── Quality hub shell ── */
 .quality-app{position:relative;isolation:isolate}
@@ -328,7 +343,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .brand-mark{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;
   color:#fff;background:linear-gradient(145deg,#20c5a4,#197ca4);box-shadow:0 10px 24px rgba(26,188,156,.22)}
 .hub{animation:fadeInUp .4s cubic-bezier(.22,1,.36,1)}
-.hub-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(290px,.55fr);
+.hub-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr);
   gap:32px;padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:28px;
   background:linear-gradient(125deg,rgba(15,49,74,.98),rgba(13,66,61,.94));
   box-shadow:0 28px 70px rgba(2,12,27,.22)}
@@ -337,7 +352,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .hub-eyebrow{display:inline-flex;align-items:center;gap:8px;width:max-content;padding:6px 12px;border-radius:999px;
   color:#6ee7cf;background:rgba(26,188,156,.1);border:1px solid rgba(110,231,207,.22);font-size:11px;font-weight:800}
 .hub-title{color:#fff;font-size:clamp(28px,4vw,46px);line-height:1.25;font-weight:900;margin:16px 0 10px;letter-spacing:-.8px}
-.hub-subtitle{color:rgba(232,240,254,.65);font-size:15px;line-height:1.9;max-width:680px}
+.hub-subtitle{color:rgba(232,240,254,.78);font-size:15px;line-height:1.9;max-width:680px}
 .hub-hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:25px}
 .hub-snapshot{position:relative;z-index:1;align-self:stretch;display:flex;flex-direction:column;justify-content:space-between;
   padding:22px;border:1px solid rgba(255,255,255,.1);border-radius:20px;background:rgba(4,19,33,.27)}
@@ -364,24 +379,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   border:1px solid color-mix(in srgb,var(--tool-color,#65d8c0) 27%,transparent)}
 .tool-card-icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tool-card h3{display:block;color:#fff;font-size:17px;font-weight:900;line-height:1.5;margin:0 0 7px}
-.tool-card p{display:block;color:rgba(255,255,255,.48);font-size:12px;line-height:1.85;margin:0 0 18px;max-width:440px}
+.tool-card p{display:block;color:rgba(255,255,255,.7);font-size:13.5px;line-height:1.85;margin:0 0 18px;max-width:440px}
 .tool-card-foot{position:relative;margin-top:auto;padding-top:12px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,.055)}
-.tool-tag{color:rgba(255,255,255,.4);font-size:10px;font-weight:700}
+.tool-tag{color:rgba(255,255,255,.66);font-size:11.5px;font-weight:700}
 .tool-arrow{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:#fff;
   background:rgba(255,255,255,.08);transition:transform .2s,background .2s}
 .tool-card:hover .tool-arrow{transform:translateX(-4px);background:rgba(26,188,156,.22)}
 .hub-note{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:18px 22px;
   border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(255,255,255,.035)}
-.hub-note-copy{display:flex;align-items:center;gap:13px;color:rgba(255,255,255,.66);font-size:12px}
+.hub-note-copy{display:flex;align-items:center;gap:13px;color:rgba(255,255,255,.75);font-size:13px}
 .hub-note-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;
   background:rgba(96,165,250,.12);color:#93c5fd}
 @media(max-width:900px){.hub-hero{grid-template-columns:1fr;padding:30px}.tool-card,.tool-card.featured{grid-column:span 6}}
-@media(max-width:640px){.quality-header .brand-copy small{display:none}.quality-header{position:relative}.hub-hero{padding:24px;border-radius:22px}
-  .hub-snapshot{display:none}.tool-card,.tool-card.featured{grid-column:1/-1;min-height:205px}.hub-section-head{align-items:start;flex-direction:column;gap:3px}.hub-note{align-items:flex-start;flex-direction:column}}
+@media(max-width:640px){.quality-header .brand-copy small{display:none}.quality-header{position:sticky}.hub-hero{padding:22px;border-radius:22px}
+  .hub-title{font-size:30px;letter-spacing:0}.hub-subtitle{font-size:14px}.hub-snapshot{display:none}.tool-card,.tool-card.featured{grid-column:1/-1;min-height:190px;padding:20px}.hub-section-head{align-items:start;flex-direction:column;gap:3px}.hub-note{align-items:flex-start;flex-direction:column}}
 `;
 
 const STEPS = [
-  { label: "نوع التقرير", icon: "layout" },
   { label: "رفع الملف", icon: "upload" },
   { label: "التحقق", icon: "shield" },
   { label: "معاينة البيانات", icon: "table" },
@@ -491,6 +505,18 @@ function safeReportName(sourceName) {
 function safePdfReportName(sourceName) {
   const base = String(sourceName || "استبيان").replace(/\.(xlsx|xls|csv)$/i, "").trim();
   return `تقرير تحليل - ${base}.pdf`;
+}
+
+async function downloadReports(reports, year) {
+  if (reports.length === 1) {
+    downloadBlob(reports[0].blob, reports[0].filename);
+    return;
+  }
+  if (reports.length > 1) {
+    const zip = new JSZip();
+    reports.forEach(report => zip.file(report.filename, report.blob));
+    downloadBlob(await zip.generateAsync({ type: "blob" }), `تقارير_تحليل_${year || "الاستبيانات"}.zip`);
+  }
 }
 
 // Filename → program detector. Inline Arabic normalization so we don't depend on engine internals.
@@ -993,7 +1019,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
 }
 
 // ── BatchItem ─────────────────────────────────────────────────────────────────
-function BatchItem({ item, year, settings }) {
+function BatchItem({ item, year, settings, reportMeta }) {
   const [downloading, setDownloading] = useState(false);
 
   const doDownload = async () => {
@@ -1003,7 +1029,8 @@ function BatchItem({ item, year, settings }) {
       const meta = {
         year,
         program:    item.program ?? "",
-        preparedBy: settings.surveyResponsible?.[item.type] ?? "",
+        preparedBy: reportMeta.preparedBy,
+        reviewer: reportMeta.reviewer,
       };
       const blob = await buildAnnualDocx(item.result, meta, settings);
       const prog  = item.program ? `_${item.program}` : "";
@@ -1079,25 +1106,37 @@ function BatchItem({ item, year, settings }) {
 }
 
 // ── BatchProcessor ────────────────────────────────────────────────────────────
-function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
+function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onReportMetaChange, onBack }) {
   const [items, setItems] = useState(() =>
     files.map(f => ({ file: f, status: "pending", result: null, error: null, type: null, program: null }))
   );
   const [running,        setRunning]        = useState(false);
   const [allDone,        setAllDone]        = useState(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [authorError, setAuthorError] = useState("");
+  const cancelRef = useRef(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
 
   const doneCount  = items.filter(i => i.status === "done").length;
   const errorCount = items.filter(i => i.status === "error").length;
   const totalDone  = doneCount + errorCount;
 
   const startProcessing = async () => {
+    if (!String(reportMeta.preparedBy ?? "").trim() || !String(reportMeta.reviewer ?? "").trim()) {
+      setAuthorError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل بدء التحليل.");
+      return;
+    }
+    setAuthorError("");
+    cancelRef.current = false;
+    setCancelRequested(false);
     setRunning(true);
     for (let idx = 0; idx < files.length; idx++) {
+      if (cancelRef.current) break;
       setItems(prev => prev.map((it, i) => i === idx ? { ...it, status: "processing" } : it));
       await new Promise(r => setTimeout(r, 30));  // let React paint
       try {
         const buf          = await readFileAsBuffer(files[idx]);
+        if (cancelRef.current) break;
         const rows         = readExcel(buf);
         const detectedType = detectSurveyType(files[idx].name, rows[0]) ?? "faculty";
         const s            = allSchemas()[detectedType];
@@ -1120,18 +1159,19 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
 
   const downloadAll = async () => {
     setDownloadingAll(true);
+    const reports = [];
     for (const it of items) {
       if (it.status === "done" && it.result) {
         try {
-          const meta  = { year, program: it.program ?? "", preparedBy: settings.surveyResponsible?.[it.type] ?? "" };
+          const meta  = { year, program: it.program ?? "", preparedBy: reportMeta.preparedBy, reviewer: reportMeta.reviewer };
           const blob  = await buildAnnualDocx(it.result, meta, settings);
           const prog  = it.program ? `_${it.program}` : "";
           const label = allSchemas()[it.type]?.label ?? "تقرير";
-          downloadBlob(blob, `تقرير_${label}${prog}_${year}.docx`);
-          await new Promise(r => setTimeout(r, 450));
+          reports.push({ blob, filename: `تقرير_${label}${prog}_${year}.docx` });
         } catch (e) { console.error(e); }
       }
     }
+    await downloadReports(reports, year);
     setDownloadingAll(false);
   };
 
@@ -1155,13 +1195,24 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
 
       {/* Year input (before start) */}
       {!running && !allDone && (
-        <div style={{ marginBottom: 24, maxWidth: 320 }}>
+        <div style={{ marginBottom: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14 }}>
+          <div>
           <label className="label">العام الأكاديمي (مشترك لجميع الملفات)</label>
           <input className="input" value={year}
             onChange={e => onYearChange(e.target.value)}
             placeholder="مثال: 2024-2025" />
+          </div>
+          <div>
+            <label className="label">مُعدّ التحليل *</label>
+            <input className="input" value={reportMeta.preparedBy ?? ""} onChange={e => onReportMetaChange({ ...reportMeta, preparedBy: e.target.value })} placeholder="الاسم الكامل" />
+          </div>
+          <div>
+            <label className="label">مراجع التحليل *</label>
+            <input className="input" value={reportMeta.reviewer ?? ""} onChange={e => onReportMetaChange({ ...reportMeta, reviewer: e.target.value })} placeholder="الاسم الكامل" />
+          </div>
         </div>
       )}
+      {!!authorError && <InlineNotice text={authorError} style={{ marginBottom: 18 }} />}
 
       {/* Progress bar */}
       {(running || allDone) && (
@@ -1189,12 +1240,19 @@ function BatchProcessor({ files, year, onYearChange, settings, onBack }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28,
                     maxHeight: 480, overflowY: "auto" }}>
         {items.map((it, i) => (
-          <BatchItem key={i} item={it} year={year} settings={settings} />
+          <BatchItem key={i} item={it} year={year} settings={settings} reportMeta={reportMeta} />
         ))}
       </div>
 
       {/* Actions */}
       <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
+        {running && (
+          <button type="button" className="btn btn-ghost" disabled={cancelRequested}
+            style={{ color: "#ffb4b4", borderColor: "rgba(239,68,68,.35)" }}
+            onClick={() => { cancelRef.current = true; setCancelRequested(true); }}>
+            {cancelRequested ? "جارٍ الإلغاء…" : "إلغاء العملية"}
+          </button>
+        )}
         {!running && !allDone && (
           <button className="btn btn-primary" style={{ fontSize: 16, padding: "13px 44px" }}
             onClick={startProcessing}>
@@ -1837,11 +1895,11 @@ function ProcessingOverlay({ steps, filename }) {
   );
 }
 
-function LoadingOverlay({ message = "جاري المعالجة…", progress }) {
+function LoadingOverlay({ message = "جاري المعالجة…", progress, onCancel, cancelling = false }) {
   const hasProgress = progress && progress.total > 0;
   const pct = hasProgress ? Math.round((progress.current / progress.total) * 100) : 0;
   return (
-    <div style={{
+    <div role="status" aria-live="polite" aria-busy={!cancelling} style={{
       position: "fixed", inset: 0, zIndex: 8500,
       background: "rgba(9,20,38,.90)", backdropFilter: "blur(12px)",
       display: "flex", flexDirection: "column", alignItems: "center",
@@ -1852,7 +1910,7 @@ function LoadingOverlay({ message = "جاري المعالجة…", progress }) 
         <span style={{ width: 26, height: 26, color: "#d8fff7" }}><StepIcon name="edit" /></span>
       </div>
       <div style={{ color: "#fff", fontSize: 18, fontWeight: 700, textAlign: "center" }}>
-        {message}<span className="loader-dots"><i/><i/><i/></span>
+        {cancelling ? "جارٍ إيقاف إنشاء PDF" : message}<span className="loader-dots"><i/><i/><i/></span>
       </div>
       {hasProgress ? (
         <div style={{ width: 280 }}>
@@ -1872,11 +1930,15 @@ function LoadingOverlay({ message = "جاري المعالجة…", progress }) 
       ) : (
         <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>يرجى الانتظار…</div>
       )}
+      {onCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel} disabled={cancelling}
+        style={{ color: cancelling ? "#ffb4b4" : undefined, borderColor: cancelling ? "rgba(239,68,68,.4)" : undefined }}>
+        {cancelling ? "جارٍ الإلغاء…" : "إلغاء العملية"}
+      </button>}
     </div>
   );
 }
 
-function DriveBatchOverlay({ state, onClose }) {
+function DriveBatchOverlay({ state, onClose, onCancel }) {
   if (!state) return null;
   const doneCount = state.items.filter(item => item.status === "done").length;
   const errorCount = state.items.filter(item => item.status === "error").length;
@@ -1894,13 +1956,14 @@ function DriveBatchOverlay({ state, onClose }) {
           <div style={{ flex: 1 }}>
             <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>{state.done ? "اكتملت تقارير PDF" : "تحليل الاستبيانات وإنشاء PDF"}</div>
             <div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginTop: 3 }}>
-              {state.done ? `تم رفع ${doneCount} تقرير${errorCount ? ` وتعذر ${errorCount}` : ""}` : `جاري معالجة الملف ${state.current} من ${state.total}`}
+              {state.done ? `${state.cancelled ? "تم إلغاء العملية بعد" : state.delivery === "download" ? "تم تنزيل" : "تم رفع"} ${doneCount} تقرير${errorCount ? ` وتعذر ${errorCount}` : ""}` : state.cancelRequested ? "جارٍ إلغاء العملية…" : `جاري معالجة الملف ${state.current} من ${state.total}`}
             </div>
           </div>
           {state.done && <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
             {!!downloadableItems.length && <button className="btn btn-primary btn-sm" onClick={() => downloadableItems.forEach((item, index) => setTimeout(() => downloadBlob(item.localBlob, item.reportName || `report-${index + 1}.pdf`), index * 180))}>تحميل الكل ({downloadableItems.length})</button>}
             <button className="btn btn-ghost btn-sm" onClick={onClose}>إغلاق</button>
           </div>}
+          {!state.done && <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel} disabled={state.cancelRequested} style={{ color: "#ffb4b4", borderColor: "rgba(239,68,68,.35)" }}>{state.cancelRequested ? "جارٍ الإلغاء…" : "إلغاء العملية"}</button>}
         </div>
         <div style={{ height: 7, borderRadius: 7, background: "rgba(255,255,255,.07)", overflow: "hidden", marginBottom: 16 }}>
           <div style={{ width: `${pct}%`, height: "100%", borderRadius: 7, transition: "width .35s ease", background: errorCount ? "linear-gradient(90deg,#1abc9c,#f59e0b)" : "linear-gradient(90deg,#1abc9c,#2874a6,#1abc9c)", backgroundSize: "200% 100%", animation: !state.done ? "progressFlow 1.8s linear infinite" : "none" }}/>
@@ -1943,10 +2006,11 @@ function StepIcon({ name }) {
 }
 
 function StepBar({ step }) {
+  const visibleStep = Math.max(0, step - 1);
   return (
     <div className="step-bar" role="list" aria-label="خطوات إنشاء التقرير">
       {STEPS.map(({ label, icon }, i) => {
-        const status = i === step ? "active" : i < step ? "done" : "pending";
+        const status = i === visibleStep ? "active" : i < visibleStep ? "done" : "pending";
         return (
           <div
             key={i}
@@ -1965,9 +2029,10 @@ function StepBar({ step }) {
 }
 
 function WorkflowHeader({ step, icon, title, description }) {
+  const visibleStep = Math.max(1, Number(step) - 1);
   return <div className="workflow-header">
     <span className="workflow-header-icon"><StepIcon name={icon}/></span>
-    <div><div className="workflow-header-kicker">خطوة {step} من 6</div><div className="workflow-header-title">{title}</div><div className="workflow-header-copy">{description}</div></div>
+    <div><div className="workflow-header-kicker">خطوة {visibleStep} من 5</div><div className="workflow-header-title">{title}</div><div className="workflow-header-copy">{description}</div></div>
   </div>;
 }
 
@@ -2242,8 +2307,8 @@ function MetadataForm({ meta, onChange }) {
             onChange={v => onChange({ ...meta, program: v })} />
         </div>
         {F("year",       "العام الأكاديمي", "مثال: 2024-2025")}
-        {F("preparedBy", "أعده",            "اسم معد التقرير")}
-        {F("reviewer",   "راجعه",           "اسم المراجع")}
+        {F("preparedBy", "أعده *",          "اسم معد التقرير")}
+        {F("reviewer",   "راجعه *",         "اسم المراجع")}
       </div>
     </div>
   );
@@ -2577,22 +2642,17 @@ function HubIcon({ name }) {
 function QualityHub({ onOpen }) {
   const toolCards = [
     {
-      id: "analytics", icon: "analytics", color: "#5eead4", featured: true,
-      title: "تحليل الاستبيانات", tag: "ملف أو Google Drive",
-      description: "ارفع ملف الاستجابات أو اتصل بـ Google Drive، ثم راجع البيانات وأنشئ تقرير Word أو PDF.",
+      id: "analytics", icon: "analytics", color: "#5eead4",
+      title: "تحليل نتائج موجودة", tag: "Excel أو Google Drive",
+      description: "ابدأ بملف واحد أو مجموعة ملفات، ودع النظام يتعرّف على نوع الاستبيان ثم أنشئ تقرير Word أو PDF.",
     },
     {
-      id: "semester-create", icon: "semester", color: "#60a5fa", featured: true,
+      id: "semester", icon: "semester", color: "#60a5fa",
       title: "إنشاء استبيانات الفصل الدراسي", tag: "Google Forms",
       description: "اختر القوالب والسنة والفصل، وأنشئ كل استبيانات الفصل منظمةً تلقائياً على Google Drive.",
     },
     {
-      id: "semester-quick-analysis", icon: "analytics", color: "#fbbf24", featured: true,
-      title: "تحليل سريع", tag: "PDF إلى Google Drive",
-      description: "اختر السنة والفصل، ثم حلّل كل الاستبيانات أو مجموعة محددة وارفع تقارير PDF تلقائياً.",
-    },
-    {
-      id: "courses", icon: "courses", color: "#a78bfa", featured: true,
+      id: "courses", icon: "courses", color: "#a78bfa",
       title: "تقييم المقررات", tag: "دورة تقييم متكاملة",
       description: "جهّز بيانات المقررات، تابع نسب المشاركة، قسّم ملفات التقييم وراجع التوصيات من مساحة واحدة.",
     },
@@ -2602,31 +2662,18 @@ function QualityHub({ onOpen }) {
     <section className="hub" aria-label="الصفحة الرئيسية لوحدة ضمان الجودة">
       <div className="hub-hero">
         <div style={{ position: "relative", zIndex: 1 }}>
-          <div className="hub-eyebrow"><span>◆</span> مركز العمليات الأكاديمية</div>
-          <h1 className="hub-title">كل أدوات الجودة<br/>في مساحة عمل واحدة</h1>
+          <div className="hub-eyebrow"><span>◆</span> ابدأ من المهمة، لا من الأداة</div>
+          <h1 className="hub-title">ماذا تريد أن تنجز اليوم؟</h1>
           <p className="hub-subtitle">
-            منصة موحّدة تساعد فريق وحدة ضمان الجودة على إدارة الاستبيانات، تحليل النتائج،
-            وتشغيل دورة تقييم المقررات بكفاءة ووضوح.
+            اختر مهمة واحدة وسنقودك إلى الخطوة التالية. يمكنك تحليل نتائج موجودة، إنشاء
+            استبيانات جديدة، أو إدارة دورة تقييم المقررات.
           </p>
-          <div className="hub-hero-actions">
-            <button className="btn btn-primary" onClick={() => onOpen("semester-quick-analysis")}>ابدأ تحليلًا سريعًا ←</button>
-            <button className="btn btn-ghost" onClick={() => onOpen("semester-dashboard")}>افتح لوحة التحكم</button>
-          </div>
         </div>
-        <aside className="hub-snapshot" aria-label="ملخص المنصة">
-          <div className="hub-snapshot-top"><span>جاهزية مساحة العمل</span><span className="hub-live">متاحة الآن</span></div>
-          <div className="hub-stats">
-            <div className="hub-stat"><strong>{Object.keys(allSchemas()).length}</strong><span>أنواع تحليل جاهزة</span></div>
-            <div className="hub-stat"><strong>4</strong><span>مسارات عمل رئيسية</span></div>
-            <div className="hub-stat"><strong>3</strong><span>صيغ تصدير رئيسية</span></div>
-            <div className="hub-stat"><strong>RTL</strong><span>تقارير عربية متكاملة</span></div>
-          </div>
-        </aside>
       </div>
 
       <div className="hub-section-head">
         <div><h2>أدوات وحدة الجودة</h2><p>اختر المهمة التي تريد إنجازها الآن</p></div>
-        <span className="hub-eyebrow">{toolCards.length} مساحات عمل</span>
+        <span className="hub-eyebrow">{toolCards.length} مهام رئيسية</span>
       </div>
       <div className="tool-grid">
         {toolCards.map(tool => (
@@ -2651,9 +2698,7 @@ function QualityHub({ onOpen }) {
 const SIDEBAR_ITEMS = [
   { id: "home", icon: "home", label: "الرئيسية" },
   { id: "analytics", icon: "analytics", label: "تحليل الاستبيانات" },
-  { id: "semester-create", icon: "semester", label: "إنشاء استبيانات الفصل" },
-  { id: "semester-quick-analysis", icon: "analytics", label: "تحليل سريع" },
-  { id: "semester-dashboard", icon: "dashboard", label: "لوحة التحكم" },
+  { id: "semester", icon: "semester", label: "استبيانات الفصل الدراسي" },
   { id: "courses", icon: "courses", label: "تقييم المقررات" },
 ];
 
@@ -2697,12 +2742,13 @@ function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [step, setStep]         = useState(0);
+  const [step, setStep]         = useState(1);
   const [surveyType, setSurveyType] = useState("faculty");
   const [mode, setMode]         = useState("annual");
   const [meta, setMeta]         = useState({ year: "2024-2025", program: "", preparedBy: "", reviewer: "" });
   const [processing, setProcessing] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfCancelRequested, setPdfCancelRequested] = useState(false);
   const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 });
   const [error, setError]       = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -2712,7 +2758,7 @@ export default function App() {
   const [showHub, setShowHub] = useState(true);
   const [showTutorial, setShowTutorial] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 760);
-  const [semesterInitialTab, setSemesterInitialTab] = useState("generate");
+  const [semesterInitialTab, setSemesterInitialTab] = useState("home");
   const [settings, setSettings]         = useState(loadSettings);
   const [aiSettings, setAiSettings]     = useState(loadAiSettings);
   const [pdfIncludeCharts, setPdfIncludeCharts] = useState(() => loadSettings().includePdfCharts !== false);
@@ -2769,6 +2815,8 @@ export default function App() {
   const [driveSelectedIds,  setDriveSelectedIds]  = useState(() => new Set());
   const [driveProcessing,   setDriveProcessing]   = useState(false);
   const [driveBatchState,   setDriveBatchState]   = useState(null);
+  const driveBatchCancelRef = useRef(false);
+  const pdfCancelRef = useRef(false);
   const [driveFilterType,   setDriveFilterType]   = useState("");
   const [driveFilterYear,   setDriveFilterYear]   = useState("");
   const [driveFilterProgram,setDriveFilterProgram]= useState("");
@@ -2931,6 +2979,7 @@ export default function App() {
 
   const handleDriveFileSelect = useCallback(async (file) => {
     if (!driveToken || !file) return;
+    setDriveSelected(file);
     setDriveProcessing(true);
     setError("");
     setProcFile(file.name);
@@ -2960,13 +3009,34 @@ export default function App() {
     }
   }, [driveToken, runStepAnim]);
 
-  const handleDriveBatchReports = useCallback(async (files) => {
+  const cancelDriveBatch = useCallback(() => {
+    driveBatchCancelRef.current = true;
+    setDriveBatchState(prev => prev ? {
+      ...prev,
+      cancelRequested: true,
+      items: prev.items.map(item => item.status === "active"
+        ? { ...item, stage: "جارٍ إيقاف إنشاء التقرير…" }
+        : item),
+    } : prev);
+  }, []);
+
+  const handleDriveBatchReports = useCallback(async (files, options = {}) => {
     const selectedFiles = (files ?? []).filter(Boolean);
     if (!driveToken || !selectedFiles.length || driveProcessing) return;
+    const delivery = options.delivery === "download" ? "download" : "upload";
+    const requiredMeta = options.reportMeta ?? meta;
+    const preparedBy = String(requiredMeta.preparedBy ?? "").trim();
+    const reviewer = String(requiredMeta.reviewer ?? "").trim();
+    if (!preparedBy || !reviewer) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء أي تقرير.");
+      return;
+    }
+    driveBatchCancelRef.current = false;
     setDriveProcessing(true);
     setError("");
     setDriveBatchState({
       done: false,
+      delivery,
       current: 0,
       total: selectedFiles.length,
       items: selectedFiles.map(file => ({ id: file.id, name: file.name, stage: "في الانتظار", status: "pending" })),
@@ -2975,13 +3045,16 @@ export default function App() {
       ...prev,
       items: prev.items.map(item => item.id === id ? { ...item, ...patch } : item),
     }) : prev);
+    const reports = [];
 
     for (let i = 0; i < selectedFiles.length; i++) {
+      if (driveBatchCancelRef.current) break;
       const file = selectedFiles[i];
       setDriveBatchState(prev => prev ? { ...prev, current: i + 1 } : prev);
       try {
         updateItem(file.id, { status: "active", stage: "تحميل الاستجابات" });
         const { buffer, filename } = await downloadDriveBuffer(file, driveToken);
+        if (driveBatchCancelRef.current) break;
         updateItem(file.id, { stage: "تحليل البيانات" });
         const rows = readExcel(buffer);
         const type = detectSurveyType(filename, rows[0]);
@@ -2990,37 +3063,61 @@ export default function App() {
         const result = analyze(rows, targetSchema);
         updateItem(file.id, { stage: "تجهيز صفحات تقرير PDF" });
         const reportMeta = {
-          year: detectYearFromFilename(filename) || meta.year,
+          year: requiredMeta.year || detectYearFromFilename(filename) || meta.year,
           program: detectProgramFromFilename(filename) || meta.program,
-          preparedBy: settings.surveyResponsible?.[type] ?? meta.preparedBy,
-          reviewer: meta.reviewer,
+          preparedBy,
+          reviewer,
         };
-        const builtPdf = await buildBrandedReportPdf(result, reportMeta, settings, (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }));
+        const builtPdf = await buildBrandedReportPdf(
+          result, reportMeta, settings,
+          (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }),
+          { shouldCancel: () => driveBatchCancelRef.current }
+        );
+        if (driveBatchCancelRef.current) break;
         const reportName = safePdfReportName(filename);
-        updateItem(file.id, { stage: "رفع التقرير إلى Drive" });
-        const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, file, driveToken);
-        updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+        if (delivery === "upload") {
+          updateItem(file.id, { stage: "رفع التقرير إلى Drive" });
+          const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, file, driveToken);
+          updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+        } else {
+          reports.push({ blob: builtPdf.blob, filename: reportName });
+          updateItem(file.id, { status: "done", stage: "تم إنشاء تقرير PDF", localBlob: builtPdf.blob, reportName });
+        }
       } catch (err) {
+        if (err?.name === "AbortError" && driveBatchCancelRef.current) break;
         updateItem(file.id, { status: "error", stage: err.message || "فشلت المعالجة" });
       }
     }
-    setDriveBatchState(prev => prev ? { ...prev, done: true } : prev);
+    const cancelled = driveBatchCancelRef.current;
+    setDriveBatchState(prev => prev ? { ...prev, done: true, cancelled } : prev);
+    if (delivery === "download" && !cancelled) await downloadReports(reports, requiredMeta.year || meta.year);
     setDriveProcessing(false);
   }, [driveToken, driveProcessing, meta, settings]);
 
-  const handleSemesterFormsBatch = useCallback(async (forms, token) => {
+  const handleSemesterFormsBatch = useCallback(async (forms, token, options = {}) => {
     const selectedForms = (forms ?? []).filter(Boolean);
     if (!token || !selectedForms.length || driveProcessing) return;
+    const delivery = options.delivery === "download" ? "download" : "upload";
+    const requiredMeta = options.reportMeta ?? {};
+    const preparedBy = String(requiredMeta.preparedBy ?? "").trim();
+    const reviewer = String(requiredMeta.reviewer ?? "").trim();
+    if (!preparedBy || !reviewer) {
+      throw new Error("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء أي تقرير.");
+    }
+    driveBatchCancelRef.current = false;
     setDriveProcessing(true);
     setError("");
-    setDriveBatchState({ done: false, current: 0, total: selectedForms.length, items: selectedForms.map(f => ({ id: f.id, name: f.name, stage: "في الانتظار", status: "pending" })) });
+    setDriveBatchState({ done: false, delivery, current: 0, total: selectedForms.length, items: selectedForms.map(f => ({ id: f.id, name: f.name, stage: "في الانتظار", status: "pending" })) });
     const updateItem = (id, patch) => setDriveBatchState(prev => prev ? ({ ...prev, items: prev.items.map(item => item.id === id ? { ...item, ...patch } : item) }) : prev);
+    const reports = [];
     for (let i = 0; i < selectedForms.length; i++) {
+      if (driveBatchCancelRef.current) break;
       const file = selectedForms[i];
       setDriveBatchState(prev => prev ? { ...prev, current: i + 1 } : prev);
       try {
         updateItem(file.id, { status: "active", stage: "قراءة ردود Google Form" });
         const [form, responses] = await Promise.all([getForm(token, file.id), listAllResponses(token, file.id)]);
+        if (driveBatchCancelRef.current) break;
         const rows = responsesToRows(form, responses);
         updateItem(file.id, { stage: "تحليل البيانات" });
         const type = detectSurveyType(file.name, rows[0]);
@@ -3029,21 +3126,34 @@ export default function App() {
         const result = analyze(rows, targetSchema);
         updateItem(file.id, { stage: "تجهيز صفحات تقرير PDF" });
         const reportMeta = {
-          year: detectYearFromFilename(file.name) || meta.year,
+          year: requiredMeta.year || detectYearFromFilename(file.name) || meta.year,
           program: departmentFromSurveyName(file.name) || detectProgramFromFilename(file.name) || meta.program,
-          preparedBy: settings.surveyResponsible?.[type] ?? meta.preparedBy,
-          reviewer: meta.reviewer,
+          preparedBy,
+          reviewer,
         };
-        const builtPdf = await buildBrandedReportPdf(result, reportMeta, settings, (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }));
+        const builtPdf = await buildBrandedReportPdf(
+          result, reportMeta, settings,
+          (page, total) => updateItem(file.id, { stage: `إنشاء PDF — صفحة ${page} من ${total}` }),
+          { shouldCancel: () => driveBatchCancelRef.current }
+        );
+        if (driveBatchCancelRef.current) break;
         const reportName = safePdfReportName(file.name);
-        updateItem(file.id, { stage: "رفع التقرير بجوار النموذج" });
-        const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, { parents: [file.parentId] }, token);
-        updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+        if (delivery === "upload") {
+          updateItem(file.id, { stage: "رفع التقرير بجوار النموذج" });
+          const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, { parents: [file.parentId] }, token);
+          updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+        } else {
+          reports.push({ blob: builtPdf.blob, filename: reportName });
+          updateItem(file.id, { status: "done", stage: "تم إنشاء تقرير PDF", localBlob: builtPdf.blob, reportName });
+        }
       } catch (err) {
+        if (err?.name === "AbortError" && driveBatchCancelRef.current) break;
         updateItem(file.id, { status: "error", stage: err.message || "فشلت المعالجة" });
       }
     }
-    setDriveBatchState(prev => prev ? { ...prev, done: true } : prev);
+    const cancelled = driveBatchCancelRef.current;
+    setDriveBatchState(prev => prev ? { ...prev, done: true, cancelled } : prev);
+    if (delivery === "download" && !cancelled) await downloadReports(reports, requiredMeta.year || meta.year);
     setDriveProcessing(false);
   }, [driveProcessing, meta, settings]);
 
@@ -3075,6 +3185,7 @@ export default function App() {
 
   // Step 0: read file headers → auto-detect → advance to step 1
   const handleFileSelected = useCallback((file) => {
+    setDriveSelected(null);
     setSingleFile(file);
     setError("");
     setProcFile(file.name);
@@ -3216,6 +3327,10 @@ export default function App() {
   };
 
   const downloadAnnual = async () => {
+    if (!String(meta.preparedBy ?? "").trim() || !String(meta.reviewer ?? "").trim()) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء التقرير.");
+      return;
+    }
     setProcessing(true);
     try {
       const blob = await buildAnnualDocx(singleResult, { ...meta }, settings);
@@ -3225,19 +3340,31 @@ export default function App() {
   };
 
   const downloadAnnualPdf = async () => {
+    if (!String(meta.preparedBy ?? "").trim() || !String(meta.reviewer ?? "").trim()) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء التقرير.");
+      return;
+    }
+    pdfCancelRef.current = false;
+    setPdfCancelRequested(false);
     setPdfGenerating(true);
     setPdfProgress({ current: 0, total: 0 });
     try {
-      await downloadBrandedReportPdf(
+      const builtPdf = await buildBrandedReportPdf(
         singleResult, { ...meta }, { ...settings, includePdfCharts: pdfIncludeCharts },
-        (current, total) => setPdfProgress({ current, total })
+        (current, total) => setPdfProgress({ current, total }),
+        { shouldCancel: () => pdfCancelRef.current }
       );
+      if (!pdfCancelRef.current) downloadBlob(builtPdf.blob, builtPdf.filename || safePdfReportName(singleFile?.name));
     } catch (err) {
-      setError(`تعذّر إنشاء ملف PDF: ${err.message}`);
-    } finally { setPdfGenerating(false); }
+      if (err?.name !== "AbortError") setError(`تعذّر إنشاء ملف PDF: ${err.message}`);
+    } finally { setPdfGenerating(false); setPdfCancelRequested(false); }
   };
 
   const downloadComparison = async () => {
+    if (!String(meta.preparedBy ?? "").trim() || !String(meta.reviewer ?? "").trim()) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء التقرير.");
+      return;
+    }
     setProcessing(true);
     try {
       const blob = await buildComparisonDocx(comparison, { ...meta }, settings);
@@ -3248,7 +3375,7 @@ export default function App() {
   };
 
   const reset = () => {
-    setStep(0); setSingleFile(null); setSingleResult(null); setComparison(null);
+    setStep(1); setSingleFile(null); setSingleResult(null); setComparison(null);
     setSlots(defaultSlots()); setError(""); setProcessing(false); setShowSettings(false);
     setShowSemesterSurveys(false);
     setSingleHeaders(null); setSingleAllRows(null); setSingleSchema(null);
@@ -3267,6 +3394,7 @@ export default function App() {
     if (tool === "tutorial") { setShowTutorial(true); return; }
     if (tool === "home") { goToHub(); return; }
     const isSemesterTool = tool === "semester" || tool === "semester-create" || tool === "semester-quick-analysis" || tool === "semester-dashboard";
+    if (tool === "semester") setSemesterInitialTab("home");
     if (tool === "semester-create") setSemesterInitialTab("generate");
     if (tool === "semester-quick-analysis") setSemesterInitialTab("quick-analysis");
     if (tool === "semester-dashboard") setSemesterInitialTab("dashboard");
@@ -3277,6 +3405,33 @@ export default function App() {
     setShowSettings(tool === "settings");
     if (tool === "analytics") reset();
     if (window.innerWidth <= 760) setSidebarOpen(false);
+  };
+
+  const uploadAnnualPdf = async () => {
+    if (!String(meta.preparedBy ?? "").trim() || !String(meta.reviewer ?? "").trim()) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء التقرير.");
+      return;
+    }
+    if (!driveToken) {
+      setError("يرجى ربط Google Drive أولاً لرفع التقرير.");
+      return;
+    }
+    pdfCancelRef.current = false;
+    setPdfCancelRequested(false);
+    setPdfGenerating(true);
+    setPdfProgress({ current: 0, total: 0 });
+    try {
+      const builtPdf = await buildBrandedReportPdf(
+        singleResult, { ...meta }, { ...settings, includePdfCharts: pdfIncludeCharts },
+        (current, total) => setPdfProgress({ current, total }),
+        { shouldCancel: () => pdfCancelRef.current }
+      );
+      if (pdfCancelRef.current) return;
+      await uploadReportNextToSource(builtPdf.blob, builtPdf.filename || safePdfReportName(singleFile?.name), driveSelected ?? {}, driveToken);
+      setError("");
+    } catch (err) {
+      if (err?.name !== "AbortError") setError(`تعذّر رفع ملف PDF: ${err.message}`);
+    } finally { setPdfGenerating(false); setPdfCancelRequested(false); }
   };
 
   const openSemesterAnalysis = () => {
@@ -3300,7 +3455,7 @@ export default function App() {
     : showSurveyManagement
       ? "surveys"
     : showSemesterSurveys
-        ? (semesterInitialTab === "dashboard" ? "semester-dashboard" : semesterInitialTab === "quick-analysis" ? "semester-quick-analysis" : "semester-create")
+        ? "semester"
         : showCourseEval
           ? "courses"
           : showSettings
@@ -3311,6 +3466,8 @@ export default function App() {
     : activeTool === "surveys"
       ? "تصميم الاستبيانات"
       : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة وحدة ضمان الجودة";
+  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool.startsWith("semester"));
+  const showAiChat = showHub || (activeTool === "analytics" && step === 5);
 
   return (
     <div className="quality-app" style={{
@@ -3328,14 +3485,14 @@ export default function App() {
           </button>
           <span>{activeToolTitle}</span>
         </div>
-        {driveConnection === "connected" ? (
-          <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><GoogleDriveIcon size={20} /><span className="google-status-dot" /> {driveAccount || "Google Drive متصل"}</button>
+        {showGoogleConnection && (driveConnection === "connected" ? (
+          <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><GoogleDriveIcon size={20} /><span className="google-status-dot" /><span className="google-global-label">{driveAccount || "Google Drive متصل"}</span></button>
         ) : (
           <button type="button" className="google-global-btn disconnected" disabled={driveConnecting || driveConnection === "checking"} onClick={connectDrive}>
             <GoogleDriveIcon size={20} />
-            {driveConnection === "checking" ? <>جاري التحقق<span className="loader-dots"><i/><i/><i/></span></> : driveConnecting ? <>جاري الاتصال<span className="loader-dots"><i/><i/><i/></span></> : "ربط Google Drive"}
+            <span className="google-global-label">{driveConnection === "checking" ? <>جاري التحقق<span className="loader-dots"><i/><i/><i/></span></> : driveConnecting ? <>جاري الاتصال<span className="loader-dots"><i/><i/><i/></span></> : "ربط Google Drive"}</span>
           </button>
-        )}
+        ))}
       </header>
 
       <div className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
@@ -3370,11 +3527,13 @@ export default function App() {
             year={batchYear}
             onYearChange={setBatchYear}
             settings={settings}
+            reportMeta={meta}
+            onReportMetaChange={setMeta}
             onBack={() => { setBatchMode(false); setBatchFiles([]); setError(""); }}
           />
         ) : (
           <>
-            <StepBar step={step} />
+            {step > 0 && <StepBar step={step} />}
 
             {/* ══ STEP 0 — Choose report mode ══ */}
             {step === 0 && (
@@ -3393,6 +3552,10 @@ export default function App() {
             {step === 1 && isAnnual && (
               <div className="card upload-workspace">
                 <WorkflowHeader step="2" icon="upload" title="رفع ملف الاستبيان" description="اختر من الجهاز أو Drive، وسيتم التعرف على نوعه تلقائيًا." />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 18, padding: "10px 13px", borderRadius: 12, background: "rgba(26,188,156,.07)", border: "1px solid rgba(94,234,212,.15)" }}>
+                  <span style={{ color: "rgba(255,255,255,.78)", fontSize: 13 }}>النطاق الحالي: <b style={{ color: "#8ff3df" }}>تقرير سنة واحدة</b></span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStep(0)}>تغيير إلى مقارنة</button>
+                </div>
                 {!(uploadTab === "drive" && driveToken) && (<>
                   <div style={{ color: "rgba(255,255,255,.45)", fontSize: 13, marginBottom: 24 }}>
                     يُكتشف نوع الاستبيان تلقائياً من الأعمدة · يدعم .xlsx / .xls / .csv
@@ -3603,15 +3766,28 @@ export default function App() {
                                     })}>تحديد الظاهر</button>
                                     {!!driveSelectedIds.size && <button className="btn btn-ghost btn-sm" onClick={() => setDriveSelectedIds(new Set())}>إلغاء التحديد</button>}
                                   </div>
+                                  <div style={{ display: "flex", gap: 8, flex: "1 1 360px", flexWrap: "wrap" }}>
+                                    <input value={meta.preparedBy ?? ""} onChange={e => setMeta(m => ({ ...m, preparedBy: e.target.value }))} placeholder="مُعدّ التحليل *" aria-label="مُعدّ التحليل" style={{ flex: "1 1 160px", minWidth: 0, padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.14)", background: "rgba(4,18,34,.45)", color: "#fff", fontFamily: "inherit", fontSize: 11 }} />
+                                    <input value={meta.reviewer ?? ""} onChange={e => setMeta(m => ({ ...m, reviewer: e.target.value }))} placeholder="مراجع التحليل *" aria-label="مراجع التحليل" style={{ flex: "1 1 160px", minWidth: 0, padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.14)", background: "rgba(4,18,34,.45)", color: "#fff", fontFamily: "inherit", fontSize: 11 }} />
+                                  </div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                     <button className="btn btn-ghost btn-sm" disabled={!selectedFiles.length || driveProcessing}
                                       style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
-                                      onClick={() => handleDriveBatchReports(selectedFiles)}>
-                                      إنشاء PDF للمحدد ورفعه ({selectedFiles.length})
+                                      onClick={() => handleDriveBatchReports(selectedFiles, { delivery: "download", reportMeta: meta })}>
+                                      تحليل وتحميل المحدد ({selectedFiles.length})
+                                    </button>
+                                    <button className="btn btn-primary btn-sm" disabled={!selectedFiles.length || driveProcessing}
+                                      style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
+                                      onClick={() => handleDriveBatchReports(selectedFiles, { delivery: "upload", reportMeta: meta })}>
+                                      تحليل ورفع المحدد ({selectedFiles.length})
+                                    </button>
+                                    <button className="btn btn-ghost btn-sm" disabled={driveProcessing}
+                                      onClick={() => handleDriveBatchReports(filtered, { delivery: "download", reportMeta: meta })}>
+                                      تحليل وتحميل الكل
                                     </button>
                                     <button className="btn btn-primary btn-sm" disabled={driveProcessing}
-                                      onClick={() => handleDriveBatchReports(filtered)}>
-                                      إنشاء PDF للكل ورفعه
+                                      onClick={() => handleDriveBatchReports(filtered, { delivery: "upload", reportMeta: meta })}>
+                                      تحليل ورفع الكل
                                     </button>
                                   </div>
                                 </div>
@@ -4010,12 +4186,20 @@ export default function App() {
                       </button>
                     )}
                     {isAnnual && singleResult && (
-                      <button className="btn btn-ghost" style={{ fontSize: 16, padding: "14px 36px" }}
-                        disabled={pdfGenerating} onClick={downloadAnnualPdf}>
-                        {pdfGenerating
-                          ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
-                          : "🖨️ تحميل PDF"}
-                      </button>
+                      <>
+                        <button className="btn btn-ghost" style={{ fontSize: 16, padding: "14px 36px" }}
+                          disabled={pdfGenerating} onClick={downloadAnnualPdf}>
+                          {pdfGenerating
+                            ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
+                            : "🖨️ تحليل وتحميل PDF"}
+                        </button>
+                        <button className="btn btn-primary" style={{ fontSize: 16, padding: "14px 36px" }}
+                          disabled={pdfGenerating} onClick={uploadAnnualPdf}>
+                          {pdfGenerating
+                            ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
+                            : "☁️ تحليل ورفع PDF"}
+                        </button>
+                      </>
                     )}
                     {isAnnual && singleResult && (
                       <button
@@ -4057,10 +4241,11 @@ export default function App() {
       {procSteps && <ProcessingOverlay steps={procSteps} filename={procFile} />}
 
       {/* ── Drive multi-report progress ── */}
-      {driveBatchState && <DriveBatchOverlay state={driveBatchState} onClose={() => setDriveBatchState(null)} />}
+      {driveBatchState && <DriveBatchOverlay state={driveBatchState} onClose={() => setDriveBatchState(null)} onCancel={cancelDriveBatch} />}
 
       {/* ── Branded PDF generation overlay ── */}
-      {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} />}
+      {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} cancelling={pdfCancelRequested}
+        onCancel={() => { pdfCancelRef.current = true; setPdfCancelRequested(true); }} />}
 
       {/* ── Enhanced Report View overlay (isolated, zero impact on existing flow) ── */}
       {showEnhancedView && singleResult && (
@@ -4096,7 +4281,7 @@ export default function App() {
       )}
 
       {/* AI Chat — floating panel, always visible */}
-      <AiChat
+      {showAiChat && <AiChat
         currentResult={singleResult}
         aiSettings={aiSettings}
         docSettings={settings}
@@ -4104,7 +4289,7 @@ export default function App() {
           setSingleResult(result);
           if (type) setSurveyType(type);
         }}
-      />
+      />}
     </div>
   );
 }

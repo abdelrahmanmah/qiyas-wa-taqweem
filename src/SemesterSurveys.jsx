@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
 import {
   loadGisScript, initSemesterTokenClient,
   SEMESTER_TOKEN_KEY, saveStoredToken, getStoredToken,
@@ -36,7 +37,7 @@ function downloadBlob(blob, filename) {
 }
 
 // Shared "links export" helpers — used by both the Generate results table and the
-// Dashboard's survey table, wherever a list of { name, formUrl, responsesUrl } exists.
+// Dashboard's survey table.
 function buildOrganizedMessage(rows, title) {
   const lines = [`📋 ${title}`, ""];
   rows.forEach((r, i) => {
@@ -50,16 +51,45 @@ function buildOrganizedMessage(rows, title) {
 
 function buildLinksWorkbookBlob(rows) {
   const data = rows.map(r => ({
-    "الاستبيان": r.name,
-    "رابط النموذج": r.formUrl,
-    "رابط الردود": r.responsesUrl,
+    "اسم الاستبيان": r.name || "",
+    "القسم": r.department || "",
+    "البرنامج إن وجد": r.program || "",
+    "السنة": r.year || "",
+    "الرابط": r.formUrl || "",
+    "عدد من سجلوا في الاستبيان": Number.isFinite(r.responses) ? r.responses : 0,
   }));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = [{ wch: 45 }, { wch: 55 }, { wch: 55 }];
+  ws["!cols"] = [{ wch: 48 }, { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 58 }, { wch: 28 }];
+  ws["!autofilter"] = { ref: ws["!ref"] };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "روابط الاستبيانات");
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+function organizationFromSurveyName(survey) {
+  const name = (survey.name || "").trim();
+  if (!name) return { department: survey.department || "", program: "" };
+
+  // Generated names end with " - {semester} - {year}". Remove those two parts,
+  // then find the last configured department in the remaining name. This keeps the
+  // export useful for old surveys even if their Drive folder does not identify a dept.
+  const unit = name.split(" - ").slice(0, -2).join(" - ").trim();
+  const departmentNames = [...new Set([
+    survey.department,
+    ...loadDepartments().map(d => d.name),
+  ].filter(Boolean))].sort((a, b) => b.length - a.length);
+
+  for (const department of departmentNames) {
+    const marker = ` - ${department}`;
+    const index = unit.lastIndexOf(marker);
+    if (index < 0) continue;
+    const suffix = unit.slice(index + marker.length);
+    if (suffix && !suffix.startsWith(" - ")) continue;
+    return { department, program: suffix.replace(/^ - /, "").trim() };
+  }
+
+  return { department: survey.department || "", program: "" };
 }
 
 function LinksExportButtons({ rows, title, filename, pushToast }) {
@@ -180,9 +210,22 @@ const CSS = `
   border-radius:14px;padding:16px 18px}
 .ssg-toast{animation:ssgToastIn .25s ease-out;padding:12px 18px;border-radius:12px;
   font-size:13px;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:220px}
+.ssg-departments{max-width:1120px;margin:0 auto;padding-bottom:44px}
+.ssg-dept-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:24px;padding:24px 26px;margin-bottom:16px;border-radius:22px;border:1px solid rgba(94,234,212,.18);background:linear-gradient(125deg,rgba(26,188,156,.14),rgba(40,116,166,.08))}
+.ssg-dept-kicker{display:flex;align-items:center;gap:7px;color:#72ead4;font-size:11px;font-weight:900;margin-bottom:7px}.ssg-dept-hero h2{color:#fff;font-size:23px;font-weight:950;margin:0 0 7px}.ssg-dept-hero p{max-width:680px;color:rgba(255,255,255,.64);font-size:13px;line-height:1.85;margin:0}
+.ssg-dept-stats{display:grid;grid-template-columns:repeat(2,minmax(105px,1fr));gap:9px}.ssg-dept-stat{padding:13px 15px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(4,18,34,.28)}.ssg-dept-stat strong{display:block;color:#fff;font-size:22px;line-height:1.2}.ssg-dept-stat span{color:rgba(255,255,255,.55);font-size:10.5px}
+.ssg-dept-add{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;padding:18px 20px;margin-bottom:22px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}.ssg-dept-add-copy strong{display:block;color:#fff;font-size:14px}.ssg-dept-add-copy span{display:block;color:rgba(255,255,255,.55);font-size:11.5px;margin-top:3px}.ssg-dept-add-form{display:flex;gap:8px;min-width:min(480px,48vw)}
+.ssg-dept-input{width:100%;min-height:44px;padding:10px 13px;border-radius:11px;border:1px solid rgba(255,255,255,.15);background:rgba(4,18,34,.42);color:#fff;font-family:inherit;font-size:13px;outline:none}.ssg-dept-input:focus{border-color:rgba(94,234,212,.5);box-shadow:0 0 0 3px rgba(26,188,156,.1)}
+.ssg-dept-section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 2px 12px}.ssg-dept-section-head h3{color:#fff;font-size:17px;margin:0}.ssg-dept-section-head span{color:rgba(255,255,255,.52);font-size:11.5px}
+.ssg-dept-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.ssg-dept-card{--dept-accent:#5eead4;position:relative;overflow:hidden;padding:18px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.03))}.ssg-dept-card:before{content:"";position:absolute;right:0;top:0;width:4px;height:100%;background:var(--dept-accent)}
+.ssg-dept-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.07)}.ssg-dept-index{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;color:var(--dept-accent);background:color-mix(in srgb,var(--dept-accent) 13%,transparent);border:1px solid color-mix(in srgb,var(--dept-accent) 24%,transparent);font-size:12px;font-weight:900}.ssg-dept-name{min-width:0;background:transparent;border:1px solid transparent;border-radius:9px;padding:7px 9px;color:#fff;font-family:inherit;font-size:14px;font-weight:900;outline:none}.ssg-dept-name:hover{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.08)}.ssg-dept-name:focus{background:rgba(4,18,34,.38);border-color:rgba(94,234,212,.34)}
+.ssg-dept-delete{width:38px;height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:11px;border:1px solid rgba(248,113,113,.17);background:rgba(239,68,68,.07);color:#fca5a5;cursor:pointer}.ssg-dept-delete:hover{background:rgba(239,68,68,.15);border-color:rgba(248,113,113,.3)}.ssg-dept-delete-label{display:none;font-weight:800;font-size:12px}
+.ssg-program-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 10px;color:rgba(255,255,255,.65);font-size:11.5px}.ssg-program-count{padding:3px 8px;border-radius:999px;color:#88eedb;background:rgba(26,188,156,.09);font-size:10px;font-weight:800}.ssg-program-list{display:flex;flex-wrap:wrap;gap:7px;min-height:38px}.ssg-program-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 8px 6px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.06);color:#e8f0fe;font-size:11.5px}.ssg-program-remove{width:20px;height:20px;display:grid;place-items:center;border:0;border-radius:50%;background:rgba(239,68,68,.13);color:#ffaaa2;cursor:pointer;font-size:10px}.ssg-program-empty{width:100%;padding:10px 12px;border-radius:10px;border:1px dashed rgba(255,255,255,.1);color:rgba(255,255,255,.42);font-size:11.5px;text-align:center}.ssg-program-add{display:flex;gap:7px;margin-top:13px}.ssg-program-add .ssg-dept-input{min-height:40px;font-size:12px}
+.ssg-delete-confirm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;padding:10px 11px;border-radius:11px;border:1px solid rgba(248,113,113,.2);background:rgba(239,68,68,.08);color:#ffd1cd;font-size:11.5px}.ssg-delete-actions{display:flex;gap:6px;flex-shrink:0}
+.ssg-dept-empty{grid-column:1/-1;padding:42px 20px;border-radius:18px;border:1px dashed rgba(255,255,255,.13);color:rgba(255,255,255,.55);text-align:center}
 @media(max-width:920px){.ssg-create-layout{grid-template-columns:1fr}.ssg-create-aside{position:static}.ssg-create-hero{align-items:flex-start;flex-direction:column}.ssg-stat-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:820px){.ssg-action-grid{grid-template-columns:1fr}.ssg-action-card{min-height:170px}.ssg-home-hero{padding-top:8px}.ssg-subnav{align-items:flex-start}.ssg-subnav-title{font-size:12px}.ssg-template-card{grid-template-columns:auto minmax(0,1fr)}.ssg-template-card select{grid-column:2}}
-@media(max-width:560px){.ssg-stat-grid{grid-template-columns:1fr 1fr}.ssg-survey-grid,.ssg-created-grid{grid-template-columns:1fr}.ssg-dashboard-actions{margin-right:0}.ssg-survey-card-actions{opacity:1;transform:none}.ssg-generation-widget,.ssg-generation-widget.collapsed{left:10px;bottom:74px;width:calc(100vw - 20px);padding:16px}.ssg-generation-title{font-size:12px}.ssg-generation-percent{font-size:20px}.ssg-generation-widget .ssg-job-grid{grid-template-columns:1fr;max-height:26vh}}
+@media(max-width:820px){.ssg-action-grid{grid-template-columns:1fr}.ssg-action-card{min-height:170px}.ssg-home-hero{padding-top:8px}.ssg-subnav{align-items:flex-start}.ssg-subnav-title{font-size:12px}.ssg-template-card{grid-template-columns:auto minmax(0,1fr)}.ssg-template-card select{grid-column:2}.ssg-dept-hero{grid-template-columns:1fr}.ssg-dept-stats{max-width:300px}.ssg-dept-add{grid-template-columns:1fr}.ssg-dept-add-form{min-width:0}.ssg-dept-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.ssg-stat-grid{grid-template-columns:1fr 1fr}.ssg-survey-grid,.ssg-created-grid{grid-template-columns:1fr}.ssg-dashboard-actions{margin-right:0}.ssg-survey-card-actions{opacity:1;transform:none}.ssg-generation-widget,.ssg-generation-widget.collapsed{left:10px;bottom:74px;width:calc(100vw - 20px);padding:16px}.ssg-generation-title{font-size:12px}.ssg-generation-percent{font-size:20px}.ssg-generation-widget .ssg-job-grid{grid-template-columns:1fr;max-height:26vh}.ssg-dept-hero{padding:19px}.ssg-dept-add{padding:15px}.ssg-dept-add-form,.ssg-program-add{flex-direction:column}.ssg-dept-card{padding:15px}.ssg-dept-card-head{grid-template-columns:auto minmax(0,1fr)}.ssg-dept-delete{grid-column:1/-1;width:100%;height:38px}.ssg-dept-delete-label{display:inline}.ssg-delete-confirm{align-items:flex-start;flex-direction:column}.ssg-delete-actions{width:100%}.ssg-delete-actions .btn{flex:1}}
 `;
 
 // ---------- toasts ----------
@@ -444,7 +487,7 @@ function GenerateSurveysView({ token, pushToast, onReconnect, onGoDashboard }) {
 
     setJobs(jobList.map(j => ({
       key: j.key, status: "pending",
-      label: j.department ? `${j.template.name} — ${j.department}` : j.template.name,
+      label: j.unitLabel ? `${j.template.name} — ${j.unitLabel}` : j.template.name,
     })));
     setResults(null);
     setProgressCollapsed(false);
@@ -545,6 +588,11 @@ function GenerateSurveysView({ token, pushToast, onReconnect, onGoDashboard }) {
             >
               {SEMESTERS.map(s => <option key={s} value={s} style={{ color: "#000" }}>{s}</option>)}
             </select>
+            <div style={{ marginTop: 13, padding: "11px 12px", borderRadius: 11, border: "1px solid rgba(94,234,212,.15)", background: "rgba(26,188,156,.06)" }}>
+              <div style={{ color: "#8af0dd", fontSize: 10.5, fontWeight: 900, marginBottom: 4 }}>تنظيم Google Drive</div>
+              <div dir="ltr" style={{ color: "rgba(255,255,255,.82)", fontSize: 11.5, fontWeight: 800, textAlign: "right" }}>{yearFolderName(year) || "السنة"} / {semester} / القسم / مجلد الاستبيان / النموذج</div>
+              <div style={{ color: "rgba(255,255,255,.47)", fontSize: 10.5, lineHeight: 1.7, marginTop: 4 }}>نماذج البرامج تُحفظ داخل مجلد الاستبيان التابع لقسمها، بدون مجلدات برامج إضافية.</div>
+            </div>
             <div className="ssg-selection-summary"><span>القوالب المختارة</span><strong>{selectedCount}</strong></div>
             <button className="btn btn-primary ssg-create-submit" disabled={generating || selectedCount === 0} onClick={handleGenerate}>
               {generating ? <span>جاري الإنشاء<LoadingDots /></span> : `إنشاء ${selectedCount ? `${selectedCount} قالب` : "الاستبيانات"}`}
@@ -576,7 +624,15 @@ function GenerateSurveysView({ token, pushToast, onReconnect, onGoDashboard }) {
           <div className="ssg-success-head">
             <div className="ssg-success-copy"><span className="ssg-success-icon">✓</span><div><div>تم إنشاء {results.length} استبيان بنجاح</div><small style={{ color: "rgba(255,255,255,.42)", fontWeight: 600 }}>النماذج جاهزة لاستقبال الردود على Google Drive.</small></div></div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <LinksExportButtons rows={results.map(r => ({ name: r.name, formUrl: r.formUrl, responsesUrl: editorResponsesUrl(r.formId) }))} title={`استبيانات ${semester} ${year}`} filename={`روابط_استبيانات_${semester}_${yearFolderName(year)}.xlsx`} pushToast={pushToast} />
+              <LinksExportButtons rows={results.map(r => ({
+                name: r.name,
+                department: r.department,
+                program: r.program,
+                year,
+                formUrl: r.formUrl,
+                responses: 0,
+                responsesUrl: editorResponsesUrl(r.formId),
+              }))} title={`استبيانات ${semester} ${year}`} filename={`روابط_استبيانات_${semester}_${yearFolderName(year)}.xlsx`} pushToast={pushToast} />
               <button type="button" className="btn btn-primary btn-sm" onClick={onGoDashboard}>اذهب إلى لوحة التحكم ←</button>
             </div>
           </div>
@@ -614,14 +670,15 @@ function SurveyDashboardCard({ survey, selected, index, onToggle, onAnalyze, onR
   return (
     <article className={`ssg-survey-card ${selected ? "selected" : ""}`} role="button" tabIndex={0} aria-pressed={selected} onClick={onToggle} onKeyDown={toggleByKey} style={{ animationDelay: `${Math.min(index * 35, 350)}ms` }}>
       <span className="ssg-card-select" aria-hidden="true">{selected ? "✓" : "+"}</span>
-      <span className="ssg-survey-type">{survey.surveyType || "استبيان فصلي"}</span>
+      <span className="ssg-survey-type">{survey.department ? `${survey.department} · ${survey.surveyType}` : (survey.surveyType || "استبيان فصلي")}</span>
       <h3 className="ssg-survey-name">{survey.name}</h3>
       <div className="ssg-survey-metrics">
         <div className="ssg-survey-metric"><strong>{survey.responses}</strong><span>إجمالي الردود</span></div>
         <div className="ssg-survey-metric"><strong style={{ fontSize: 12 }}>{formatWhen(survey.last)}</strong><span>آخر استجابة</span></div>
       </div>
       <div className="ssg-survey-card-actions">
-        <button type="button" className="ssg-card-action primary" onClick={stop(onAnalyze)}>تحليل ورفع PDF</button>
+        <button type="button" className="ssg-card-action primary" onClick={stop(() => onAnalyze("download"))}>تحليل وتحميل</button>
+        <button type="button" className="ssg-card-action" onClick={stop(() => onAnalyze("upload"))}>تحليل ورفع</button>
         <a className="ssg-card-action" href={survey.formUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>النموذج</a>
         <a className="ssg-card-action" href={editorResponsesUrl(survey.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>الردود</a>
         <button type="button" className="ssg-card-action" onClick={stop(onRefresh)}>تحديث</button>
@@ -669,8 +726,8 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
   const loadSurveys = useCallback(() => {
     if (!semFolder) { setSurveys([]); return; }
     setSurveys(null); setLoadError("");
-    // Each survey type now lives in its own subfolder under the semester folder
-    // (see GenerateSurveysView) — listSemesterSurveysWithStats walks that structure.
+    // Department surveys live under {year}/{semester}/{department}/{survey}; the
+    // shared reader also includes direct forms and folders from previous layouts.
     listSemesterSurveysWithStats(token, semFolder.id)
       .then(rows => setSurveys(rows))
       .catch(e => setLoadError("فشل تحميل الاستبيانات: " + e.message));
@@ -699,19 +756,27 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
   // same [header, ...rows] shape a real Excel export would have. ----
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(null);
+  const [reportAuthors, setReportAuthors] = useState({ preparedBy: "", reviewer: "" });
+  const analysisCancelRef = useRef(false);
+  const [analysisCancelRequested, setAnalysisCancelRequested] = useState(false);
   const analyzeTip = useRotatingTip(analyzing, ANALYZE_TIPS);
 
-  async function runAnalyzeAll(targetSurveys = surveys) {
+  async function runAnalyzeAll(targetSurveys = surveys, reportMeta) {
+    analysisCancelRef.current = false;
+    setAnalysisCancelRequested(false);
     setAnalyzing(true);
     setAnalyzeProgress(targetSurveys.map(s => ({ id: s.id, name: s.name, status: "pending" })));
     const schemas = getAllAnalysisSchemas();
     const settings = loadReportSettings();
     let successCount = 0, skipCount = 0;
+    const reports = [];
 
     for (const survey of targetSurveys) {
+      if (analysisCancelRef.current) break;
       setAnalyzeProgress(p => p.map(x => x.id === survey.id ? { ...x, status: "active" } : x));
       try {
         const [form, responses] = await Promise.all([getForm(token, survey.id), listAllResponses(token, survey.id)]);
+        if (analysisCancelRef.current) break;
         const rows = responsesToRows(form, responses);
         const schemaId = detectAnySurveyType(survey.name, rows[0]);
         const schema = schemaId ? schemas[schemaId] : null;
@@ -721,28 +786,46 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
           continue;
         }
         const result = analyze(rows, schema);
-        const meta = { year, program: departmentFromSurveyName(survey.name), preparedBy: "", reviewer: "" };
-        const builtPdf = await buildBrandedReportPdf(result, meta, settings);
-        downloadBlob(builtPdf.blob, builtPdf.filename);
+        const meta = { year, program: departmentFromSurveyName(survey.name), ...reportMeta };
+        const builtPdf = await buildBrandedReportPdf(
+          result, meta, settings, undefined,
+          { shouldCancel: () => analysisCancelRef.current }
+        );
+        if (analysisCancelRef.current) break;
+        reports.push({ blob: builtPdf.blob, filename: builtPdf.filename });
         setAnalyzeProgress(p => p.map(x => x.id === survey.id ? { ...x, status: "done" } : x));
         successCount++;
-        await new Promise(r => setTimeout(r, 450)); // let the browser process each download separately
       } catch (e) {
+        if (e?.name === "AbortError" && analysisCancelRef.current) break;
         setAnalyzeProgress(p => p.map(x => x.id === survey.id ? { ...x, status: "error" } : x));
       }
     }
 
     setAnalyzing(false);
+    if (!analysisCancelRef.current && reports.length === 1) {
+      downloadBlob(reports[0].blob, reports[0].filename);
+    } else if (!analysisCancelRef.current && reports.length > 1) {
+      const zip = new JSZip();
+      reports.forEach(report => zip.file(report.filename, report.blob));
+      downloadBlob(await zip.generateAsync({ type: "blob" }), `تقارير_تحليل_${year}.zip`);
+    }
     if (successCount) pushToast(`تم إنشاء ${successCount} تقرير بنجاح.`, "success");
     if (skipCount) pushToast(`تعذّر التعرف على نوع ${skipCount} استبيان — لم يتم تحليله.`, "error");
   }
 
-  async function analyzeSelection(items) {
+  async function analyzeSelection(items, delivery = "upload") {
     if (!items.length || analyzing) return;
-    if (!onAnalyzeForms) { await runAnalyzeAll(items); return; }
+    const preparedBy = reportAuthors.preparedBy.trim();
+    const reviewer = reportAuthors.reviewer.trim();
+    if (!preparedBy || !reviewer) {
+      setLoadError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء أي تقرير.");
+      return;
+    }
+    const reportMeta = { year, preparedBy, reviewer };
+    if (!onAnalyzeForms) { await runAnalyzeAll(items, reportMeta); return; }
     setAnalyzing(true); setLoadError("");
     try {
-      await onAnalyzeForms(items, token);
+      await onAnalyzeForms(items, token, { delivery, reportMeta });
     } catch (e) {
       setLoadError("تعذّر تحليل الاستبيانات: " + e.message);
     } finally {
@@ -779,24 +862,37 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
               {(semesters ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
             </select>
           </div>
+          <div style={{ flex: "1 1 190px" }}>
+            <label className="ssg-field-label">مُعدّ التحليل <span aria-hidden="true">*</span></label>
+            <input className="ssg-field" value={reportAuthors.preparedBy} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, preparedBy: e.target.value }))} />
+          </div>
+          <div style={{ flex: "1 1 190px" }}>
+            <label className="ssg-field-label">مراجع التحليل <span aria-hidden="true">*</span></label>
+            <input className="ssg-field" value={reportAuthors.reviewer} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, reviewer: e.target.value }))} />
+          </div>
           <div className="ssg-dashboard-actions">
             {!!selectedIds.size && <span className="ssg-selection-count">✓ {selectedIds.size} محدد</span>}
             {!!surveys?.length && <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(selectedIds.size === surveys.length ? new Set() : new Set(surveys.map(s => s.id)))}>{selectedIds.size === surveys.length ? "إلغاء تحديد الكل" : "تحديد الكل"}</button>}
-            {!!selectedIds.size && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)))}>تحليل ورفع المحدد ({selectedIds.size})</button>}
+            {!!selectedIds.size && <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)), "download")}>تحليل وتحميل المحدد ({selectedIds.size})</button>}
+            {!!selectedIds.size && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)), "upload")}>تحليل ورفع المحدد ({selectedIds.size})</button>}
             <button className="btn btn-ghost btn-sm" onClick={() => setRefreshKey(k => k + 1)}>تحديث البيانات</button>
-            {!!surveys?.length && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys)}>تحليل ورفع الكل ({surveys.length})</button>}
+            {!!surveys?.length && <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys, "download")}>تحليل وتحميل الكل ({surveys.length})</button>}
+            {!!surveys?.length && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys, "upload")}>تحليل ورفع الكل ({surveys.length})</button>}
           </div>
         <ErrorBanner text={loadError} />
 
         {analyzeProgress && (
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.1)" }}>
             {analyzing && (
-              <ProgressBar
-                done={analyzeProgress.filter(p => p.status === "done" || p.status === "error" || p.status === "skipped").length}
-                total={analyzeProgress.length}
-                label="جاري تحليل الاستبيانات..."
-                tip={analyzeTip}
-              />
+              <>
+                <ProgressBar
+                  done={analyzeProgress.filter(p => p.status === "done" || p.status === "error" || p.status === "skipped").length}
+                  total={analyzeProgress.length}
+                  label={analysisCancelRequested ? "جارٍ إلغاء العملية..." : "جاري تحليل الاستبيانات..."}
+                  tip={analyzeTip}
+                />
+                <button type="button" className="btn btn-ghost btn-sm" disabled={analysisCancelRequested} onClick={() => { analysisCancelRef.current = true; setAnalysisCancelRequested(true); }} style={{ marginTop: 10, color: "#ffb4b4", borderColor: "rgba(239,68,68,.35)" }}>{analysisCancelRequested ? "جارٍ الإلغاء…" : "إلغاء العملية"}</button>
+              </>
             )}
             {analyzeProgress.map(p => (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 4px", fontSize: 13, color: "rgba(255,255,255,.8)" }}>
@@ -846,7 +942,18 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
             <div className="ssg-panel-head">
               <div><div className="ssg-panel-title">استبيانات الفصل الدراسي</div><div className="ssg-panel-copy">اضغط على البطاقة لتحديدها، أو مرّر عليها للوصول إلى التحليل والروابط.</div></div>
               <LinksExportButtons
-                rows={surveys.map(r => ({ name: r.name, formUrl: r.formUrl, responsesUrl: editorResponsesUrl(r.id) }))}
+                rows={surveys.map(r => {
+                  const organization = organizationFromSurveyName(r);
+                  return {
+                    name: r.name,
+                    department: organization.department,
+                    program: organization.program,
+                    year,
+                    formUrl: r.formUrl,
+                    responses: r.responses,
+                    responsesUrl: editorResponsesUrl(r.id),
+                  };
+                })}
                 title={`استبيانات ${semester} ${year}`}
                 filename={`روابط_استبيانات_${semester}_${yearFolderName(year)}.xlsx`}
                 pushToast={pushToast}
@@ -856,7 +963,7 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
               {surveys.map((survey, index) => (
                 <SurveyDashboardCard key={survey.id} survey={survey} index={index} selected={selectedIds.has(survey.id)}
                   onToggle={() => setSelectedIds(prev => { const next = new Set(prev); if (next.has(survey.id)) next.delete(survey.id); else next.add(survey.id); return next; })}
-                  onAnalyze={() => analyzeSelection([survey])} onRefresh={() => refreshOne(survey.id)} />
+                  onAnalyze={delivery => analyzeSelection([survey], delivery)} onRefresh={() => refreshOne(survey.id)} />
               ))}
             </div>
           </section>
@@ -872,6 +979,9 @@ function DepartmentsView({ pushToast }) {
   const [departments, setDepartments] = useState(loadDepartments);
   const [newDeptName, setNewDeptName] = useState("");
   const [programDrafts, setProgramDrafts] = useState({}); // deptId -> current input text
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const accents = ["#5eead4", "#60a5fa", "#c4b5fd", "#fbbf24", "#fb7185"];
+  const totalPrograms = departments.reduce((sum, dept) => sum + (dept.programs?.length ?? 0), 0);
 
   function persist(next, message) {
     setDepartments(next);
@@ -892,18 +1002,38 @@ function DepartmentsView({ pushToast }) {
   }
 
   function commitRename(id) {
-    saveDepartments(departments);
+    const department = departments.find(d => d.id === id);
+    const name = department?.name.trim() ?? "";
+    if (!name) {
+      setDepartments(loadDepartments());
+      pushToast("لا يمكن حفظ قسم بدون اسم.", "error");
+      return;
+    }
+    if (departments.some(d => d.id !== id && d.name.trim() === name)) {
+      setDepartments(loadDepartments());
+      pushToast("يوجد قسم آخر بنفس الاسم.", "error");
+      return;
+    }
+    const next = departments.map(d => d.id === id ? { ...d, name } : d);
+    persist(next, "تم حفظ اسم القسم.");
   }
 
   function removeDepartment(id) {
     persist(departments.filter(d => d.id !== id), "تم حذف القسم.");
+    setPendingDelete(null);
   }
 
   function addProgram(deptId) {
     const text = (programDrafts[deptId] || "").trim();
     if (!text) return;
+    const department = departments.find(d => d.id === deptId);
+    if (department?.programs?.some(program => program === text)) {
+      pushToast("هذا البرنامج موجود بالفعل داخل القسم.", "error");
+      return;
+    }
     persist(departments.map(d => d.id === deptId ? { ...d, programs: [...d.programs, text] } : d));
     setProgramDrafts(p => ({ ...p, [deptId]: "" }));
+    pushToast("تمت إضافة البرنامج.", "success");
   }
 
   function removeProgram(deptId, program) {
@@ -911,52 +1041,73 @@ function DepartmentsView({ pushToast }) {
   }
 
   return (
-    <div>
-      <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-        <div style={{ color: "#fff", fontSize: 13, marginBottom: 14 }}>
-          الأقسام التي بلا برامج (كالمحاسبة والاقتصاد) تُنشئ نسخة واحدة عند تفعيل "نسخة لكل قسم/برنامج".
-          الأقسام التي لها برامج (كتكنولوجيا الأعمال) تُنشئ نسخة لكل برنامج بدلاً من نسخة عامة للقسم.
+    <section className="ssg-departments" aria-labelledby="departments-title">
+      <div className="ssg-dept-hero">
+        <div>
+          <div className="ssg-dept-kicker"><SemesterIcon name="settings" size={16} /> إعداد الهيكل الأكاديمي</div>
+          <h2 id="departments-title">إدارة الأقسام والبرامج</h2>
+          <p>نظّم الأقسام والبرامج التي يستخدمها النظام عند إنشاء استبيانات الفصل. القسم الذي لا يحتوي على برامج سيُعامل كوحدة واحدة، بينما يُنشأ نموذج مستقل لكل برنامج عند إضافته.</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <input
-            value={newDeptName} onChange={e => setNewDeptName(e.target.value)}
-            placeholder="اسم قسم جديد" onKeyDown={e => e.key === "Enter" && addDepartment()}
-            style={{ flex: 1, padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 13 }}
-          />
-          <button className="btn btn-primary btn-sm" onClick={addDepartment}>+ إضافة قسم</button>
+        <div className="ssg-dept-stats" aria-label="ملخص الأقسام والبرامج">
+          <div className="ssg-dept-stat"><strong>{departments.length}</strong><span>قسم أكاديمي</span></div>
+          <div className="ssg-dept-stat"><strong>{totalPrograms}</strong><span>برنامج مسجل</span></div>
         </div>
       </div>
 
-      {departments.map(d => (
-        <div key={d.id} className="card" style={{ padding: 20, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <input
-              value={d.name} onChange={e => renameDepartment(d.id, e.target.value)} onBlur={() => commitRename(d.id)}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 14, fontWeight: 700 }}
-            />
-            <button className="btn btn-danger btn-sm" onClick={() => removeDepartment(d.id)}>✕ حذف القسم</button>
+      <div className="ssg-dept-add">
+        <div className="ssg-dept-add-copy"><strong>إضافة قسم جديد</strong><span>أضف القسم أولًا، ثم أضف برامجه من البطاقة الخاصة به.</span></div>
+        <form className="ssg-dept-add-form" onSubmit={e => { e.preventDefault(); addDepartment(); }}>
+          <input className="ssg-dept-input" value={newDeptName} onChange={e => setNewDeptName(e.target.value)} placeholder="مثال: قسم إدارة الأعمال" aria-label="اسم القسم الجديد" />
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!newDeptName.trim()}>إضافة القسم +</button>
+        </form>
+      </div>
+
+      <div className="ssg-dept-section-head">
+        <div><h3>الأقسام الحالية</h3><span>اضغط على اسم القسم لتعديله؛ الحفظ يتم عند الخروج من الحقل.</span></div>
+        <span>{departments.length} قسم</span>
+      </div>
+
+      <div className="ssg-dept-grid">
+        {departments.map((d, index) => (
+        <article key={d.id} className="ssg-dept-card" style={{ "--dept-accent": accents[index % accents.length] }}>
+          <div className="ssg-dept-card-head">
+            <span className="ssg-dept-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            <input className="ssg-dept-name" value={d.name} aria-label={`اسم القسم ${index + 1}`}
+              onChange={e => renameDepartment(d.id, e.target.value)} onBlur={() => commitRename(d.id)}
+              onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+            <button type="button" className="ssg-dept-delete" onClick={() => setPendingDelete(d.id)} aria-label={`حذف قسم ${d.name}`} title="حذف القسم"><span aria-hidden="true">✕</span><span className="ssg-dept-delete-label">حذف القسم</span></button>
           </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: d.programs.length ? 12 : 0 }}>
+          <div className="ssg-program-head"><span>البرامج التابعة للقسم</span><span className="ssg-program-count">{d.programs.length} برنامج</span></div>
+          <div className="ssg-program-list">
             {d.programs.map(p => (
-              <span key={p} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.08)", borderRadius: 20, padding: "5px 6px 5px 12px", fontSize: 12, color: "#e8f0fe" }}>
+              <span key={p} className="ssg-program-chip">
                 {p}
-                <button onClick={() => removeProgram(d.id, p)} aria-label={`إزالة البرنامج ${p}`} title={`إزالة ${p}`} style={{ background: "rgba(231,76,60,.2)", border: "none", borderRadius: "50%", width: 18, height: 18, color: "#ff6b5b", cursor: "pointer", fontSize: 11, lineHeight: 1 }}>✕</button>
+                <button type="button" className="ssg-program-remove" onClick={() => removeProgram(d.id, p)} aria-label={`إزالة البرنامج ${p}`} title={`إزالة ${p}`}>✕</button>
               </span>
             ))}
+            {!d.programs.length && <div className="ssg-program-empty">لا توجد برامج—سيُنشأ استبيان واحد للقسم.</div>}
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={programDrafts[d.id] || ""} onChange={e => setProgramDrafts(p => ({ ...p, [d.id]: e.target.value }))}
-              placeholder="اسم برنامج جديد (اختياري)" onKeyDown={e => e.key === "Enter" && addProgram(d.id)}
-              style={{ flex: 1, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.04)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 12.5 }}
-            />
-            <button className="btn btn-ghost btn-sm" onClick={() => addProgram(d.id)}>+ إضافة برنامج</button>
-          </div>
-        </div>
+          <form className="ssg-program-add" onSubmit={e => { e.preventDefault(); addProgram(d.id); }}>
+            <input className="ssg-dept-input" value={programDrafts[d.id] || ""} onChange={e => setProgramDrafts(p => ({ ...p, [d.id]: e.target.value }))} placeholder="اسم برنامج جديد (اختياري)" aria-label={`برنامج جديد في ${d.name}`} />
+            <button type="submit" className="btn btn-ghost btn-sm" disabled={!(programDrafts[d.id] || "").trim()}>إضافة برنامج +</button>
+          </form>
+
+          {pendingDelete === d.id && (
+            <div className="ssg-delete-confirm" role="alert">
+              <span>حذف القسم سيحذف قائمة برامجه من إعدادات الإنشاء.</span>
+              <div className="ssg-delete-actions">
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeDepartment(d.id)}>تأكيد الحذف</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPendingDelete(null)}>تراجع</button>
+              </div>
+            </div>
+          )}
+        </article>
       ))}
-    </div>
+        {!departments.length && <div className="ssg-dept-empty">لا توجد أقسام حتى الآن. أضف أول قسم من النموذج بالأعلى.</div>}
+      </div>
+    </section>
   );
 }
 

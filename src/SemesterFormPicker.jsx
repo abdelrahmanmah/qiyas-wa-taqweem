@@ -93,6 +93,7 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
   const [loadingFormId, setLoadingFormId] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [analyzing, setAnalyzing] = useState(false);
+  const [reportAuthors, setReportAuthors] = useState({ preparedBy: "", reviewer: "" });
 
   useEffect(() => {
     if (!auth.token) return;
@@ -147,10 +148,16 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
     }
   }
 
-  async function analyzeForms(items) {
+  async function analyzeForms(items, delivery = "upload") {
     if (!onAnalyzeForms || !items.length || analyzing) return;
+    const preparedBy = reportAuthors.preparedBy.trim();
+    const reviewer = reportAuthors.reviewer.trim();
+    if (!preparedBy || !reviewer) {
+      setLoadError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء أي تقرير.");
+      return;
+    }
     setAnalyzing(true); setLoadError("");
-    try { await onAnalyzeForms(items, auth.token); }
+    try { await onAnalyzeForms(items, auth.token, { delivery, reportMeta: { year, preparedBy, reviewer } }); }
     catch (e) { setLoadError("تعذّر تحليل الاستبيانات: " + e.message); }
     finally { setAnalyzing(false); }
   }
@@ -196,6 +203,16 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
             {(semesters ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
           </select>
         </div>
+        <div style={{ flex: "1 1 180px" }}>
+          <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginBottom: 5 }}>مُعدّ التحليل *</div>
+          <input value={reportAuthors.preparedBy} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, preparedBy: e.target.value }))}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 13 }} />
+        </div>
+        <div style={{ flex: "1 1 180px" }}>
+          <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginBottom: 5 }}>مراجع التحليل *</div>
+          <input value={reportAuthors.reviewer} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, reviewer: e.target.value }))}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 13 }} />
+        </div>
       </div>
 
       <InlineNotice text={loadError} style={{ marginBottom: 12 }} />
@@ -227,8 +244,10 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
               {!!selectedIds.size && <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button>}
             </div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              <button className="btn btn-ghost btn-sm" disabled={!selectedIds.size || analyzing} style={{ opacity: selectedIds.size && !analyzing ? 1 : .45 }} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)))}>إنشاء PDF للمحدد</button>
-              <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms)}>إنشاء PDF للكل</button>
+              <button className="btn btn-ghost btn-sm" disabled={!selectedIds.size || analyzing} style={{ opacity: selectedIds.size && !analyzing ? 1 : .45 }} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)), "download")}>تحليل وتحميل المحدد</button>
+              <button className="btn btn-primary btn-sm" disabled={!selectedIds.size || analyzing} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)), "upload")}>تحليل ورفع المحدد</button>
+              <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms, "download")}>تحليل وتحميل الكل</button>
+              <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms, "upload")}>تحليل ورفع الكل</button>
             </div>
           </div>
           {forms.map(f => (

@@ -7,7 +7,7 @@ import {
   TEMPLATE_FOLDER_ID, ROOT_SURVEYS_FOLDER_ID, SEMESTERS, loadDepartments,
   listFormsInFolder, findYearSemesterFolder, buildGenerationJobs, runGenerationJobs,
   listSemesterSurveysWithStats, getForm, listAllResponses, responsesToRows,
-  departmentFromSurveyName, isValidAcademicYear,
+  departmentFromSurveyName, yearFolderName, isValidAcademicYear,
 } from "./engine/semesterSurveyModel.js";
 
 // ── Provider catalog ──────────────────────────────────────────────────────────
@@ -409,7 +409,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
         if (!semFolder) return `لا يوجد مجلد استبيانات لسنة ${args.year} / ${args.semester}.`;
         const surveys = await listSemesterSurveysWithStats(token, semFolder.id);
         if (!surveys.length) return "لا توجد استبيانات لهذا الفصل بعد.";
-        return `استبيانات ${args.semester} ${args.year}:\n${surveys.map(s => `- ${s.name} (${s.surveyType}) — ${s.responses} رد`).join("\n")}`;
+        return `استبيانات ${args.semester} ${args.year}:\n${surveys.map(s => `- ${s.name} (${s.department ? `${s.department} / ` : ""}${s.surveyType}) — ${s.responses} رد`).join("\n")}`;
       } catch (e) {
         return `فشل استعراض الاستبيانات: ${e.message}`;
       }
@@ -441,6 +441,8 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
         title: "تأكيد إنشاء استبيانات فصل دراسي",
         lines: [
           `السنة: ${args.year} — الفصل: ${args.semester}`,
+          `مكان الحفظ: ${yearFolderName(args.year)} / ${args.semester} / ${mode === "general" ? "مجلد الاستبيان / النموذج" : "القسم / مجلد الاستبيان / النموذج"}`,
+          ...(mode === "programs" ? ["نماذج البرامج ستُحفظ داخل مجلد الاستبيان التابع لقسمها بدون مجلد برنامج."] : []),
           `عدد النسخ التي سيتم إنشاؤها: ${jobList.length}`,
           ...matched.map(t => `• ${t.name}`),
         ],
@@ -628,6 +630,10 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
           30%{transform:translateY(-6px);opacity:1}
         }
         .aichat-textarea:focus{border-color:#1abc9c!important;background:rgba(255,255,255,.12)!important}
+        @media(max-width:640px){
+          .aichat-launcher{width:46px!important;height:46px!important;left:12px!important;bottom:max(12px,env(safe-area-inset-bottom))!important;font-size:19px!important}
+          .aichat-panel{left:10px!important;right:10px!important;bottom:max(68px,calc(env(safe-area-inset-bottom) + 68px))!important;width:auto!important;max-width:none!important}
+        }
       `}</style>
 
       {/* Hidden file input */}
@@ -636,6 +642,10 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
 
       {/* Floating button */}
       <button
+        className="aichat-launcher"
+        type="button"
+        aria-label={isOpen ? "إغلاق المساعد الذكي" : "فتح المساعد الذكي"}
+        aria-expanded={isOpen}
         title="المساعد الذكي"
         onClick={() => setIsOpen(v => !v)}
         style={{
@@ -653,7 +663,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
 
       {/* Chat panel */}
       {isOpen && (
-        <div style={{
+        <div className="aichat-panel" role="dialog" aria-label="المساعد الذكي" style={{
           position: "fixed", bottom: "max(86px, calc(env(safe-area-inset-bottom) + 86px))", left: 20, right: 20, zIndex: 1099,
           width: "auto", maxWidth: 420, height: "min(565px, calc(100dvh - 120px))",
           margin: "0 auto",
