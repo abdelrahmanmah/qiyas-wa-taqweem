@@ -3,9 +3,11 @@
 // OAuth is client-side only (Google Identity Services token client), same pattern
 // as the existing Drive integration in App.jsx, just with broader scopes.
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
-export const TEMPLATE_FOLDER_ID = import.meta.env.VITE_GOOGLE_TEMPLATE_FOLDER_ID ?? "";
-export const ROOT_SURVEYS_FOLDER_ID = import.meta.env.VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID ?? "";
+const envValue = (key, fallback = "") => String(import.meta.env[key] ?? fallback).trim();
+
+const GOOGLE_CLIENT_ID = envValue("VITE_GOOGLE_CLIENT_ID");
+export const TEMPLATE_FOLDER_ID = envValue("VITE_GOOGLE_TEMPLATE_FOLDER_ID", "15aHectdjYJP1To6V3uLR2ZlBJUtzuqi0");
+export const ROOT_SURVEYS_FOLDER_ID = envValue("VITE_GOOGLE_ROOT_SURVEYS_FOLDER_ID", "15aHectdjYJP1To6V3uLR2ZlBJUtzuqi0");
 
 export const SEMESTER_SCOPE = [
   "https://www.googleapis.com/auth/drive",
