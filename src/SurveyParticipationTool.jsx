@@ -49,6 +49,7 @@ function courseRowsToWorkbook(rows, sheetName) {
     ...rows.map(r => [r.code, r.name, r.voted, r.total ?? "", STATUS[r.status].label])];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [{ wch: 16 }, { wch: 45 }, { wch: 12 }, { wch: 10 }, { wch: 20 }];
+  ws["!autofilter"] = { ref: ws["!ref"] };
   ws["!sheetViews"] = [{ rightToLeft: true }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -56,10 +57,11 @@ function courseRowsToWorkbook(rows, sheetName) {
 }
 
 function exportRows(rows, sheetName, filename) {
-  if (!rows.length) return;
+  if (!rows.length) return false;
   const wb = courseRowsToWorkbook(rows, sheetName);
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  downloadBlob(new Blob([wbout], { type: "application/octet-stream" }), filename);
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", compression: true });
+  downloadBlob(new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
+  return true;
 }
 
 export default function SurveyParticipationTool() {
@@ -108,6 +110,11 @@ export default function SurveyParticipationTool() {
   const notFilled = classified.filter(r => r.voted === 0);
 
   const visible = filter === "all" ? classified : classified.filter(r => r.status === filter);
+  const handleExport = (exportRowsData, sheetName, filename) => {
+    if (exportRows(exportRowsData, sheetName, filename)) {
+      setStatus({ msg: `✓ تم تنزيل ${filename}`, kind: "ok" });
+    }
+  };
 
   return (
     <div>
@@ -146,19 +153,19 @@ export default function SurveyParticipationTool() {
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
             <button className="btn btn-ghost btn-sm" disabled={!filled.length}
-              onClick={() => exportRows(filled, "تم التقييم", "مواد_تم_تقييمها.xlsx")}>
+              onClick={() => handleExport(filled, "تم التقييم", "مواد_تم_تقييمها.xlsx")}>
               ⬇ تنزيل المواد اللي فيها طلبة ملوها ({filled.length})
             </button>
             <button className="btn btn-ghost btn-sm" disabled={!notFilled.length}
-              onClick={() => exportRows(notFilled, "لم يتم التقييم", "مواد_لم_تُقيّم.xlsx")}>
+              onClick={() => handleExport(notFilled, "لم يتم التقييم", "مواد_لم_تُقيّم.xlsx")}>
               ⬇ تنزيل المواد اللي مفيش طلبة ملوها ({notFilled.length})
             </button>
             <button className="btn btn-ghost btn-sm" disabled={!buckets["suspicious"].length}
-              onClick={() => exportRows(buckets["suspicious"], "مشكوك فيها", "مواد_مشكوك_في_انتظامها.xlsx")}>
+              onClick={() => handleExport(buckets["suspicious"], "مشكوك فيها", "مواد_مشكوك_في_انتظامها.xlsx")}>
               ⬇ تنزيل المواد المشكوك فيها ({buckets["suspicious"].length})
             </button>
             <button className="btn btn-primary btn-sm" disabled={!classified.length}
-              onClick={() => exportRows(classified, "تقرير كامل", "تقرير_أداء_الاستبيانات_كامل.xlsx")}>
+              onClick={() => handleExport(classified, "تقرير كامل", "تقرير_أداء_الاستبيانات_كامل.xlsx")}>
               ⬇ تنزيل التقرير الكامل
             </button>
           </div>

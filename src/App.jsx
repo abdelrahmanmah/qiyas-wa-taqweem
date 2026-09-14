@@ -507,6 +507,15 @@ function safePdfReportName(sourceName) {
   return `تقرير تحليل - ${base}.pdf`;
 }
 
+function initialReportMeta() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("eruQA_report_authors_v1") || "{}");
+    return { year: "2024-2025", program: "", preparedBy: saved.preparedBy || "", reviewer: saved.reviewer || "" };
+  } catch {
+    return { year: "2024-2025", program: "", preparedBy: "", reviewer: "" };
+  }
+}
+
 async function downloadReports(reports, year) {
   if (reports.length === 1) {
     downloadBlob(reports[0].blob, reports[0].filename);
@@ -1895,6 +1904,39 @@ function ProcessingOverlay({ steps, filename }) {
   );
 }
 
+function AnalysisActionDialog({ count, meta, onMetaChange, onClose, onConfirm }) {
+  const [delivery, setDelivery] = useState("download");
+  const [validation, setValidation] = useState("");
+  const submit = e => {
+    e.preventDefault();
+    const preparedBy = String(meta.preparedBy || "").trim();
+    const reviewer = String(meta.reviewer || "").trim();
+    if (!preparedBy || !reviewer) {
+      setValidation("أدخل اسم مُعدّ التقرير واسم مراجع التقرير للمتابعة.");
+      return;
+    }
+    localStorage.setItem("eruQA_report_authors_v1", JSON.stringify({ preparedBy, reviewer }));
+    onConfirm(delivery);
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 10020, display: "grid", placeItems: "center", padding: 18, background: "rgba(3,12,23,.74)", backdropFilter: "blur(9px)" }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <form role="dialog" aria-modal="true" aria-labelledby="app-analysis-title" onSubmit={submit} style={{ width: "min(520px,100%)", padding: 24, borderRadius: 8, border: "1px solid rgba(94,234,212,.25)", background: "#102b43", boxShadow: "0 24px 70px rgba(0,0,0,.5)", textAlign: "right" }}>
+        <div id="app-analysis-title" style={{ color: "#fff", fontSize: 19, fontWeight: 900 }}>تحليل {count} استبيان</div>
+        <div style={{ color: "rgba(255,255,255,.58)", fontSize: 12, margin: "6px 0 18px" }}>راجع بيانات التقرير وحدد وجهة ملفات PDF.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 10 }}>
+          <div><label className="label">مُعدّ التقرير *</label><input autoFocus className="input" value={meta.preparedBy || ""} onChange={e => onMetaChange({ ...meta, preparedBy: e.target.value })} placeholder="الاسم الكامل" /></div>
+          <div><label className="label">مراجع التقرير *</label><input className="input" value={meta.reviewer || ""} onChange={e => onMetaChange({ ...meta, reviewer: e.target.value })} placeholder="الاسم الكامل" /></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+          {[['download','تحميل على الجهاز'],['upload','رفع على Google Drive']].map(([value, label]) => <label key={value} style={{ display: "flex", alignItems: "center", gap: 8, padding: 11, borderRadius: 8, border: `1px solid ${delivery === value ? "rgba(94,234,212,.48)" : "rgba(255,255,255,.12)"}`, background: delivery === value ? "rgba(26,188,156,.12)" : "transparent", color: "#eaf4fb", fontSize: 12, cursor: "pointer" }}><input type="radio" name="app-delivery" checked={delivery === value} onChange={() => setDelivery(value)} style={{ accentColor: "#1abc9c" }} />{label}</label>)}
+        </div>
+        {validation && <div role="alert" style={{ marginTop: 10, padding: "8px 10px", borderRadius: 7, background: "rgba(239,68,68,.1)", color: "#ffc4c4", fontSize: 11.5 }}>{validation}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button type="submit" className="btn btn-primary">بدء التحليل</button><button type="button" className="btn btn-ghost" onClick={onClose}>إلغاء</button></div>
+      </form>
+    </div>
+  );
+}
+
 function LoadingOverlay({ message = "جاري المعالجة…", progress, onCancel, cancelling = false }) {
   const hasProgress = progress && progress.total > 0;
   const pct = hasProgress ? Math.round((progress.current / progress.total) * 100) : 0;
@@ -2745,7 +2787,9 @@ export default function App() {
   const [step, setStep]         = useState(1);
   const [surveyType, setSurveyType] = useState("faculty");
   const [mode, setMode]         = useState("annual");
-  const [meta, setMeta]         = useState({ year: "2024-2025", program: "", preparedBy: "", reviewer: "" });
+  const [meta, setMeta]         = useState(initialReportMeta);
+  const [analysisPrompt, setAnalysisPrompt] = useState(null);
+  const [completionMessage, setCompletionMessage] = useState("");
   const [processing, setProcessing] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [pdfCancelRequested, setPdfCancelRequested] = useState(false);
@@ -3065,6 +3109,7 @@ export default function App() {
         const reportMeta = {
           year: requiredMeta.year || detectYearFromFilename(filename) || meta.year,
           program: detectProgramFromFilename(filename) || meta.program,
+          sourceName: filename,
           preparedBy,
           reviewer,
         };
@@ -3110,6 +3155,8 @@ export default function App() {
     setDriveBatchState({ done: false, delivery, current: 0, total: selectedForms.length, items: selectedForms.map(f => ({ id: f.id, name: f.name, stage: "في الانتظار", status: "pending" })) });
     const updateItem = (id, patch) => setDriveBatchState(prev => prev ? ({ ...prev, items: prev.items.map(item => item.id === id ? { ...item, ...patch } : item) }) : prev);
     const reports = [];
+    let doneCount = 0;
+    let errorCount = 0;
     for (let i = 0; i < selectedForms.length; i++) {
       if (driveBatchCancelRef.current) break;
       const file = selectedForms[i];
@@ -3128,6 +3175,7 @@ export default function App() {
         const reportMeta = {
           year: requiredMeta.year || detectYearFromFilename(file.name) || meta.year,
           program: departmentFromSurveyName(file.name) || detectProgramFromFilename(file.name) || meta.program,
+          sourceName: file.name,
           preparedBy,
           reviewer,
         };
@@ -3146,15 +3194,23 @@ export default function App() {
           reports.push({ blob: builtPdf.blob, filename: reportName });
           updateItem(file.id, { status: "done", stage: "تم إنشاء تقرير PDF", localBlob: builtPdf.blob, reportName });
         }
+        doneCount++;
       } catch (err) {
         if (err?.name === "AbortError" && driveBatchCancelRef.current) break;
         updateItem(file.id, { status: "error", stage: err.message || "فشلت المعالجة" });
+        errorCount++;
       }
     }
     const cancelled = driveBatchCancelRef.current;
     setDriveBatchState(prev => prev ? { ...prev, done: true, cancelled } : prev);
     if (delivery === "download" && !cancelled) await downloadReports(reports, requiredMeta.year || meta.year);
     setDriveProcessing(false);
+    return {
+      cancelled,
+      delivery,
+      doneCount,
+      errorCount,
+    };
   }, [driveProcessing, meta, settings]);
 
   // Same tail as handleDriveFileSelect, but for a survey picked via SemesterFormPicker —
@@ -3334,8 +3390,7 @@ export default function App() {
     setProcessing(true);
     try {
       const blob = await buildAnnualDocx(singleResult, { ...meta }, settings);
-      const dept = meta.program ? `_${meta.program}` : "";
-      downloadBlob(blob, `تقرير_${schema.label}${dept}_${meta.year}.docx`);
+      downloadBlob(blob, safeReportName(singleFile?.name || `${schema.label} - ${meta.program || meta.year}`));
     } finally { setProcessing(false); }
   };
 
@@ -3350,11 +3405,15 @@ export default function App() {
     setPdfProgress({ current: 0, total: 0 });
     try {
       const builtPdf = await buildBrandedReportPdf(
-        singleResult, { ...meta }, { ...settings, includePdfCharts: pdfIncludeCharts },
+        singleResult, { ...meta, sourceName: singleFile?.name }, { ...settings, includePdfCharts: pdfIncludeCharts },
         (current, total) => setPdfProgress({ current, total }),
         { shouldCancel: () => pdfCancelRef.current }
       );
-      if (!pdfCancelRef.current) downloadBlob(builtPdf.blob, builtPdf.filename || safePdfReportName(singleFile?.name));
+      if (!pdfCancelRef.current) {
+        downloadBlob(builtPdf.blob, builtPdf.filename || safePdfReportName(singleFile?.name));
+        setCompletionMessage("✓ تم إنشاء وتحميل تقرير PDF.");
+        setTimeout(() => setCompletionMessage(""), 4500);
+      }
     } catch (err) {
       if (err?.name !== "AbortError") setError(`تعذّر إنشاء ملف PDF: ${err.message}`);
     } finally { setPdfGenerating(false); setPdfCancelRequested(false); }
@@ -3422,13 +3481,15 @@ export default function App() {
     setPdfProgress({ current: 0, total: 0 });
     try {
       const builtPdf = await buildBrandedReportPdf(
-        singleResult, { ...meta }, { ...settings, includePdfCharts: pdfIncludeCharts },
+        singleResult, { ...meta, sourceName: singleFile?.name }, { ...settings, includePdfCharts: pdfIncludeCharts },
         (current, total) => setPdfProgress({ current, total }),
         { shouldCancel: () => pdfCancelRef.current }
       );
       if (pdfCancelRef.current) return;
       await uploadReportNextToSource(builtPdf.blob, builtPdf.filename || safePdfReportName(singleFile?.name), driveSelected ?? {}, driveToken);
       setError("");
+      setCompletionMessage("✓ تم إنشاء ورفع تقرير PDF على Google Drive.");
+      setTimeout(() => setCompletionMessage(""), 4500);
     } catch (err) {
       if (err?.name !== "AbortError") setError(`تعذّر رفع ملف PDF: ${err.message}`);
     } finally { setPdfGenerating(false); setPdfCancelRequested(false); }
@@ -3766,28 +3827,15 @@ export default function App() {
                                     })}>تحديد الظاهر</button>
                                     {!!driveSelectedIds.size && <button className="btn btn-ghost btn-sm" onClick={() => setDriveSelectedIds(new Set())}>إلغاء التحديد</button>}
                                   </div>
-                                  <div style={{ display: "flex", gap: 8, flex: "1 1 360px", flexWrap: "wrap" }}>
-                                    <input value={meta.preparedBy ?? ""} onChange={e => setMeta(m => ({ ...m, preparedBy: e.target.value }))} placeholder="مُعدّ التحليل *" aria-label="مُعدّ التحليل" style={{ flex: "1 1 160px", minWidth: 0, padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.14)", background: "rgba(4,18,34,.45)", color: "#fff", fontFamily: "inherit", fontSize: 11 }} />
-                                    <input value={meta.reviewer ?? ""} onChange={e => setMeta(m => ({ ...m, reviewer: e.target.value }))} placeholder="مراجع التحليل *" aria-label="مراجع التحليل" style={{ flex: "1 1 160px", minWidth: 0, padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.14)", background: "rgba(4,18,34,.45)", color: "#fff", fontFamily: "inherit", fontSize: 11 }} />
-                                  </div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button className="btn btn-ghost btn-sm" disabled={!selectedFiles.length || driveProcessing}
-                                      style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
-                                      onClick={() => handleDriveBatchReports(selectedFiles, { delivery: "download", reportMeta: meta })}>
-                                      تحليل وتحميل المحدد ({selectedFiles.length})
-                                    </button>
                                     <button className="btn btn-primary btn-sm" disabled={!selectedFiles.length || driveProcessing}
                                       style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
-                                      onClick={() => handleDriveBatchReports(selectedFiles, { delivery: "upload", reportMeta: meta })}>
-                                      تحليل ورفع المحدد ({selectedFiles.length})
-                                    </button>
-                                    <button className="btn btn-ghost btn-sm" disabled={driveProcessing}
-                                      onClick={() => handleDriveBatchReports(filtered, { delivery: "download", reportMeta: meta })}>
-                                      تحليل وتحميل الكل
+                                      onClick={() => setAnalysisPrompt({ kind: "drive", items: selectedFiles })}>
+                                      تحليل المحدد ({selectedFiles.length})
                                     </button>
                                     <button className="btn btn-primary btn-sm" disabled={driveProcessing}
-                                      onClick={() => handleDriveBatchReports(filtered, { delivery: "upload", reportMeta: meta })}>
-                                      تحليل ورفع الكل
+                                      onClick={() => setAnalysisPrompt({ kind: "drive", items: filtered })}>
+                                      تحليل الظاهر ({filtered.length})
                                     </button>
                                   </div>
                                 </div>
@@ -4187,17 +4235,11 @@ export default function App() {
                     )}
                     {isAnnual && singleResult && (
                       <>
-                        <button className="btn btn-ghost" style={{ fontSize: 16, padding: "14px 36px" }}
-                          disabled={pdfGenerating} onClick={downloadAnnualPdf}>
+                        <button className="btn btn-primary" style={{ fontSize: 16, padding: "14px 36px" }}
+                          disabled={pdfGenerating} onClick={() => setAnalysisPrompt({ kind: "single", items: [singleFile] })}>
                           {pdfGenerating
                             ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
-                            : "🖨️ تحليل وتحميل PDF"}
-                        </button>
-                        <button className="btn btn-primary" style={{ fontSize: 16, padding: "14px 36px" }}
-                          disabled={pdfGenerating} onClick={uploadAnnualPdf}>
-                          {pdfGenerating
-                            ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
-                            : "☁️ تحليل ورفع PDF"}
+                            : "تحليل PDF"}
                         </button>
                       </>
                     )}
@@ -4236,6 +4278,22 @@ export default function App() {
 
       {/* ── Tutorial overlay ── */}
       {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
+
+      {analysisPrompt && <AnalysisActionDialog
+        count={analysisPrompt.items?.length || 1}
+        meta={meta}
+        onMetaChange={setMeta}
+        onClose={() => setAnalysisPrompt(null)}
+        onConfirm={delivery => {
+          const request = analysisPrompt;
+          setAnalysisPrompt(null);
+          if (request.kind === "drive") handleDriveBatchReports(request.items, { delivery, reportMeta: meta });
+          else if (delivery === "upload") uploadAnnualPdf();
+          else downloadAnnualPdf();
+        }}
+      />}
+
+      {completionMessage && <div role="status" aria-live="polite" style={{ position: "fixed", left: 24, bottom: 24, zIndex: 10030, padding: "12px 18px", borderRadius: 8, color: "#fff", background: "#168f78", boxShadow: "0 12px 34px rgba(0,0,0,.35)", fontSize: 13, fontWeight: 800 }}>{completionMessage}</div>}
 
       {/* ── Processing steps overlay ── */}
       {procSteps && <ProcessingOverlay steps={procSteps} filename={procFile} />}

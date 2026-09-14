@@ -61,15 +61,20 @@ function chunk(arr, size) {
   return out;
 }
 
+function balancedChunks(arr, maxSize) {
+  if (!arr.length) return [];
+  const pageCount = Math.ceil(arr.length / maxSize);
+  return chunk(arr, Math.ceil(arr.length / pageCount));
+}
+
 // Rows/bars per page are picked so a page never has to be split mid-row —
 // html2canvas captures one whole .pdf-page-outer per page, so any content
 // that overflows the physical page height gets sliced at an arbitrary pixel
 // boundary (mid-table-row, mid-bar) further down in downloadBrandedReportPdf.
 // Chunking the summary table, the axis chart, and the recommendations table
 // up front avoids that for the sections most likely to be long.
-const SUMMARY_ROWS_PER_PAGE = 18;
-const CHART_BARS_PER_PAGE = 8;
-const RECS_ROWS_PER_PAGE = 20;
+const SUMMARY_ROWS_PER_PAGE = 13;
+const RECS_ROWS_PER_PAGE = 14;
 
 // ── small building blocks ──────────────────────────────────────────────────────
 function pageOpen(extraClass = "") {
@@ -100,18 +105,18 @@ function infoRow(label, value, i) {
     </div>`;
 }
 
-function verticalBarChart(items) {
-  // items: [{ label, pct }]
-  const max = 100;
+function axesOverviewChart(items) {
   return `
-    <div class="pdf-vchart">
+    <div class="pdf-axes-chart ${items.length > 13 ? "two-columns" : ""}">
       ${items.map((it, i) => `
-        <div class="pdf-vchart-col">
-          <div class="pdf-vchart-pct">${it.pct}%</div>
-          <div class="pdf-vchart-track">
-            <div class="pdf-vchart-fill" style="height:${Math.max(4, (it.pct / max) * 100)}%;background:${barColor(i)}"></div>
+        <div class="pdf-axis-chart-row">
+          <div class="pdf-axis-chart-head">
+            <span class="pdf-axis-chart-label">${esc(it.label)}</span>
+            <span class="pdf-axis-chart-pct">${it.pct}%</span>
           </div>
-          <div class="pdf-vchart-label">${esc(it.label)}</div>
+          <div class="pdf-axis-chart-track">
+            <div class="pdf-axis-chart-fill" style="width:${Math.max(2, it.pct)}%;background:${barColor(i)}"></div>
+          </div>
         </div>
       `).join("")}
     </div>`;
@@ -288,7 +293,7 @@ function buildMethodologyPage(result, s, logoSrc) {
 
 function buildSummaryTablePages(result, s, logoSrc) {
   const { axes, n, overallAgreePct, overallDirection } = result;
-  const pages = chunk(axes, SUMMARY_ROWS_PER_PAGE);
+  const pages = balancedChunks(axes, SUMMARY_ROWS_PER_PAGE);
 
   return pages.map((pageAxes, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
@@ -297,6 +302,7 @@ function buildSummaryTablePages(result, s, logoSrc) {
         ${pageHeader(s, logoSrc)}
         ${sectionHeading(pageIdx === 0 ? reportText(result, "summaryHeading", "ملخص النتائج") : `${reportText(result, "summaryHeading", "ملخص النتائج")} (تابع)`)}
         <table class="pdf-table">
+          <colgroup><col style="width:58%"><col style="width:12%"><col style="width:13%"><col style="width:17%"></colgroup>
           <thead>
             <tr><th class="pdf-th-wide">المحور</th><th>العدد</th><th>النسبة</th><th>الاتجاه العام</th></tr>
           </thead>
@@ -322,16 +328,17 @@ function buildSummaryTablePages(result, s, logoSrc) {
 }
 
 function buildChartPages(result, s, logoSrc) {
-  const pages = chunk(result.axes, CHART_BARS_PER_PAGE);
-  return pages.map((pageAxes, pageIdx) => `
+  return `
     ${pageOpen()}
       ${pageHeader(s, logoSrc)}
-      ${sectionHeading(pageIdx === 0 ? "التمثيل البياني لنسب تحقق المحاور" : "التمثيل البياني لنسب تحقق المحاور (تابع)")}
-      ${verticalBarChart(pageAxes.map(ax => ({ label: ax.name, pct: ax.axisAgreePct })))}
-    ${pageClose}`).join("");
+      ${sectionHeading("التمثيل البياني لنسب تحقق المحاور")}
+      ${axesOverviewChart(result.axes.map(ax => ({ label: ax.name, pct: ax.axisAgreePct })))}
+    ${pageClose}`;
 }
 
-function buildAxisBlock(ax, result, includeCharts) {
+function buildAxisBlock(ax, result, includeCharts, options = {}) {
+  const continued = options.continued === true;
+  const showTotal = options.showTotal !== false;
   const is5 = result.scaleType === "likert-5";
   const scale5Labels = result.scaleValues?.length === 5
     ? result.scaleValues.map(v => v.label)
@@ -343,8 +350,12 @@ function buildAxisBlock(ax, result, includeCharts) {
   const fmtPct = v => (v === 0 || v == null) ? "-" : `${v}%`;
 
   return `
-    ${result.isFlat ? "" : sectionHeading(ax.name)}
+    ${result.isFlat ? "" : sectionHeading(`${ax.name}${continued ? " (تابع)" : ""}`)}
     <table class="pdf-table pdf-table-detail">
+      <colgroup>
+        <col style="width:6%"><col style="width:${is5 ? 54 : 64}%">
+        ${headerLabels.slice(2).map(() => `<col style="width:${is5 ? 8 : 10}%">`).join("")}
+      </colgroup>
       <thead>
         <tr>${headerLabels.map(l => `<th>${esc(l)}</th>`).join("")}</tr>
       </thead>
@@ -365,10 +376,10 @@ function buildAxisBlock(ax, result, includeCharts) {
               <td>${fmtPct(q.pcts["agree"])}</td>
             `}
           </tr>`).join("")}
-        <tr class="pdf-total-row">
+        ${showTotal ? `<tr class="pdf-total-row">
           <td colspan="${is5 ? 6 : 4}" class="pdf-td-right">إجمالي درجات المحور</td>
           <td>${ax.axisAgreePct}%</td>
-        </tr>
+        </tr>` : ""}
       </tbody>
     </table>
     ${includeCharts ? `
@@ -409,21 +420,28 @@ async function measureBlockHeightsPx(htmlBlocks, shouldCancel) {
 const AXIS_PAGE_BUDGET_PX = 850;
 
 async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCancel) {
-  const blocks = result.axes.map(ax => buildAxisBlock(ax, result, includeCharts));
+  const maxQuestionsPerBlock = includeCharts ? 5 : 12;
+  const blocks = result.axes.flatMap(ax => {
+    const questionGroups = chunk(ax.questions, maxQuestionsPerBlock);
+    return questionGroups.map((questions, index) => buildAxisBlock(
+      { ...ax, questions }, result, includeCharts,
+      { continued: index > 0, showTotal: index === questionGroups.length - 1 }
+    ));
+  });
   const heights = await measureBlockHeightsPx(blocks, shouldCancel);
 
   const groups = [];
   let current = [];
   let currentHeight = 0;
 
-  result.axes.forEach((ax, i) => {
+  blocks.forEach((blockHtml, i) => {
     const h = heights[i];
     if (current.length > 0 && currentHeight + h > AXIS_PAGE_BUDGET_PX) {
       groups.push(current);
       current = [];
       currentHeight = 0;
     }
-    current.push(ax);
+    current.push(blockHtml);
     currentHeight += h;
   });
   if (current.length > 0) groups.push(current);
@@ -432,7 +450,7 @@ async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCan
     ${pageOpen()}
       ${pageHeader(s, logoSrc)}
       ${groupIndex === 0 && (result.isFlat || result.reportTexts?.resultsHeading?.trim()) ? sectionHeading(reportText(result, "resultsHeading", "عرض النتائج وتحليلها")) : ""}
-      ${group.map(ax => buildAxisBlock(ax, result, includeCharts)).join("")}
+      ${group.join("")}
     ${pageClose}`).join("");
 }
 
@@ -477,7 +495,7 @@ function buildRecommendationsPages(result, s, logoSrc) {
       ${pageClose}`;
   }
 
-  const pages = chunk(rows, RECS_ROWS_PER_PAGE);
+  const pages = balancedChunks(rows, RECS_ROWS_PER_PAGE);
   return pages.map((pageRows, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
     return `
@@ -485,6 +503,7 @@ function buildRecommendationsPages(result, s, logoSrc) {
         ${pageHeader(s, logoSrc)}
         ${sectionHeading(pageIdx === 0 ? `${reportText(result, "recommendationsHeading", "التوصيات")} (أقل من ${threshold}%)` : `${reportText(result, "recommendationsHeading", "التوصيات")} (تابع)`)}
         <table class="pdf-table">
+          <colgroup><col style="width:13%"><col style="width:61%"><col style="width:26%"></colgroup>
           <thead>
             <tr><th>النسبة</th><th class="pdf-th-wide">العبارة</th><th>المحور</th></tr>
           </thead>
@@ -508,7 +527,6 @@ const PDF_CSS = `
   .pdf-root { direction: rtl; font-family: 'Cairo', Arial, sans-serif; color: ${TEXT_DARK}; }
   .pdf-page-outer {
     width: 808px; background: ${PINK_SOFT}; margin: 0 auto 0; padding: 0 14px;
-    page-break-after: always; break-after: page;
   }
   .pdf-page {
     width: 780px; min-height: 1080px; background: #fff; margin: 0 auto;
@@ -556,21 +574,22 @@ const PDF_CSS = `
   .pdf-table { table-layout: fixed; border: 1px solid #d8d8d8; }
   .pdf-table th { background: ${ACCENT}; color: #fff; padding: 9px 7px; font-weight: 800; border: 1px solid rgba(255,255,255,.28); }
   .pdf-table td { padding: 8px 7px; text-align: center; border: 1px solid #e1e1e1; }
+  .pdf-table tr { break-inside: avoid; page-break-inside: avoid; }
   .pdf-table tr.alt td { background: ${PINK_SOFT}; }
   .pdf-table .pdf-th-wide { text-align: right; padding-right: 12px; }
   .pdf-table .pdf-td-right { text-align: right; padding-right: 12px; }
   .pdf-table .pdf-td-strong { font-weight: 800; }
   .pdf-total-row td { background: ${PINK}; font-weight: 900; }
   .pdf-table-detail td { font-size: 11.5px; }
-  .pdf-table-detail th:first-child, .pdf-table-detail td:first-child { width: 6%; }
-  .pdf-table-detail th:nth-child(2), .pdf-table-detail td:nth-child(2) { width: 49%; }
 
-  .pdf-vchart { display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; height: 220px; margin-top: 14px; padding: 0 6px; }
-  .pdf-vchart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
-  .pdf-vchart-pct { font-size: 11px; font-weight: 800; margin-bottom: 4px; }
-  .pdf-vchart-track { flex: 1; width: 26px; display: flex; align-items: flex-end; background: #f4f4f4; border-radius: 6px; overflow: hidden; }
-  .pdf-vchart-fill { width: 100%; border-radius: 6px 6px 0 0; }
-  .pdf-vchart-label { font-size: 9.5px; color: ${TEXT_MUTED}; margin-top: 6px; text-align: center; line-height: 1.3; max-width: 70px; }
+  .pdf-axes-chart { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 16px; direction: rtl; }
+  .pdf-axes-chart.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; row-gap: 8px; }
+  .pdf-axis-chart-row { min-width: 0; break-inside: avoid; }
+  .pdf-axis-chart-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; min-height: 27px; margin-bottom: 4px; }
+  .pdf-axis-chart-label { min-width: 0; font-size: 10px; color: ${TEXT_DARK}; line-height: 1.35; font-weight: 700; }
+  .pdf-axis-chart-pct { flex: 0 0 auto; font-size: 10.5px; font-weight: 900; color: ${ACCENT}; }
+  .pdf-axis-chart-track { height: 11px; overflow: hidden; border-radius: 3px; background: #f0f1f3; direction: rtl; }
+  .pdf-axis-chart-fill { height: 100%; border-radius: 3px; }
 
   .pdf-hbars { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
   .pdf-hbar-row { display: flex; align-items: center; gap: 10px; }
@@ -611,6 +630,10 @@ function yieldToBrowser() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+function waitForLayout() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
 // ── main export ─────────────────────────────────────────────────────────────────
 // Renders one .pdf-page at a time (rather than one giant html2canvas capture of
 // the whole multi-page report) because a long report — e.g. the 25-axis
@@ -632,7 +655,7 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
   let logoSrc = settings.logoDataUrl || "/logo.png";
 
   const container = document.createElement("div");
-  container.style.cssText = "position:absolute;top:0;left:-3000px;width:850px;";
+  container.style.cssText = "position:absolute;top:0;left:0;width:850px;z-index:-2147483647;pointer-events:none;";
 
   const styleEl = document.createElement("style");
   styleEl.textContent = themedPdfCss(settings.colorTheme);
@@ -673,10 +696,14 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
   await yieldToBrowser();
   throwIfCancelled(shouldCancel);
 
-  const filename = `تقرير_${result.schemaLabel || "استبيان"}_${meta.program || ""}_${meta.year || ""}.pdf`;
+  const sourceBase = String(meta.sourceName || "").replace(/\.(xlsx|xls|csv)$/i, "").trim();
+  const fallbackBase = [result.schemaLabel || "استبيان", meta.program, meta.year].filter(Boolean).join(" - ");
+  const filenameBase = (sourceBase || fallbackBase || "استبيان").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+  const filename = `تقرير تحليل - ${filenameBase}.pdf`;
 
   try {
     const pageEls = Array.from(root.querySelectorAll(".pdf-page-outer"));
+    root.remove();
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     const pageWidthMm = pdf.internal.pageSize.getWidth();
     const pageHeightMm = pdf.internal.pageSize.getHeight();
@@ -687,15 +714,33 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
       throwIfCancelled(shouldCancel);
       pageIndex++;
       onProgress?.(pageIndex, pageEls.length);
-      await yieldToBrowser();
+      // Keep the page being captured at a stable document position. Capturing
+      // pages from one very tall off-screen stack can make Chromium omit the
+      // header or start halfway through a distant page.
+      const captureRoot = document.createElement("div");
+      captureRoot.className = "pdf-root";
+      const captureEl = el.cloneNode(true);
+      captureRoot.appendChild(captureEl);
+      container.appendChild(captureRoot);
+      captureRoot.style.width = `${captureEl.offsetWidth}px`;
+      captureRoot.style.height = `${captureEl.offsetHeight}px`;
+      captureRoot.style.overflow = "hidden";
+      await waitForLayout();
+      await new Promise(resolve => setTimeout(resolve, 50));
       throwIfCancelled(shouldCancel);
-      const canvas = await html2canvas(el, {
+      const canvas = await html2canvas(captureRoot, {
         // 1.5x is sharp enough for A4 text while using ~44% less pixel work
         // than 2x. This materially reduces long UI stalls on large reports.
         scale: Math.min(2, Math.max(1, Number(settings.pdfRenderScale) || 1.5)),
         useCORS: true, logging: false, backgroundColor: "#ffffff",
+        x: 0, y: 0, width: captureRoot.offsetWidth, height: captureRoot.offsetHeight,
         scrollX: 0, scrollY: 0, imageTimeout: 4000,
+        onclone: clonedDocument => {
+          clonedDocument.documentElement.scrollTop = 0;
+          clonedDocument.body.scrollTop = 0;
+        },
       });
+      captureRoot.remove();
       await yieldToBrowser();
       throwIfCancelled(shouldCancel);
       const fullHeightMm = (canvas.height * pageWidthMm) / canvas.width;

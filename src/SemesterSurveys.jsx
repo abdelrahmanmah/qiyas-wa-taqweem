@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import {
@@ -19,6 +19,7 @@ import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurve
 import { GoogleDriveIcon, InlineNotice } from "./UiElements.jsx";
 
 const SETTINGS_KEY = "eruQA_settings_v1"; // same key App.jsx's SettingsPanel writes to
+const REPORT_AUTHORS_KEY = "eruQA_report_authors_v1";
 
 function loadReportSettings() {
   try {
@@ -26,6 +27,19 @@ function loadReportSettings() {
     if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch { /* ignore */ }
   return { ...DEFAULT_SETTINGS };
+}
+
+function loadReportAuthors() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REPORT_AUTHORS_KEY) || "{}");
+    const settings = loadReportSettings();
+    return {
+      preparedBy: String(saved.preparedBy || Object.values(settings.surveyResponsible || {}).find(Boolean) || ""),
+      reviewer: String(saved.reviewer || ""),
+    };
+  } catch {
+    return { preparedBy: "", reviewer: "" };
+  }
 }
 
 function downloadBlob(blob, filename) {
@@ -57,11 +71,25 @@ function buildLinksWorkbookBlob(rows) {
     "السنة": r.year || "",
     "الرابط": r.formUrl || "",
     "عدد من سجلوا في الاستبيان": Number.isFinite(r.responses) ? r.responses : 0,
+    "آخر رد مستلم": r.last ? new Date(r.last) : "",
   }));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = [{ wch: 48 }, { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 58 }, { wch: 28 }];
+  ws["!cols"] = [{ wch: 48 }, { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 58 }, { wch: 28 }, { wch: 22 }];
   ws["!autofilter"] = { ref: ws["!ref"] };
+  ws["!sheetViews"] = [{ rightToLeft: true }];
+  rows.forEach((_, index) => {
+    const cell = ws[`G${index + 2}`];
+    if (cell?.v instanceof Date) cell.z = "yyyy-mm-dd hh:mm";
+  });
+  const summary = XLSX.utils.aoa_to_sheet([
+    ["ملخص أعداد الردود", "القيمة"],
+    ["إجمالي الاستبيانات", rows.length],
+    ["إجمالي الردود", rows.reduce((sum, row) => sum + (Number(row.responses) || 0), 0)],
+  ]);
+  summary["!cols"] = [{ wch: 28 }, { wch: 16 }];
+  summary["!sheetViews"] = [{ rightToLeft: true }];
   const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, summary, "الملخص");
   XLSX.utils.book_append_sheet(wb, ws, "روابط الاستبيانات");
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -210,6 +238,10 @@ const CSS = `
   border-radius:14px;padding:16px 18px}
 .ssg-toast{animation:ssgToastIn .25s ease-out;padding:12px 18px;border-radius:12px;
   font-size:13px;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:220px}
+.ssg-filter-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0 4px}
+.ssg-multi-filter{position:relative}.ssg-multi-filter summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(4,18,34,.38);color:#eef8ff;font-size:12px}.ssg-multi-filter summary::-webkit-details-marker{display:none}.ssg-multi-filter summary:after{content:"⌄";color:#74e9d4;font-size:15px}.ssg-multi-filter[open] summary{border-color:rgba(94,234,212,.42)}
+.ssg-filter-menu{position:absolute;z-index:40;top:calc(100% + 6px);right:0;left:0;max-height:240px;overflow:auto;padding:8px;border-radius:10px;border:1px solid rgba(94,234,212,.22);background:#102a43;box-shadow:0 16px 38px rgba(0,0,0,.35)}.ssg-filter-option{display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:7px;color:#eaf4fb;font-size:11.5px;line-height:1.55;cursor:pointer}.ssg-filter-option:hover{background:rgba(255,255,255,.06)}.ssg-filter-option input{margin-top:3px;accent-color:#1abc9c}.ssg-filter-empty{padding:10px;color:rgba(255,255,255,.45);font-size:11px;text-align:center}
+.ssg-analysis-backdrop{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;padding:18px;background:rgba(3,12,23,.72);backdrop-filter:blur(8px)}.ssg-analysis-dialog{width:min(520px,100%);padding:22px;border-radius:8px;border:1px solid rgba(94,234,212,.26);background:#102b43;box-shadow:0 24px 70px rgba(0,0,0,.48)}.ssg-analysis-dialog h3{margin:0;color:#fff;font-size:19px}.ssg-analysis-dialog p{margin:6px 0 18px;color:rgba(255,255,255,.58);font-size:12px}.ssg-analysis-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.ssg-delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.ssg-delivery-option{display:flex;align-items:center;gap:8px;padding:11px;border-radius:8px;border:1px solid rgba(255,255,255,.12);color:#eaf4fb;font-size:12px;cursor:pointer}.ssg-delivery-option.selected{border-color:rgba(94,234,212,.48);background:rgba(26,188,156,.12)}.ssg-delivery-option input{accent-color:#1abc9c}.ssg-analysis-error{margin-top:10px;padding:8px 10px;border-radius:7px;background:rgba(239,68,68,.1);color:#ffc4c4;font-size:11.5px}.ssg-analysis-actions{display:flex;justify-content:flex-start;gap:8px;margin-top:18px}
 .ssg-departments{max-width:1120px;margin:0 auto;padding-bottom:44px}
 .ssg-dept-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:24px;padding:24px 26px;margin-bottom:16px;border-radius:22px;border:1px solid rgba(94,234,212,.18);background:linear-gradient(125deg,rgba(26,188,156,.14),rgba(40,116,166,.08))}
 .ssg-dept-kicker{display:flex;align-items:center;gap:7px;color:#72ead4;font-size:11px;font-weight:900;margin-bottom:7px}.ssg-dept-hero h2{color:#fff;font-size:23px;font-weight:950;margin:0 0 7px}.ssg-dept-hero p{max-width:680px;color:rgba(255,255,255,.64);font-size:13px;line-height:1.85;margin:0}
@@ -224,8 +256,8 @@ const CSS = `
 .ssg-delete-confirm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;padding:10px 11px;border-radius:11px;border:1px solid rgba(248,113,113,.2);background:rgba(239,68,68,.08);color:#ffd1cd;font-size:11.5px}.ssg-delete-actions{display:flex;gap:6px;flex-shrink:0}
 .ssg-dept-empty{grid-column:1/-1;padding:42px 20px;border-radius:18px;border:1px dashed rgba(255,255,255,.13);color:rgba(255,255,255,.55);text-align:center}
 @media(max-width:920px){.ssg-create-layout{grid-template-columns:1fr}.ssg-create-aside{position:static}.ssg-create-hero{align-items:flex-start;flex-direction:column}.ssg-stat-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:820px){.ssg-action-grid{grid-template-columns:1fr}.ssg-action-card{min-height:170px}.ssg-home-hero{padding-top:8px}.ssg-subnav{align-items:flex-start}.ssg-subnav-title{font-size:12px}.ssg-template-card{grid-template-columns:auto minmax(0,1fr)}.ssg-template-card select{grid-column:2}.ssg-dept-hero{grid-template-columns:1fr}.ssg-dept-stats{max-width:300px}.ssg-dept-add{grid-template-columns:1fr}.ssg-dept-add-form{min-width:0}.ssg-dept-grid{grid-template-columns:1fr}}
-@media(max-width:560px){.ssg-stat-grid{grid-template-columns:1fr 1fr}.ssg-survey-grid,.ssg-created-grid{grid-template-columns:1fr}.ssg-dashboard-actions{margin-right:0}.ssg-survey-card-actions{opacity:1;transform:none}.ssg-generation-widget,.ssg-generation-widget.collapsed{left:10px;bottom:74px;width:calc(100vw - 20px);padding:16px}.ssg-generation-title{font-size:12px}.ssg-generation-percent{font-size:20px}.ssg-generation-widget .ssg-job-grid{grid-template-columns:1fr;max-height:26vh}.ssg-dept-hero{padding:19px}.ssg-dept-add{padding:15px}.ssg-dept-add-form,.ssg-program-add{flex-direction:column}.ssg-dept-card{padding:15px}.ssg-dept-card-head{grid-template-columns:auto minmax(0,1fr)}.ssg-dept-delete{grid-column:1/-1;width:100%;height:38px}.ssg-dept-delete-label{display:inline}.ssg-delete-confirm{align-items:flex-start;flex-direction:column}.ssg-delete-actions{width:100%}.ssg-delete-actions .btn{flex:1}}
+@media(max-width:820px){.ssg-action-grid{grid-template-columns:1fr}.ssg-action-card{min-height:170px}.ssg-home-hero{padding-top:8px}.ssg-subnav{align-items:flex-start}.ssg-subnav-title{font-size:12px}.ssg-template-card{grid-template-columns:auto minmax(0,1fr)}.ssg-template-card select{grid-column:2}.ssg-dept-hero{grid-template-columns:1fr}.ssg-dept-stats{max-width:300px}.ssg-dept-add{grid-template-columns:1fr}.ssg-dept-add-form{min-width:0}.ssg-dept-grid{grid-template-columns:1fr}.ssg-filter-bar{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.ssg-stat-grid{grid-template-columns:1fr 1fr}.ssg-survey-grid,.ssg-created-grid{grid-template-columns:1fr}.ssg-dashboard-actions{margin-right:0}.ssg-survey-card-actions{opacity:1;transform:none}.ssg-generation-widget,.ssg-generation-widget.collapsed{left:10px;bottom:74px;width:calc(100vw - 20px);padding:16px}.ssg-generation-title{font-size:12px}.ssg-generation-percent{font-size:20px}.ssg-generation-widget .ssg-job-grid{grid-template-columns:1fr;max-height:26vh}.ssg-dept-hero{padding:19px}.ssg-dept-add{padding:15px}.ssg-dept-add-form,.ssg-program-add{flex-direction:column}.ssg-dept-card{padding:15px}.ssg-dept-card-head{grid-template-columns:auto minmax(0,1fr)}.ssg-dept-delete{grid-column:1/-1;width:100%;height:38px}.ssg-dept-delete-label{display:inline}.ssg-delete-confirm{align-items:flex-start;flex-direction:column}.ssg-delete-actions{width:100%}.ssg-delete-actions .btn{flex:1}.ssg-filter-bar,.ssg-analysis-fields,.ssg-delivery-options{grid-template-columns:1fr}}
 `;
 
 // ---------- toasts ----------
@@ -677,13 +709,57 @@ function SurveyDashboardCard({ survey, selected, index, onToggle, onAnalyze, onR
         <div className="ssg-survey-metric"><strong style={{ fontSize: 12 }}>{formatWhen(survey.last)}</strong><span>آخر استجابة</span></div>
       </div>
       <div className="ssg-survey-card-actions">
-        <button type="button" className="ssg-card-action primary" onClick={stop(() => onAnalyze("download"))}>تحليل وتحميل</button>
-        <button type="button" className="ssg-card-action" onClick={stop(() => onAnalyze("upload"))}>تحليل ورفع</button>
+        <button type="button" className="ssg-card-action primary" onClick={stop(onAnalyze)}>تحليل</button>
         <a className="ssg-card-action" href={survey.formUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>النموذج</a>
         <a className="ssg-card-action" href={editorResponsesUrl(survey.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>الردود</a>
         <button type="button" className="ssg-card-action" onClick={stop(onRefresh)}>تحديث</button>
       </div>
     </article>
+  );
+}
+
+function MultiSelectFilter({ label, options, selected, onChange }) {
+  const summary = selected.size ? `${label} (${selected.size})` : `${label}: الكل`;
+  return (
+    <details className="ssg-multi-filter">
+      <summary>{summary}</summary>
+      <div className="ssg-filter-menu">
+        {options.length ? options.map(option => (
+          <label key={option} className="ssg-filter-option">
+            <input type="checkbox" checked={selected.has(option)} onChange={() => {
+              const next = new Set(selected);
+              if (next.has(option)) next.delete(option); else next.add(option);
+              onChange(next);
+            }} />
+            <span>{option}</span>
+          </label>
+        )) : <div className="ssg-filter-empty">لا توجد اختيارات متاحة</div>}
+      </div>
+    </details>
+  );
+}
+
+function AnalysisDialog({ count, authors, delivery, error, onAuthorsChange, onDeliveryChange, onClose, onSubmit }) {
+  return (
+    <div className="ssg-analysis-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <form className="ssg-analysis-dialog" role="dialog" aria-modal="true" aria-labelledby="analysis-dialog-title" onSubmit={e => { e.preventDefault(); onSubmit(); }}>
+        <h3 id="analysis-dialog-title">تحليل {count} استبيان</h3>
+        <p>راجع بيانات التقرير واختر مكان حفظ الملفات قبل بدء التحليل.</p>
+        <div className="ssg-analysis-fields">
+          <div><label className="ssg-field-label">مُعدّ التقرير *</label><input autoFocus className="ssg-field" value={authors.preparedBy} onChange={e => onAuthorsChange({ ...authors, preparedBy: e.target.value })} placeholder="الاسم الكامل" /></div>
+          <div><label className="ssg-field-label">مراجع التقرير *</label><input className="ssg-field" value={authors.reviewer} onChange={e => onAuthorsChange({ ...authors, reviewer: e.target.value })} placeholder="الاسم الكامل" /></div>
+        </div>
+        <div className="ssg-delivery-options">
+          <label className={`ssg-delivery-option ${delivery === "download" ? "selected" : ""}`}><input type="radio" name="delivery" checked={delivery === "download"} onChange={() => onDeliveryChange("download")} />تحميل على الجهاز</label>
+          <label className={`ssg-delivery-option ${delivery === "upload" ? "selected" : ""}`}><input type="radio" name="delivery" checked={delivery === "upload"} onChange={() => onDeliveryChange("upload")} />رفع على Google Drive</label>
+        </div>
+        {error && <div className="ssg-analysis-error" role="alert">{error}</div>}
+        <div className="ssg-analysis-actions">
+          <button type="submit" className="btn btn-primary">بدء التحليل</button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -697,6 +773,9 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
   const [loadError, setLoadError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [nameFilter, setNameFilter] = useState(() => new Set());
+  const [departmentFilter, setDepartmentFilter] = useState(() => new Set());
+  const [programFilter, setProgramFilter] = useState(() => new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -721,7 +800,12 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
 
   const semFolder = semesters?.find(f => f.name === semester) ?? null;
 
-  useEffect(() => { setSelectedIds(new Set()); }, [year, semester]);
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setNameFilter(new Set());
+    setDepartmentFilter(new Set());
+    setProgramFilter(new Set());
+  }, [year, semester]);
 
   const loadSurveys = useCallback(() => {
     if (!semFolder) { setSurveys([]); return; }
@@ -750,13 +834,35 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
   const totalResponses = surveys?.reduce((s, r) => s + r.responses, 0) ?? 0;
   const avg = totalSurveys ? Math.round((totalResponses / totalSurveys) * 10) / 10 : 0;
   const lastResponse = surveys?.reduce((max, r) => (r.last && (!max || r.last > max)) ? r.last : max, null) ?? null;
+  const organizedSurveys = useMemo(() => (surveys ?? []).map(survey => ({
+    ...survey,
+    organization: organizationFromSurveyName(survey),
+  })), [surveys]);
+  const nameOptions = useMemo(() => [...new Set(organizedSurveys.map(s => s.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [organizedSurveys]);
+  const departmentOptions = useMemo(() => [...new Set(organizedSurveys
+    .filter(s => !nameFilter.size || nameFilter.has(s.name))
+    .map(s => s.organization.department).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [organizedSurveys, nameFilter]);
+  const programOptions = useMemo(() => [...new Set(organizedSurveys
+    .filter(s => (!nameFilter.size || nameFilter.has(s.name)) && (!departmentFilter.size || departmentFilter.has(s.organization.department)))
+    .map(s => s.organization.program).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar")), [organizedSurveys, nameFilter, departmentFilter]);
+  const filteredSurveys = useMemo(() => organizedSurveys.filter(s =>
+    (!nameFilter.size || nameFilter.has(s.name)) &&
+    (!departmentFilter.size || departmentFilter.has(s.organization.department)) &&
+    (!programFilter.size || programFilter.has(s.organization.program))
+  ), [organizedSurveys, nameFilter, departmentFilter, programFilter]);
+
+  useEffect(() => setDepartmentFilter(current => new Set([...current].filter(value => departmentOptions.includes(value)))), [departmentOptions]);
+  useEffect(() => setProgramFilter(current => new Set([...current].filter(value => programOptions.includes(value)))), [programOptions]);
 
   // ---- Analyze all: reuse the app's existing analysis engine and PDF builder by
   // converting each form's responses into the
   // same [header, ...rows] shape a real Excel export would have. ----
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(null);
-  const [reportAuthors, setReportAuthors] = useState({ preparedBy: "", reviewer: "" });
+  const [reportAuthors, setReportAuthors] = useState(loadReportAuthors);
+  const [analysisRequest, setAnalysisRequest] = useState(null);
+  const [analysisDelivery, setAnalysisDelivery] = useState("download");
+  const [analysisDialogError, setAnalysisDialogError] = useState("");
   const analysisCancelRef = useRef(false);
   const [analysisCancelRequested, setAnalysisCancelRequested] = useState(false);
   const analyzeTip = useRotatingTip(analyzing, ANALYZE_TIPS);
@@ -786,7 +892,7 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
           continue;
         }
         const result = analyze(rows, schema);
-        const meta = { year, program: departmentFromSurveyName(survey.name), ...reportMeta };
+        const meta = { year, program: departmentFromSurveyName(survey.name), sourceName: survey.name, ...reportMeta };
         const builtPdf = await buildBrandedReportPdf(
           result, meta, settings, undefined,
           { shouldCancel: () => analysisCancelRef.current }
@@ -809,7 +915,7 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
       reports.forEach(report => zip.file(report.filename, report.blob));
       downloadBlob(await zip.generateAsync({ type: "blob" }), `تقارير_تحليل_${year}.zip`);
     }
-    if (successCount) pushToast(`تم إنشاء ${successCount} تقرير بنجاح.`, "success");
+    if (successCount) pushToast(`✓ تم إنشاء وتحميل ${successCount} تقرير بنجاح.`, "success");
     if (skipCount) pushToast(`تعذّر التعرف على نوع ${skipCount} استبيان — لم يتم تحليله.`, "error");
   }
 
@@ -825,7 +931,11 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
     if (!onAnalyzeForms) { await runAnalyzeAll(items, reportMeta); return; }
     setAnalyzing(true); setLoadError("");
     try {
-      await onAnalyzeForms(items, token, { delivery, reportMeta });
+      const outcome = await onAnalyzeForms(items, token, { delivery, reportMeta });
+      if (!outcome?.cancelled && outcome?.doneCount) {
+        pushToast(`✓ تم ${delivery === "download" ? "تحميل" : "رفع"} ${outcome.doneCount} تقرير بنجاح.`, "success");
+      }
+      if (outcome?.errorCount) pushToast(`تعذّر إنشاء ${outcome.errorCount} تقرير. راجع تفاصيل العملية.`, "error");
     } catch (e) {
       setLoadError("تعذّر تحليل الاستبيانات: " + e.message);
     } finally {
@@ -833,8 +943,28 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
     }
   }
 
+  function openAnalysisDialog(items) {
+    if (!items?.length || analyzing) return;
+    setAnalysisRequest(items);
+    setAnalysisDialogError("");
+  }
+
+  async function submitAnalysisDialog() {
+    const preparedBy = reportAuthors.preparedBy.trim();
+    const reviewer = reportAuthors.reviewer.trim();
+    if (!preparedBy || !reviewer) {
+      setAnalysisDialogError("أدخل اسم مُعدّ التقرير واسم مراجع التقرير للمتابعة.");
+      return;
+    }
+    localStorage.setItem(REPORT_AUTHORS_KEY, JSON.stringify({ preparedBy, reviewer }));
+    const items = analysisRequest;
+    setAnalysisRequest(null);
+    await analyzeSelection(items, analysisDelivery);
+  }
+
   return (
     <div className="ssg-dashboard-page">
+      {analysisRequest && <AnalysisDialog count={analysisRequest.length} authors={reportAuthors} delivery={analysisDelivery} error={analysisDialogError} onAuthorsChange={setReportAuthors} onDeliveryChange={setAnalysisDelivery} onClose={() => setAnalysisRequest(null)} onSubmit={submitAnalysisDialog} />}
       {quickMode && (
         <div className="ssg-create-hero" style={{ marginBottom: 14 }}>
           <div>
@@ -862,22 +992,17 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
               {(semesters ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
             </select>
           </div>
-          <div style={{ flex: "1 1 190px" }}>
-            <label className="ssg-field-label">مُعدّ التحليل <span aria-hidden="true">*</span></label>
-            <input className="ssg-field" value={reportAuthors.preparedBy} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, preparedBy: e.target.value }))} />
-          </div>
-          <div style={{ flex: "1 1 190px" }}>
-            <label className="ssg-field-label">مراجع التحليل <span aria-hidden="true">*</span></label>
-            <input className="ssg-field" value={reportAuthors.reviewer} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, reviewer: e.target.value }))} />
-          </div>
           <div className="ssg-dashboard-actions">
             {!!selectedIds.size && <span className="ssg-selection-count">✓ {selectedIds.size} محدد</span>}
-            {!!surveys?.length && <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(selectedIds.size === surveys.length ? new Set() : new Set(surveys.map(s => s.id)))}>{selectedIds.size === surveys.length ? "إلغاء تحديد الكل" : "تحديد الكل"}</button>}
-            {!!selectedIds.size && <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)), "download")}>تحليل وتحميل المحدد ({selectedIds.size})</button>}
-            {!!selectedIds.size && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys.filter(s => selectedIds.has(s.id)), "upload")}>تحليل ورفع المحدد ({selectedIds.size})</button>}
+            {!!filteredSurveys.length && <button className="btn btn-ghost btn-sm" onClick={() => { const ids = filteredSurveys.map(s => s.id); const allSelected = ids.every(id => selectedIds.has(id)); setSelectedIds(prev => { const next = new Set(prev); ids.forEach(id => allSelected ? next.delete(id) : next.add(id)); return next; }); }}>{filteredSurveys.every(s => selectedIds.has(s.id)) ? "إلغاء تحديد الظاهر" : "تحديد الظاهر"}</button>}
+            {!!selectedIds.size && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => openAnalysisDialog(organizedSurveys.filter(s => selectedIds.has(s.id)))}>تحليل المحدد ({selectedIds.size})</button>}
             <button className="btn btn-ghost btn-sm" onClick={() => setRefreshKey(k => k + 1)}>تحديث البيانات</button>
-            {!!surveys?.length && <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys, "download")}>تحليل وتحميل الكل ({surveys.length})</button>}
-            {!!surveys?.length && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeSelection(surveys, "upload")}>تحليل ورفع الكل ({surveys.length})</button>}
+            {!!filteredSurveys.length && <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => openAnalysisDialog(filteredSurveys)}>تحليل الظاهر ({filteredSurveys.length})</button>}
+          </div>
+          <div className="ssg-filter-bar" style={{ flexBasis: "100%" }}>
+            <MultiSelectFilter label="اسم الاستبيان" options={nameOptions} selected={nameFilter} onChange={setNameFilter} />
+            <MultiSelectFilter label="القسم" options={departmentOptions} selected={departmentFilter} onChange={setDepartmentFilter} />
+            <MultiSelectFilter label="البرنامج" options={programOptions} selected={programFilter} onChange={setProgramFilter} />
           </div>
         <ErrorBanner text={loadError} />
 
@@ -942,8 +1067,8 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
             <div className="ssg-panel-head">
               <div><div className="ssg-panel-title">استبيانات الفصل الدراسي</div><div className="ssg-panel-copy">اضغط على البطاقة لتحديدها، أو مرّر عليها للوصول إلى التحليل والروابط.</div></div>
               <LinksExportButtons
-                rows={surveys.map(r => {
-                  const organization = organizationFromSurveyName(r);
+                rows={filteredSurveys.map(r => {
+                  const organization = r.organization;
                   return {
                     name: r.name,
                     department: organization.department,
@@ -951,6 +1076,7 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
                     year,
                     formUrl: r.formUrl,
                     responses: r.responses,
+                    last: r.last,
                     responsesUrl: editorResponsesUrl(r.id),
                   };
                 })}
@@ -960,12 +1086,13 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
               />
             </div>
             <div className="ssg-survey-grid">
-              {surveys.map((survey, index) => (
+              {filteredSurveys.map((survey, index) => (
                 <SurveyDashboardCard key={survey.id} survey={survey} index={index} selected={selectedIds.has(survey.id)}
                   onToggle={() => setSelectedIds(prev => { const next = new Set(prev); if (next.has(survey.id)) next.delete(survey.id); else next.add(survey.id); return next; })}
-                  onAnalyze={delivery => analyzeSelection([survey], delivery)} onRefresh={() => refreshOne(survey.id)} />
+                  onAnalyze={() => openAnalysisDialog([survey])} onRefresh={() => refreshOne(survey.id)} />
               ))}
             </div>
+            {!filteredSurveys.length && <EmptyState text="لا توجد استبيانات مطابقة للفلاتر الحالية." />}
           </section>
         </>
       )}
