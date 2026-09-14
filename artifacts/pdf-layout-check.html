@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<style>html,body,iframe{margin:0;width:100%;height:100%;border:0}body{background:#ddd}</style>
+<script type="module">
+  import { buildBrandedReportPdf } from "/src/engine/buildReportPdf.js";
+  import { DEFAULT_SETTINGS } from "/src/engine/buildDocx.js";
+
+  const axes = Array.from({ length: 25 }, (_, i) => ({
+    name: `المحور ${i + 1}: عنوان محور تجريبي طويل للتحقق من عرض العمود`,
+    axisAgreePct: 55 + (i % 9) * 5,
+    direction: "موافق",
+    questions: Array.from({ length: 2 }, (_, q) => ({
+      seq: i * 2 + q + 1,
+      text: `عبارة تجريبية ${q + 1} داخل المحور ${i + 1} للتحقق من عرض عمود العبارة وتقسيم الصفحات`,
+      agreePct: 65 + q * 10,
+      pcts: { disagree: 10, neutral: 15, agree: 75 },
+    })),
+  }));
+  const result = {
+    schemaId: "student", schemaLabel: "استبيان تجريبي", n: 120,
+    totalQuestions: 50, axes, overallAgreePct: 76, overallDirection: "موافق",
+    scaleType: "likert-3", scaleValues: [], reportTexts: {}, reportSections: {},
+  };
+  const settings = { ...DEFAULT_SETTINGS, includeVisionMission: false, includePdfCharts: true, pdfRenderScale: 1 };
+  let logicalPages = 0;
+  const built = await buildBrandedReportPdf(result, {
+    year: "2026-2027", program: "برنامج تجريبي", preparedBy: "معد التقرير", reviewer: "مراجع التقرير", sourceName: "استبيان اختبار التنسيق.xlsx",
+  }, settings, (_, total) => { logicalPages = total; });
+  await fetch(`http://127.0.0.1:5175?logical=${logicalPages}`, { method: "POST", body: built.blob });
+  document.body.textContent = "done";
+</script>
+</html>

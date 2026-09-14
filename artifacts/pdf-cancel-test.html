@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<title>PDF cancellation test</title>
+<body style="font-family:Arial;padding:30px"><h1 id="status">بدء الاختبار…</h1><p id="progress"></p>
+<script type="module">
+  import { buildBrandedReportPdf } from "/src/engine/buildReportPdf.js";
+  const axes = Array.from({ length: 24 }, (_, axisIndex) => ({
+    name: `المحور ${axisIndex + 1}`,
+    axisAgreePct: 72,
+    direction: "موافق",
+    questions: Array.from({ length: 8 }, (_, questionIndex) => ({
+      seq: questionIndex + 1,
+      text: `عبارة اختبار طويلة لقياس استجابة الواجهة أثناء إنشاء التقرير رقم ${questionIndex + 1}`,
+      agreePct: 72,
+      pcts: { disagree: 8, neutral: 20, agree: 72 },
+    })),
+  }));
+  const result = {
+    schemaId: "test", schemaLabel: "اختبار الأداء", n: 100,
+    totalQuestions: axes.length * 8, axes, scaleType: "likert-3",
+    overallAgreePct: 72, overallDirection: "موافق", reportTexts: {},
+  };
+  const settings = {
+    surveyReportOptions: {}, includePdfCharts: true, includeVisionMission: true,
+    uniName: "الجامعة المصرية الروسية", facultyName: "كلية الإدارة والاقتصاد",
+    committeeName: "لجنة القياس والتقويم", unitName: "وحدة ضمان الجودة",
+    vision: "رؤية اختبارية", mission: "رسالة اختبارية", email: "",
+    quName: "رئيس الوحدة", qmName: "رئيس اللجنة", recommendationsThreshold: 70,
+  };
+  let cancelled = false;
+  const started = performance.now();
+  setTimeout(() => {
+    cancelled = true;
+    document.querySelector("#status").textContent = "تم تسجيل طلب الإلغاء…";
+  }, 120);
+  try {
+    await buildBrandedReportPdf(result, { year: "2025-2026" }, settings,
+      (current, total) => document.querySelector("#progress").textContent = `صفحة ${current} من ${total}`,
+      { shouldCancel: () => cancelled });
+    document.querySelector("#status").textContent = "فشل الاختبار: لم تتوقف العملية";
+  } catch (error) {
+    document.querySelector("#status").textContent = error.name === "AbortError"
+      ? `نجح الإلغاء خلال ${Math.round(performance.now() - started)}ms`
+      : `خطأ: ${error.message}`;
+  }
+</script>
+</body>
+</html>
