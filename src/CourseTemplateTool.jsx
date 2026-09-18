@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { QualityIcon, QualityPageHeader, QualitySectionTitle } from "./UiElements.jsx";
 
 // ── Course assignment template: download blank / upload / edit / insights ──
 // Columns match the paper form used to hand out course evaluations:
@@ -164,22 +165,22 @@ export default function CourseTemplateTool() {
 
   return (
     <div>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>📋 قالب بيانات المقررات</div>
-        <div style={{ color: "rgba(255,255,255,.55)", fontSize: 13, marginTop: 4 }}>
-          نموذج موحّد لبيانات كل مقرر (المحاضر، المعاون، القسم، اللاب، القائم بالمراجعة) — حمّل القالب فارغًا أو ارفع نسخة موجودة وعدّل فيها مباشرة.
-        </div>
-      </div>
+      <QualityPageHeader
+        icon="sheet"
+        eyebrow="بيانات المقررات"
+        title="قالب بيانات المقررات"
+        description="نموذج موحّد لبيانات كل مقرر: المحاضر والمعاون والقسم واللاب والقائم بالمراجعة."
+      />
 
       <div className="card" style={{ padding: 22, marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn btn-primary btn-sm" onClick={downloadEmptyTemplate}>⬇ تحميل قالب فارغ</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => inputRef.current?.click()}>📤 رفع ملف موجود</button>
+          <button className="btn btn-primary btn-sm qa-icon-button" onClick={downloadEmptyTemplate}><QualityIcon name="download" size={15} /> تحميل قالب فارغ</button>
+          <button className="btn btn-ghost btn-sm qa-icon-button" onClick={() => inputRef.current?.click()}><QualityIcon name="upload" size={15} /> رفع ملف موجود</button>
           <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleUpload} />
           {rows.length > 0 && (
             <>
-              <button className="btn btn-ghost btn-sm" onClick={addRow}>+ إضافة صف</button>
-              <button className="btn btn-primary btn-sm" onClick={downloadEditedFile}>⬇ تنزيل نسخة معدّلة</button>
+              <button className="btn btn-ghost btn-sm qa-icon-button" onClick={addRow}><QualityIcon name="plus" size={15} /> إضافة صف</button>
+              <button className="btn btn-primary btn-sm qa-icon-button" onClick={downloadEditedFile}><QualityIcon name="download" size={15} /> تنزيل نسخة معدّلة</button>
             </>
           )}
         </div>
@@ -205,7 +206,7 @@ export default function CourseTemplateTool() {
                           {c.key === "hasLab" ? (
                             <button
                               className="btn btn-ghost btn-sm"
-                              style={{ padding: "4px 12px", color: r.hasLab === "نعم" ? "#3fbf85" : r.hasLab === "لا" ? "#e0555a" : "rgba(255,255,255,.5)" }}
+                              style={{ padding: "4px 12px", color: r.hasLab === "نعم" ? "#34d399" : r.hasLab === "لا" ? "#fb7185" : "rgba(255,255,255,.5)" }}
                               onClick={() => updateCell(idx, "hasLab", r.hasLab === "نعم" ? "لا" : r.hasLab === "لا" ? "" : "نعم")}
                             >
                               {r.hasLab || "—"}
@@ -219,7 +220,7 @@ export default function CourseTemplateTool() {
                           )}
                         </td>
                       ))}
-                      <td><button className="btn btn-ghost btn-sm" onClick={() => removeRow(idx)} aria-label={`حذف صف المقرر ${r.courseName || idx + 1}`} title="حذف الصف" style={{ color: "#e0555a" }}>✕</button></td>
+                      <td><button className="btn btn-ghost btn-sm qa-icon-button" onClick={() => removeRow(idx)} aria-label={`حذف صف المقرر ${r.courseName || idx + 1}`} title="حذف الصف" style={{ color: "#fb7185" }}><QualityIcon name="trash" size={14} /></button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -229,7 +230,7 @@ export default function CourseTemplateTool() {
 
           {/* insights */}
           <div className="card" style={{ padding: 22, marginBottom: 18 }}>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 14 }}>📊 توزيع حسب القسم</div>
+            <QualitySectionTitle icon="chart" title="توزيع حسب القسم" />
             {insights.byDept.length === 0 ? (
               <div style={{ color: "rgba(255,255,255,.4)", fontSize: 13 }}>لا توجد بيانات قسم بعد.</div>
             ) : (
@@ -244,7 +245,7 @@ export default function CourseTemplateTool() {
                         <span style={{ color: "rgba(255,255,255,.55)" }}>{d.total} مقرر · {d.lab} فيه لاب</span>
                       </div>
                       <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 6, height: 8, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#1abc9c,#16a085)" }} />
+                        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#34d399,#60a5fa)" }} />
                       </div>
                     </div>
                   );
@@ -254,7 +255,7 @@ export default function CourseTemplateTool() {
           </div>
 
           <div className="card" style={{ padding: 22, marginBottom: 18 }}>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 14 }}>👤 عبء العمل لكل عضو</div>
+            <QualitySectionTitle icon="users" title="عبء العمل لكل عضو" />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
               <WorkloadList title="عضو هيئة التدريس" list={insights.byInstructor} max={maxWorkload} />
               <WorkloadList title="عضو الهيئة المعاونة" list={insights.byAssistant} max={maxWorkload} />
@@ -263,7 +264,7 @@ export default function CourseTemplateTool() {
           </div>
 
           <div className="card" style={{ padding: 22 }}>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 14 }}>⚠ بيانات ناقصة / تكرار</div>
+            <QualitySectionTitle icon="warning" title="بيانات ناقصة أو مكررة" />
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
               <Stat n={insights.missing.length} l="صفوف فيها بيانات ناقصة" cls={insights.missing.length ? "warn" : "good"} />
               <Stat n={insights.duplicates.length} l="صفوف كود مقرر مكرر" cls={insights.duplicates.length ? "bad" : "good"} />
@@ -273,7 +274,7 @@ export default function CourseTemplateTool() {
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>بيانات ناقصة:</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {insights.missing.slice(0, 30).map((m, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "#e0a336" }}>
+                    <div key={i} style={{ fontSize: 12, color: "#fcd34d" }}>
                       صف {m.idx + 1}: {m.row.courseName || m.row.courseCode || "—"} — ناقص: {m.missingFields.join("، ")}
                     </div>
                   ))}
@@ -285,7 +286,7 @@ export default function CourseTemplateTool() {
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>أكواد مكررة:</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {insights.duplicates.map((r, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "#e0555a" }}>{r.courseCode} — {r.courseName || "—"}</div>
+                    <div key={i} style={{ fontSize: 12, color: "#fb7185" }}>{r.courseCode} — {r.courseName || "—"}</div>
                   ))}
                 </div>
               </div>
@@ -311,7 +312,7 @@ function WorkloadList({ title, list, max }) {
                 <span>{name}</span><span>{n}</span>
               </div>
               <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 5, height: 6, overflow: "hidden" }}>
-                <div style={{ width: `${(n / max) * 100}%`, height: "100%", background: "linear-gradient(90deg,#2874a6,#1abc9c)" }} />
+                <div style={{ width: `${(n / max) * 100}%`, height: "100%", background: "linear-gradient(90deg,#60a5fa,#34d399)" }} />
               </div>
             </div>
           ))}
@@ -322,7 +323,7 @@ function WorkloadList({ title, list, max }) {
 }
 
 function Stat({ n, l, cls }) {
-  const color = cls === "good" ? "#3fbf85" : cls === "bad" ? "#e0555a" : cls === "warn" ? "#e0a336" : "#fff";
+  const color = cls === "good" ? "#34d399" : cls === "bad" ? "#fb7185" : cls === "warn" ? "#fcd34d" : "#fff";
   return (
     <div style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 16px", minWidth: 110 }}>
       <div style={{ fontSize: 20, fontWeight: 700, color }}>{n}</div>

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { readExcel, detectSurveyType, analyze, SCHEMAS } from "./engine/analyze.js";
 import { buildAnnualDocx } from "./engine/buildDocx.js";
 import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurveyModel.js";
+import { QualityIcon } from "./UiElements.jsx";
 import {
   loadGisScript, initSemesterTokenClient, SEMESTER_TOKEN_KEY, saveStoredToken, getStoredToken,
   TEMPLATE_FOLDER_ID, ROOT_SURVEYS_FOLDER_ID, SEMESTERS, loadDepartments,
@@ -629,7 +630,7 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
           0%,60%,100%{transform:translateY(0);opacity:.5}
           30%{transform:translateY(-6px);opacity:1}
         }
-        .aichat-textarea:focus{border-color:#1abc9c!important;background:rgba(255,255,255,.12)!important}
+        .aichat-textarea:focus{border-color:#34d399!important;background:rgba(255,255,255,.12)!important}
         @media(max-width:640px){
           .aichat-launcher{width:46px!important;height:46px!important;left:12px!important;bottom:max(12px,env(safe-area-inset-bottom))!important;font-size:19px!important}
           .aichat-panel{left:10px!important;right:10px!important;bottom:max(68px,calc(env(safe-area-inset-bottom) + 68px))!important;width:auto!important;max-width:none!important}
@@ -650,15 +651,15 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
         onClick={() => setIsOpen(v => !v)}
         style={{
           position: "fixed", bottom: "max(20px, env(safe-area-inset-bottom))", left: 20, zIndex: 1100,
-          width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer",
-          background: `linear-gradient(135deg,${prov.color},#1a3a5c)`,
+          width: 54, height: 54, borderRadius: 16, border: "1px solid rgba(52,211,153,.22)", cursor: "pointer",
+          background: "linear-gradient(135deg,#34d399,#168f78)", color: "#fff",
           boxShadow: "0 4px 20px rgba(0,0,0,.45)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 22, transition: "transform .25s, box-shadow .25s",
           transform: isOpen ? "scale(1.08)" : "scale(1)",
         }}
       >
-        {isOpen ? "✕" : "💬"}
+        <QualityIcon name={isOpen ? "close" : "sparkles"} size={22} />
       </button>
 
       {/* Chat panel */}
@@ -707,10 +708,10 @@ export default function AiChat({ currentResult, aiSettings, docSettings, onAnaly
             {/* Empty state */}
             {msgs.length === 0 && (
               <div style={{ textAlign: "center", color: "rgba(255,255,255,.28)", fontSize: 12.5, marginTop: 36, lineHeight: 2.2 }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>💬</div>
+                <div className="qa-status-icon success" style={{ width: 48, height: 48, margin: "0 auto 12px" }}><QualityIcon name="sparkles" size={22} /></div>
                 <div>اسألني عن نتائج الاستبيان</div>
-                <div>أو قل <span style={{ color: "#1abc9c" }}>"اعمل تقرير 2024-2025"</span></div>
-                {!currentResult && <div>أو <span style={{ color: "#1abc9c" }}>ارفع لي ملف استبيان</span></div>}
+                <div>أو قل <span style={{ color: "#34d399" }}>"اعمل تقرير 2024-2025"</span></div>
+                {!currentResult && <div>أو <span style={{ color: "#34d399" }}>ارفع لي ملف استبيان</span></div>}
               </div>
             )}
 

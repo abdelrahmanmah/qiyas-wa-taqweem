@@ -55,9 +55,11 @@ function mapColumns(headers, schema) {
     const metaKeywords = [
       ...(schema.metadata?.timestampCol ?? ["Timestamp"]),
       ...(schema.metadata?.levelCol ?? ["المستوى"]),
+      ...(schema.metadata?.emailCol ?? []),
       ...(schema.metadata?.freeTextCols ?? ["مقترحات", "اية مقترحات"]),
       ...(schema.metadata?.degreeCol ?? []),
       ...(schema.metadata?.departmentCol ?? []),
+      ...(schema.metadata?.programCol ?? []),
     ];
     const qColIdx = headers.reduce((acc, h, i) => {
       const hn = normalize(String(h ?? ""));

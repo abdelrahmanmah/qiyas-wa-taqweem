@@ -4,12 +4,13 @@ import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from ".
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
 import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
-import EnhancedReportView from "./EnhancedReportView.jsx";
 import SurveyManagement from "./SurveyManagement.jsx";
 import SemesterSurveys from "./SemesterSurveys.jsx";
 import SemesterFormPicker from "./SemesterFormPicker.jsx";
 import CourseEvaluationHub from "./CourseEvaluationHub.jsx";
-import { GoogleDriveIcon, InlineNotice } from "./UiElements.jsx";
+import DriveLibrary from "./DriveLibrary.jsx";
+import SurveySummary from "./SurveySummary.jsx";
+import { GoogleDriveIcon, InlineNotice, QualityIcon, QualityPageHeader, QualitySectionTitle } from "./UiElements.jsx";
 import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
 import { saveStoredToken, getStoredToken, clearStoredToken, getForm, listAllResponses, responsesToRows, departmentFromSurveyName, SEMESTER_SCOPE, SEMESTER_TOKEN_KEY } from "./engine/semesterSurveyModel.js";
 
@@ -29,7 +30,7 @@ const CSS = `
   --border:rgba(255,255,255,.12);        --border-soft:rgba(255,255,255,.08);
   --text:#e8f0fe;    --text-strong:#fff;
   --text-muted:rgba(255,255,255,.55);    --text-faint:rgba(255,255,255,.4);
-  --accent:#1abc9c;      --accent-dark:#16a085;    --accent-soft:rgba(26,188,156,.15);
+  --accent:#34d399;      --accent-dark:#168f78;    --accent-soft:rgba(52,211,153,.13);
   --accent-2:#2874a6;    --accent-2-dark:#1a3a5c;
   --success:#0d6e3a;     --warning:#ffc107;         --danger:#e74c3c;
   --radius-sm:8px; --radius-md:14px; --radius-lg:20px; --radius-pill:50px;
@@ -170,17 +171,23 @@ select.input option:checked{background:#1a5276;color:#fff}
 .step-item{flex:1;min-width:0;padding:10px 6px 11px;text-align:center;font-size:11px;font-weight:700;
   background:transparent;color:var(--text-muted);transition:all .22s;border:0;position:relative;
   display:flex;flex-direction:column;align-items:center;gap:6px;border-radius:12px}
-.step-item-icon{width:31px;height:31px;border-radius:10px;display:grid;place-items:center;
-  color:rgba(255,255,255,.42);background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);transition:all .22s}
+.step-item-icon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  color:var(--step-color,rgba(255,255,255,.48));background:var(--step-soft,rgba(255,255,255,.055));border:1px solid var(--step-border,rgba(255,255,255,.08));transition:all .22s}
 .step-item-icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .step-item-num{font-size:9px;font-weight:900;line-height:1;opacity:.72}
 .step-item.active{background:rgba(26,188,156,.14);color:#d8fff7;box-shadow:inset 0 0 0 1px rgba(26,188,156,.24)}
-.step-item.active .step-item-icon{color:#fff;background:linear-gradient(135deg,#1abc9c,#16977f);border-color:transparent;box-shadow:0 5px 13px rgba(26,188,156,.24)}
+.step-item.active .step-item-icon{color:#fff;background:linear-gradient(135deg,var(--step-color,#1abc9c),var(--step-dark,#16977f));border-color:transparent;box-shadow:0 6px 15px var(--step-glow,rgba(26,188,156,.24))}
 .step-item.active::after{content:'';position:absolute;bottom:3px;width:24px;height:3px;border-radius:3px;background:#1abc9c}
 .step-item.done{color:rgba(156,238,221,.8)}
-.step-item.done .step-item-icon{color:#8be5d2;background:rgba(26,188,156,.1);border-color:rgba(26,188,156,.2)}
+.step-item.done .step-item-icon{color:var(--step-color,#8be5d2);background:var(--step-soft,rgba(26,188,156,.1));border-color:var(--step-border,rgba(26,188,156,.2))}
 .workflow-header{display:flex;align-items:center;gap:13px;margin-bottom:20px;padding:14px 16px;border-radius:15px;background:linear-gradient(120deg,rgba(26,188,156,.1),rgba(40,116,166,.07));border:1px solid rgba(26,188,156,.16)}
 .workflow-header-icon{width:40px;height:40px;padding:10px;display:grid;place-items:center;flex:0 0 auto;border-radius:12px;color:#d7fff7;background:linear-gradient(135deg,#1abc9c,#167d94);box-shadow:0 7px 16px rgba(26,188,156,.16)}
+.workflow-header-icon.icon-upload{color:#a7f3d0;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.2)}
+.workflow-header-icon.icon-shield{color:#bfdbfe;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.2)}
+.workflow-header-icon.icon-table{color:#ddd6fe;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.2)}
+.workflow-header-icon.icon-edit{color:#fde68a;background:rgba(251,191,36,.11);border:1px solid rgba(251,191,36,.2)}
+.workflow-header-icon.icon-chart{color:#f9a8d4;background:rgba(244,114,182,.11);border:1px solid rgba(244,114,182,.2)}
+.qa-status-icon.purple{color:#d8b4fe;background:rgba(192,132,252,.11)}.qa-status-icon.pink{color:#f9a8d4;background:rgba(244,114,182,.1)}
 .workflow-header-kicker{color:#71e8d4;font-size:10px;font-weight:900}.workflow-header-title{color:#fff;font-size:18px;font-weight:900}.workflow-header-copy{color:rgba(255,255,255,.5);font-size:11.5px;margin-top:2px}
 
 /* ── Type/mode cards ── */
@@ -275,7 +282,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .sidebar-item{width:100%;min-height:46px;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:13px;border:1px solid transparent;
   color:rgba(232,240,254,.75);background:transparent;font-family:inherit;font-size:13px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
 .sidebar-item:hover{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.07)}
-.sidebar-item.active{color:#eafffb;background:linear-gradient(125deg,rgba(26,188,156,.2),rgba(40,116,166,.12));border-color:rgba(94,234,212,.22)}
+.sidebar-item.active{color:#eafffb;background:linear-gradient(125deg,rgba(52,211,153,.17),rgba(96,165,250,.1));border-color:rgba(52,211,153,.22)}
 .sidebar-icon{width:32px;height:32px;display:grid;place-items:center;flex:0 0 32px;color:currentColor}
 .sidebar-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .sidebar-label{overflow:hidden;opacity:1;transition:opacity .16s ease}
@@ -367,7 +374,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .hub-section-head h2{color:#fff;font-size:20px;font-weight:900;margin:0}
 .hub-section-head p{color:rgba(255,255,255,.43);font-size:12px;margin-top:3px}
 .tool-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:15px}
-.tool-card{grid-column:span 4;position:relative;overflow:hidden;min-height:230px;padding:24px;text-align:right;
+.tool-card{grid-column:span 3;position:relative;overflow:hidden;min-height:230px;padding:24px;text-align:right;
   color:inherit;font-family:inherit;border-radius:20px;border:1px solid rgba(255,255,255,.1);
   background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));cursor:pointer;
   transition:transform .24s,border-color .24s,background .24s,box-shadow .24s;display:flex;flex-direction:column;align-items:stretch}
@@ -396,11 +403,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 `;
 
 const STEPS = [
-  { label: "رفع الملف", icon: "upload" },
-  { label: "التحقق", icon: "shield" },
-  { label: "معاينة البيانات", icon: "table" },
-  { label: "بيانات التقرير", icon: "edit" },
-  { label: "النتائج", icon: "chart" },
+  { label: "رفع الملف", icon: "upload", tone: { color: "#34d399", dark: "#168f78", soft: "rgba(52,211,153,.11)", border: "rgba(52,211,153,.2)", glow: "rgba(52,211,153,.24)" } },
+  { label: "التحقق", icon: "shield", tone: { color: "#60a5fa", dark: "#2874a6", soft: "rgba(96,165,250,.11)", border: "rgba(96,165,250,.2)", glow: "rgba(96,165,250,.24)" } },
+  { label: "معاينة البيانات", icon: "table", tone: { color: "#a78bfa", dark: "#7359c9", soft: "rgba(167,139,250,.11)", border: "rgba(167,139,250,.2)", glow: "rgba(167,139,250,.24)" } },
+  { label: "بيانات التقرير", icon: "edit", tone: { color: "#fbbf24", dark: "#b7790b", soft: "rgba(251,191,36,.1)", border: "rgba(251,191,36,.2)", glow: "rgba(251,191,36,.22)" } },
+  { label: "النتائج", icon: "chart", tone: { color: "#f472b6", dark: "#be3c83", soft: "rgba(244,114,182,.1)", border: "rgba(244,114,182,.2)", glow: "rgba(244,114,182,.22)" } },
 ];
 const SETTINGS_KEY = "eruQA_settings_v1";
 const AI_KEY       = "eruQA_ai_v1";
@@ -409,12 +416,25 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 const DRIVE_SCOPE      = SEMESTER_SCOPE;
 const DRIVE_TOKEN_KEY  = SEMESTER_TOKEN_KEY;
 const GSHEETS_MIME     = "application/vnd.google-apps.spreadsheet";
+const GOOGLE_FORM_MIME = "application/vnd.google-apps.form";
 const DRIVE_FILE_MIMES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
   GSHEETS_MIME,
   "text/csv",
 ];
+const DRIVE_REPORT_MIMES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.google-apps.document",
+];
+const DRIVE_LIBRARY_MIMES = [
+  ...DRIVE_FILE_MIMES,
+  GOOGLE_FORM_MIME,
+  ...DRIVE_REPORT_MIMES,
+];
+const DRIVE_LIBRARY_PAGE_SIZE = 48;
 
 function loadGisScript() {
   return new Promise(resolve => {
@@ -507,6 +527,24 @@ function safePdfReportName(sourceName) {
   return `تقرير تحليل - ${base}.pdf`;
 }
 
+function normalizeDriveReportKey(filename, isReport = false) {
+  let value = String(filename ?? "")
+    .replace(/\.(xlsx|xls|csv|pdf|docx?|gsheet)$/i, "")
+    .trim();
+  if (isReport) {
+    value = value
+      .replace(/^\s*تقرير\s+(?:ال)?تحليل\s*[-–—:]?\s*/i, "")
+      .replace(/^\s*analysis\s+report\s*[-–—:]?\s*/i, "");
+  }
+  return value
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function initialReportMeta() {
   try {
     const saved = JSON.parse(localStorage.getItem("eruQA_report_authors_v1") || "{}");
@@ -535,21 +573,34 @@ function detectProgramFromFilename(filename) {
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
     .toLowerCase();
-  if (n.includes("تكنولوجيا") && n.includes("اعمال"))  return "تكنولوجيا أعمال";
-  if (n.includes("علوم")     && n.includes("سياسي")) return "علوم سياسية";
-  if (n.includes("سياسي")) return "علوم سياسية";
-  if (n.includes("محاسب"))  return "محاسبة";
-  if (n.includes("اقتصاد")) return "اقتصاد";
-  if (n.includes("ادار"))   return "إدارة";
+  const has = (...parts) => parts.every(part => n.includes(part));
+  if (has("نظم", "معلومات", "ادار") || n.includes("management information")) return "نظم المعلومات الإدارية";
+  if (has("تحليل", "اعمال") || n.includes("business analytics")) return "تحليل الأعمال";
+  if (has("تكنولوجيا", "اعمال") || n.includes("business technology")) return "تكنولوجيا أعمال";
+  if (has("تكنولوجيا", "مالي") || has("مالي", "رقمي") || n.includes("fintech")) return "التكنولوجيا المالية الرقمية";
+  if (has("ذكاء", "تسويق") || n.includes("marketing intelligence")) return "الذكاء التسويقي";
+  if (has("علوم", "سياسي") || n.includes("سياسي") || n.includes("political science")) return "علوم سياسية";
+  if (n.includes("محاسب") || n.includes("accounting")) return "محاسبة";
+  if (n.includes("اقتصاد") || n.includes("economics")) return "اقتصاد";
+  if (has("ادار", "اعمال") || n.includes("business administration")) return "إدارة الأعمال";
   return null;
 }
 
 function detectYearFromFilename(filename) {
-  const m = String(filename).match(/(\d{4}[-_]\d{4}|\d{4}[-_]\d{2})/);
+  const m = String(filename).match(/(\d{4}[-_/]\d{4}|\d{4}[-_/]\d{2})/);
   if (!m) return null;
-  const parts = m[1].split(/[-_]/);
+  const parts = m[1].split(/[-_/]/);
   if (parts[1].length === 2) return `${parts[0]}-20${parts[1]}`;
   return `${parts[0]}-${parts[1]}`;
+}
+
+function detectSemesterFromFilename(filename) {
+  const value = String(filename ?? "")
+    .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").toLowerCase();
+  if (/خريف|fall|الفصل\s*(الدراسي\s*)?(الاول|1)/i.test(value)) return "خريف";
+  if (/ربيع|spring|الفصل\s*(الدراسي\s*)?(الثاني|2)/i.test(value)) return "ربيع";
+  if (/صيف|summer|الفصل\s*(الدراسي\s*)?(الثالث|3)/i.test(value)) return "صيف";
+  return null;
 }
 
 function detectTypeHintFromFilename(filename) {
@@ -669,14 +720,17 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-        <div style={{ color: "#fff", fontSize: 22, fontWeight: 900 }}>⚙ الإعدادات</div>
-        <button className="btn btn-danger btn-sm" onClick={reset}>إعادة تعيين للافتراضي</button>
-      </div>
+      <QualityPageHeader
+        icon="settings"
+        eyebrow="تخصيص النظام والتقارير"
+        title="الإعدادات"
+        description="هوية واحدة للتقارير والبيانات والمسؤولين وخيارات الإخراج."
+        actions={<button className="btn btn-danger btn-sm qa-icon-button" onClick={reset}><QualityIcon name="refresh" size={15} /> إعادة تعيين للافتراضي</button>}
+      />
 
       {/* Section 1 — Institutional Identity */}
       <div className="settings-section">
-        <div className="settings-section-title">🏛 هوية المؤسسة (ترويسة التقرير)</div>
+        <QualitySectionTitle icon="home" title="هوية المؤسسة" description="بيانات ترويسة التقرير والشعار الرسمي" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
           {F("uniName",       "اسم الجامعة",   "Egyptian Russian University")}
           {F("facultyName",   "اسم الكلية",    "Faculty of Management...")}
@@ -693,8 +747,8 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
               : <div className="logo-preview" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.3)", fontSize: 11 }}>لا يوجد</div>
             }
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => logoInputRef.current.click()}>
-                📎 رفع شعار
+              <button className="btn btn-ghost btn-sm qa-icon-button" onClick={() => logoInputRef.current.click()}>
+                <QualityIcon name="upload" size={15} /> رفع شعار
               </button>
               {settings.logoDataUrl && (
                 <button className="btn btn-danger btn-sm" onClick={() => set("logoDataUrl", null)}>
@@ -711,29 +765,37 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
         </div>
       </div>
 
-      {/* Section 2 — Signature Block */}
+      {/* Section 2 — Report people */}
       <div className="settings-section">
-        <div className="settings-section-title">✍ كتلة التوقيع (نهاية التقرير)</div>
+        <QualitySectionTitle icon="users" title="القائمون على التقييم والمراجعة" description="الأسماء والأدوار التي تظهر في التقرير" />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-          {F("qmName", "رئيس وحدة القياس والتقويم", "د/ ...")}
+          {F("qmName", "رئيس لجنة القياس والتقويم", "د/ ...")}
           {F("quName", "رئيس وحدة الجودة",           "د/ ...")}
+        </div>
+        <div style={{ marginTop: 14 }}>
+          {Toggle("includeCommitteeHead", "إظهار رئيس لجنة القياس والتقويم في الصفحة الأولى")}
+          {Toggle("includeEvaluator", "إظهار القائم بالتقييم في الصفحة الأولى")}
+          {Toggle("includeReviewer", "إظهار القائم بالمراجعة في الصفحة الأولى")}
         </div>
       </div>
 
       {/* Section 3 — Footer */}
       <div className="settings-section">
-        <div className="settings-section-title">📄 تذييل الصفحة</div>
+        <QualitySectionTitle icon="footer" title="تذييل الصفحة" description="الرؤية والرسالة وبيانات التواصل" />
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {T("vision",  "رؤية الوحدة",       "رؤية الوحدة: ...")}
           {T("mission", "رسالة الوحدة",      "رسالة الوحدة: ...")}
-          {F("email",   "البريد الإلكتروني", "E-mail: ...")}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+            {F("qualityEmail", "البريد الإلكتروني للجودة", "qa-mebt@eru.edu.eg")}
+            {F("measurementEmail", "البريد الإلكتروني للقياس والتقويم", "meb-maec@eru.edu.eg")}
+          </div>
         </div>
       </div>
 
       {/* Section 4 — Report Options */}
       <div className="settings-section">
-        <div className="settings-section-title">📋 خيارات التقرير</div>
-        {Toggle("includeEvaluatorsTable", "تضمين جدول القائم بالتقييم")}
+        <QualitySectionTitle icon="report" title="خيارات التقرير" description="الأقسام والمحتوى الظاهر في التقرير النهائي" />
+        {Toggle("includeEvaluatorsTable", "تضمين قسم القائمين على التقييم والمراجعة")}
         {Toggle("includeParticipants",    "تضمين توزيع المشاركين")}
         {Toggle("includeRecommendations", "تضمين قسم التوصيات")}
         {settings.includeRecommendations && (
@@ -753,22 +815,24 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
       </div>
 
       <div className="settings-section">
-        <div className="settings-section-title">🧩 إعدادات كل استبيان</div>
+        <QualitySectionTitle icon="settings" title="إعدادات كل استبيان" description="تحكم مستقل في مقدمة كل نموذج وهويته" />
         <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12, marginBottom: 14 }}>
-          تحكم مستقل في صفحة الرؤية والرسالة ولون التقرير لكل استبيان، ويُطبق على Word وPDF.
+          تحكم مستقل في المقدمة وصفحة الرؤية والرسالة ولون التقرير لكل استبيان، ويُطبق على Word وPDF.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {Object.values(allSchemas()).map(sc => {
             const opts = settings.surveyReportOptions?.[sc.id] ?? {};
             const includeVM = opts.includeVisionMission ?? settings.includeVisionMission ?? true;
             const theme = opts.colorTheme ?? settings.colorTheme ?? "default";
+            const reportTexts = opts.reportTexts ?? {};
+            const introduction = reportTexts.introduction ?? sc.reportTexts?.introduction ?? "";
             const update = patch => set("surveyReportOptions", {
               ...(settings.surveyReportOptions ?? {}),
               [sc.id]: { ...opts, ...patch },
             });
             return (
               <div key={sc.id} style={{ display: "grid", gridTemplateColumns: "minmax(210px,1.5fr) minmax(180px,1fr) minmax(180px,1fr)", gap: 12, alignItems: "center", padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.025)" }}>
-                <div style={{ color: "#eef5ff", fontSize: 13, fontWeight: 700 }}>{sc.icon ?? "📋"} {sc.label}</div>
+                <div className="qa-icon-label" style={{ color: "#eef5ff", fontSize: 13, fontWeight: 700 }}><QualityIcon name="report" size={17} /> {sc.label}</div>
                 <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, color: "rgba(255,255,255,.7)", fontSize: 12 }}>
                   إظهار الرؤية والرسالة
                   <button className={`toggle ${includeVM ? "on" : "off"}`} onClick={() => update({ includeVisionMission: !includeVM })} />
@@ -780,6 +844,17 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
                   <option value="dark">رمادي</option>
                   <option value="red">أحمر</option>
                 </select>
+                <details style={{ gridColumn: "1 / -1", borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 10 }}>
+                  <summary style={{ cursor: "pointer", color: "#5eead4", fontSize: 12.5, fontWeight: 800 }}>تعديل مقدمة الاستبيان</summary>
+                  <textarea
+                    className="textarea"
+                    rows={4}
+                    value={introduction}
+                    placeholder="اكتب مقدمة هذا الاستبيان..."
+                    onChange={e => update({ reportTexts: { ...reportTexts, introduction: e.target.value } })}
+                    style={{ marginTop: 10 }}
+                  />
+                </details>
               </div>
             );
           })}
@@ -788,8 +863,11 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
 
       {/* Section 4b — Branded PDF Options */}
       <div className="settings-section">
-        <div className="settings-section-title">🖨️ تقرير PDF المصمم</div>
-        {Toggle("includePdfCharts", "تضمين الرسوم البيانية (الأعمدة والأشرطة الملوّنة)")}
+        <QualitySectionTitle icon="print" title="تقرير PDF المصمم" description="الرسوم والتوصيات وإعدادات التصدير" />
+        {Toggle("includePdfCharts", "تضمين رسوم تحليل المحاور التفصيلية")}
+        <div style={{ color: "rgba(255,255,255,.4)", fontSize: 11.5, marginTop: 6 }}>
+          الرسم البياني العام لملخص النتائج يظهر دائمًا أسفل جدول الملخص.
+        </div>
         <div style={{ marginTop: 14 }}>
           <label className="label">حد التوصيات — أقل من (%)</label>
           <input
@@ -809,7 +887,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
 
       {/* Section 5 — Report Design */}
       <div className="settings-section">
-        <div className="settings-section-title">🎨 التصميم الافتراضي للتقرير (Word وPDF)</div>
+        <QualitySectionTitle icon="palette" title="التصميم الافتراضي للتقرير" description="الخطوط والألوان والمحاذاة في Word وPDF" />
 
         {/* Font */}
         <div style={{ marginBottom: 16 }}>
@@ -2051,7 +2129,7 @@ function StepBar({ step }) {
   const visibleStep = Math.max(0, step - 1);
   return (
     <div className="step-bar" role="list" aria-label="خطوات إنشاء التقرير">
-      {STEPS.map(({ label, icon }, i) => {
+      {STEPS.map(({ label, icon, tone }, i) => {
         const status = i === visibleStep ? "active" : i < visibleStep ? "done" : "pending";
         return (
           <div
@@ -2059,8 +2137,9 @@ function StepBar({ step }) {
             role="listitem"
             className={`step-item ${status}`}
             aria-current={status === "active" ? "step" : undefined}
+            style={{ "--step-color": tone.color, "--step-dark": tone.dark, "--step-soft": tone.soft, "--step-border": tone.border, "--step-glow": tone.glow }}
           >
-            <span className="step-item-icon"><StepIcon name={status === "done" ? "shield" : icon} /></span>
+            <span className="step-item-icon"><StepIcon name={icon} /></span>
             <span className="step-item-num">{status === "done" ? "مكتمل" : `خطوة ${i + 1}`}</span>
             <span>{label}</span>
           </div>
@@ -2073,7 +2152,7 @@ function StepBar({ step }) {
 function WorkflowHeader({ step, icon, title, description }) {
   const visibleStep = Math.max(1, Number(step) - 1);
   return <div className="workflow-header">
-    <span className="workflow-header-icon"><StepIcon name={icon}/></span>
+    <span className={`workflow-header-icon icon-${icon}`}><StepIcon name={icon}/></span>
     <div><div className="workflow-header-kicker">خطوة {visibleStep} من 5</div><div className="workflow-header-title">{title}</div><div className="workflow-header-copy">{description}</div></div>
   </div>;
 }
@@ -2159,7 +2238,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
         display: "flex", borderRadius: 8, overflow: "hidden",
         border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.04)", marginBottom: 10,
       }}>
-        {[{ id: "local", label: "📁 جهازك" }, { id: "drive", label: "☁️ Drive" }].map(t => (
+        {[{ id: "local", label: "جهازك", icon: "folder" }, { id: "drive", label: "Drive", icon: "dashboard" }].map(t => (
           <button key={t.id} onClick={() => setSlotTab(t.id)} style={{
             flex: 1, padding: "7px 4px", border: "none", cursor: "pointer",
             fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 12,
@@ -2167,7 +2246,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
             color: slotTab === t.id ? "#1abc9c" : "rgba(255,255,255,.45)",
             borderBottom: slotTab === t.id ? "2px solid #1abc9c" : "2px solid transparent",
             transition: "all .2s",
-          }}>{t.label}</button>
+          }}><span className="qa-icon-label"><QualityIcon name={t.icon} size={14} /> {t.label}</span></button>
         ))}
       </div>
 
@@ -2179,7 +2258,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
             textAlign: "center", cursor: "pointer", background: "rgba(255,255,255,.03)",
             borderColor: slot._file ? "#1abc9c" : "rgba(255,255,255,.25)",
           }}>
-            <div style={{ fontSize: 28, marginBottom: 6 }}>{slot._file ? "✅" : "📂"}</div>
+            <div className={`qa-status-icon ${slot._file ? "success" : "info"}`} style={{ width: 42, height: 42, margin: "0 auto 8px" }}><QualityIcon name={slot._file ? "check" : "folder"} size={20} /></div>
             <div style={{ color: slot._file ? "#1abc9c" : "rgba(255,255,255,.6)", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {slot.fileName || "اضغط لاختيار ملف"}
             </div>
@@ -2188,11 +2267,11 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center", marginBottom: slot._file ? 5 : 0 }}>
                   {slot._type && allSchemas()[slot._type] ? (
                     <span style={{ fontSize: 10, color: "#1abc9c", background: "rgba(26,188,156,.15)", borderRadius: 6, padding: "2px 7px", fontWeight: 700 }}>
-                      {allSchemas()[slot._type].icon} {allSchemas()[slot._type].label}
+                      <span className="qa-icon-label"><QualityIcon name="report" size={12} /> {allSchemas()[slot._type].label}</span>
                     </span>
                   ) : (
                     <span style={{ fontSize: 10, color: "#ffd54f", background: "rgba(255,193,7,.12)", borderRadius: 6, padding: "2px 7px", fontWeight: 700 }}>
-                      ⚠ نوع غير محدد
+                      <span className="qa-icon-label"><QualityIcon name="warning" size={12} /> نوع غير محدد</span>
                     </span>
                   )}
                   {slot._program && (
@@ -2234,7 +2313,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
                       color: slot._type === sc.id ? "#1abc9c" : "rgba(255,255,255,.5)",
                       transition: "all .15s",
                     }}>
-                    {sc.icon} {sc.label}
+                    <span className="qa-icon-label"><QualityIcon name="report" size={12} /> {sc.label}</span>
                   </button>
                 ))}
               </div>
@@ -2269,7 +2348,7 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
         ) : (
           <>
             <input value={driveSearch} onChange={e => setDriveSearch(e.target.value)}
-              placeholder="🔍 ابحث…"
+              placeholder="ابحث عن ملف…"
               style={{
                 width: "100%", background: "#0d1f33", color: "#e8f0fe",
                 border: "1px solid rgba(255,255,255,.18)", borderRadius: 8,
@@ -2289,11 +2368,11 @@ function FileSlot({ slot, onChange, label, driveToken, driveFiles, driveLoading,
                     borderRadius: 8, padding: "7px 10px",
                     cursor: downloading ? "not-allowed" : "pointer", transition: "all .15s",
                   }}>
-                    <span style={{ fontSize: 14 }}>{f.mimeType === GSHEETS_MIME ? "📊" : "📄"}</span>
+                    <QualityIcon name={f.mimeType === GSHEETS_MIME ? "chart" : "sheet"} size={15} />
                     <div style={{ flex: 1, overflow: "hidden" }}>
                       <div style={{ color: "#e8f0fe", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
                     </div>
-                    {isSel && <span style={{ color: "#1abc9c", fontSize: 14 }}>✅</span>}
+                    {isSel && <span style={{ color: "#34d399", display: "grid" }}><QualityIcon name="check" size={15} /></span>}
                     {downloading && isSel && (
                       <svg className="spin" width="12" height="12" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#1abc9c" strokeWidth="2" strokeDasharray="22 8"/></svg>
                     )}
@@ -2349,8 +2428,8 @@ function MetadataForm({ meta, onChange }) {
             onChange={v => onChange({ ...meta, program: v })} />
         </div>
         {F("year",       "العام الأكاديمي", "مثال: 2024-2025")}
-        {F("preparedBy", "أعده *",          "اسم معد التقرير")}
-        {F("reviewer",   "راجعه *",         "اسم المراجع")}
+        {F("preparedBy", "القائم بالتقييم *",  "اسم القائم بالتقييم")}
+        {F("reviewer",   "القائم بالمراجعة *", "اسم القائم بالمراجعة")}
       </div>
     </div>
   );
@@ -2483,7 +2562,7 @@ function DataPreviewTable({ headers, rows, removed, onToggleRow,
 }
 
 // ── CollapsibleSection ────────────────────────────────────────────────────────
-function CollapsibleSection({ title, defaultOpen = true, children, badge }) {
+function CollapsibleSection({ title, defaultOpen = true, children, badge, icon = "report" }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
@@ -2497,7 +2576,7 @@ function CollapsibleSection({ title, defaultOpen = true, children, badge }) {
         }}
       >
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}>{title}</span>
+          <span className="qa-icon-label" style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}><span className="qa-status-icon info"><QualityIcon name={icon} size={15} /></span>{title}</span>
           {badge}
         </span>
         <span style={{
@@ -2515,14 +2594,14 @@ function QuickStatsRow({ result }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 14 }}>
       {[
-        { n: result.n,                     l: "عدد المستجيبين", icon: "👥" },
-        { n: result.axes.length,           l: "عدد المحاور",    icon: "📋" },
-        { n: result.totalQuestions,        l: "عدد الأسئلة",    icon: "❓" },
-        { n: `${result.overallAgreePct}%`, l: "نسبة الموافقة",  icon: "✅" },
+        { n: result.n,                     l: "عدد المستجيبين", icon: "users",  tone: "purple" },
+        { n: result.axes.length,           l: "عدد المحاور",    icon: "table",  tone: "info" },
+        { n: result.totalQuestions,        l: "عدد الأسئلة",    icon: "report", tone: "warning" },
+        { n: `${result.overallAgreePct}%`, l: "نسبة الموافقة",  icon: "check",  tone: "success" },
       ].map((s, i) => (
         <div key={i} className="stat-card">
-          <div style={{ fontSize: 26, marginBottom: 6 }}>{s.icon}</div>
-          <div style={{ color: "#1abc9c", fontSize: 28, fontWeight: 900 }}>{s.n}</div>
+          <div className={`qa-status-icon ${s.tone}`} style={{ width: 40, height: 40, margin: "0 auto 8px" }}><QualityIcon name={s.icon} size={19} /></div>
+          <div style={{ color: "#34d399", fontSize: 28, fontWeight: 900 }}>{s.n}</div>
           <div style={{ color: "rgba(255,255,255,.55)", fontSize: 11, marginTop: 4 }}>{s.l}</div>
         </div>
       ))}
@@ -2671,6 +2750,7 @@ const HUB_ICONS = {
   analytics: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 7 6-4 6 5 4-3"/></>,
   surveys: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6M9 8h6M9 12h6M9 16h4"/></>,
   semester: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
+  drive: <><path d="M8 3h8l5 8-4 7H7l-4-7 5-8Z"/><path d="m8 3 5 8-3 7M21 11h-8M3 11h10"/></>,
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
   courses: <><path d="m3 6 9-4 9 4-9 4-9-4Z"/><path d="M7 8.2v5.3c0 1.7 2.2 3 5 3s5-1.3 5-3V8.2M21 6v7"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.36.5.75 1 .97.35.16.73.24 1.1.23h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></>,
@@ -2684,6 +2764,11 @@ function HubIcon({ name }) {
 function QualityHub({ onOpen }) {
   const toolCards = [
     {
+      id: "summary", icon: "dashboard", color: "#fbbf24", featured: true,
+      title: "ملخص الاستبيانات", tag: "السنة والفصل",
+      description: "اعرف بسرعة ما تم تحليله وما لم يُحلل بعد، مع عدد المشاركين في كل استبيان.",
+    },
+    {
       id: "analytics", icon: "analytics", color: "#5eead4",
       title: "تحليل نتائج موجودة", tag: "Excel أو Google Drive",
       description: "ابدأ بملف واحد أو مجموعة ملفات، ودع النظام يتعرّف على نوع الاستبيان ثم أنشئ تقرير Word أو PDF.",
@@ -2694,6 +2779,11 @@ function QualityHub({ onOpen }) {
       description: "اختر القوالب والسنة والفصل، وأنشئ كل استبيانات الفصل منظمةً تلقائياً على Google Drive.",
     },
     {
+      id: "drive", icon: "drive", color: "#34d399",
+      title: "مكتبة Drive", tag: "تقارير واستبيانات",
+      description: "تصفح كل تقارير الجودة والاستبيانات من مكان واحد، مع عدادات فورية وبحث وفلاتر دقيقة ووصول سريع للملفات.",
+    },
+    {
       id: "courses", icon: "courses", color: "#a78bfa",
       title: "تقييم المقررات", tag: "دورة تقييم متكاملة",
       description: "جهّز بيانات المقررات، تابع نسب المشاركة، قسّم ملفات التقييم وراجع التوصيات من مساحة واحدة.",
@@ -2701,7 +2791,7 @@ function QualityHub({ onOpen }) {
   ];
 
   return (
-    <section className="hub" aria-label="الصفحة الرئيسية لوحدة ضمان الجودة">
+    <section className="hub" aria-label="الصفحة الرئيسية لبوابة لجنة القياس والتقويم">
       <div className="hub-hero">
         <div style={{ position: "relative", zIndex: 1 }}>
           <div className="hub-eyebrow"><span>◆</span> ابدأ من المهمة، لا من الأداة</div>
@@ -2739,6 +2829,8 @@ function QualityHub({ onOpen }) {
 
 const SIDEBAR_ITEMS = [
   { id: "home", icon: "home", label: "الرئيسية" },
+  { id: "summary", icon: "dashboard", label: "ملخص الاستبيانات" },
+  { id: "drive", icon: "drive", label: "مكتبة Drive" },
   { id: "analytics", icon: "analytics", label: "تحليل الاستبيانات" },
   { id: "semester", icon: "semester", label: "استبيانات الفصل الدراسي" },
   { id: "courses", icon: "courses", label: "تقييم المقررات" },
@@ -2749,7 +2841,7 @@ function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
     <aside className={`tool-sidebar ${open ? "open" : "collapsed"}`} aria-label="التنقل بين أدوات الجودة">
       <div className="sidebar-brand">
         <span className="sidebar-brand-mark"><HubIcon name="home" /></span>
-        <span className="sidebar-brand-copy">بوابة وحدة ضمان الجودة<small>ERU · QUALITY HUB</small></span>
+        <span className="sidebar-brand-copy">بوابة لجنة القياس والتقويم<small>ERU · MEASUREMENT &amp; EVALUATION</small></span>
         <button type="button" className="sidebar-toggle" onClick={onToggle} aria-label={open ? "طي القائمة الجانبية" : "فتح القائمة الجانبية"} title={open ? "طي القائمة" : "فتح القائمة"}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
@@ -2799,6 +2891,8 @@ export default function App() {
   const [showSurveyManagement, setShowSurveyManagement] = useState(false);
   const [showSemesterSurveys, setShowSemesterSurveys] = useState(false);
   const [showCourseEval, setShowCourseEval] = useState(false);
+  const [showDriveLibrary, setShowDriveLibrary] = useState(false);
+  const [showSurveySummary, setShowSurveySummary] = useState(false);
   const [showHub, setShowHub] = useState(true);
   const [showTutorial, setShowTutorial] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 760);
@@ -2809,7 +2903,6 @@ export default function App() {
 
   const [singleFile, setSingleFile]     = useState(null);
   const [singleResult, setSingleResult] = useState(null);
-  const [showEnhancedView, setShowEnhancedView] = useState(false);
   const singleRef = useRef();
   const [dragging, setDragging]         = useState(false);
 
@@ -2853,6 +2946,11 @@ export default function App() {
   const [driveConnection,   setDriveConnection]   = useState(() => getStoredToken(DRIVE_TOKEN_KEY) ? "checking" : "disconnected");
   const [driveAccount,      setDriveAccount]      = useState("");
   const [driveFiles,        setDriveFiles]        = useState([]);
+  const [driveLibraryFiles, setDriveLibraryFiles] = useState([]);
+  const [driveLibraryLoading, setDriveLibraryLoading] = useState(false);
+  const [driveLibraryLoadingMore, setDriveLibraryLoadingMore] = useState(false);
+  const [driveLibraryNextPageToken, setDriveLibraryNextPageToken] = useState("");
+  const [driveLibraryError, setDriveLibraryError] = useState("");
   const [driveSearch,       setDriveSearch]       = useState("");
   const [driveLoading,      setDriveLoading]      = useState(false);
   const [driveSelected,     setDriveSelected]     = useState(null);
@@ -2868,6 +2966,7 @@ export default function App() {
   const tokenClientRef = useRef(null);
   const explicitDriveRef = useRef(false);
   const triedSilentDriveRef = useRef(false);
+  const driveResponseCountCacheRef = useRef(new Map());
 
   // Annual-mode preview state (Step 3)
   const [singleHeaders, setSingleHeaders]     = useState(null);
@@ -2918,6 +3017,142 @@ export default function App() {
     }
   }, []);
 
+  const fetchDriveLibraryFiles = useCallback(async (token, { append = false, pageToken = "" } = {}) => {
+    if (!token) return;
+    if (append && !pageToken) return;
+    if (append) setDriveLibraryLoadingMore(true);
+    else setDriveLibraryLoading(true);
+    setDriveLibraryError("");
+    try {
+      const q = DRIVE_LIBRARY_MIMES.map(mime => `mimeType='${mime}'`).join(" or ");
+      const params = new URLSearchParams({
+        q: `(${q}) and trashed=false`,
+        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,parents,webViewLink,size)",
+        orderBy: "modifiedTime desc",
+        pageSize: String(DRIVE_LIBRARY_PAGE_SIZE),
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error?.message || `Google Drive (${res.status})`);
+      const incoming = data.files || [];
+      setDriveLibraryFiles(previous => {
+        if (!append) return incoming;
+        return [...new Map([...previous, ...incoming].map(file => [file.id, file])).values()];
+      });
+      setDriveLibraryNextPageToken(data.nextPageToken || "");
+    } catch (e) {
+      setDriveLibraryError("تعذر تحميل مكتبة Google Drive: " + e.message);
+    } finally {
+      if (append) setDriveLibraryLoadingMore(false);
+      else setDriveLibraryLoading(false);
+    }
+  }, []);
+
+  const loadDriveQuickSummary = useCallback(async (year, semester, onProgress) => {
+    if (!driveToken) throw new Error("يرجى ربط Google Drive أولاً.");
+    const academicYear = String(year || "").trim();
+    const academicSemester = String(semester || "").trim();
+    const yearStart = academicYear.match(/\d{4}/)?.[0];
+    if (!yearStart) throw new Error("اختر سنة دراسية صحيحة.");
+    if (!academicSemester) throw new Error("اختر الفصل الدراسي.");
+
+    onProgress?.({ stage: "scan", current: 0, total: 0 });
+    const mimeQuery = [...DRIVE_FILE_MIMES, GOOGLE_FORM_MIME, ...DRIVE_REPORT_MIMES]
+      .map(mime => `mimeType='${mime}'`)
+      .join(" or ");
+    const found = [];
+    let nextPageToken = "";
+    do {
+      const params = new URLSearchParams({
+        q: `(${mimeQuery}) and trashed=false and name contains '${yearStart}'`,
+        fields: "nextPageToken,files(id,name,mimeType,modifiedTime,parents,webViewLink)",
+        orderBy: "modifiedTime desc",
+        pageSize: "1000",
+      });
+      if (nextPageToken) params.set("pageToken", nextPageToken);
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+        headers: { Authorization: `Bearer ${driveToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error?.message || `Google Drive (${res.status})`);
+      found.push(...(data.files || []));
+      nextPageToken = data.nextPageToken || "";
+    } while (nextPageToken);
+
+    const yearFiles = found.filter(file =>
+      detectYearFromFilename(file.name) === academicYear &&
+      detectSemesterFromFilename(file.name) === academicSemester
+    );
+    const surveys = yearFiles.filter(file => DRIVE_FILE_MIMES.includes(file.mimeType) || file.mimeType === GOOGLE_FORM_MIME);
+    const reports = yearFiles.filter(file => DRIVE_REPORT_MIMES.includes(file.mimeType));
+
+    const reportByKey = new Map();
+    const rememberReport = (key, report) => {
+      const previous = reportByKey.get(key);
+      if (!previous || new Date(report.modifiedTime || 0) > new Date(previous.modifiedTime || 0)) {
+        reportByKey.set(key, report);
+      }
+    };
+    reports.forEach(report => {
+      const key = normalizeDriveReportKey(report.name, true);
+      if (!key) return;
+      const parent = report.parents?.[0] || "";
+      rememberReport(`${parent}::${key}`, report);
+    });
+
+    const items = surveys.map(file => {
+      const key = normalizeDriveReportKey(file.name);
+      const parent = file.parents?.[0] || "";
+      const report = reportByKey.get(`${parent}::${key}`) || null;
+      return {
+        file,
+        report,
+        analyzed: Boolean(report),
+        responses: null,
+        responseError: "",
+        typeId: detectTypeHintFromFilename(file.name) || "",
+        program: detectProgramFromFilename(file.name) || "",
+      };
+    });
+
+    let completed = 0;
+    onProgress?.({ stage: "responses", current: completed, total: items.length, year: academicYear, items: [...items] });
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        const item = items[index];
+        const cacheKey = `${item.file.id}:${item.file.modifiedTime || ""}`;
+        try {
+          if (driveResponseCountCacheRef.current.has(cacheKey)) {
+            item.responses = driveResponseCountCacheRef.current.get(cacheKey);
+          } else if (item.file.mimeType === GOOGLE_FORM_MIME) {
+            const responses = await listAllResponses(driveToken, item.file.id);
+            item.responses = responses.length;
+            driveResponseCountCacheRef.current.set(cacheKey, item.responses);
+          } else {
+            const { buffer } = await downloadDriveBuffer(item.file, driveToken);
+            const rows = readExcel(buffer);
+            item.responses = Math.max(0, rows.length - 1);
+            driveResponseCountCacheRef.current.set(cacheKey, item.responses);
+          }
+        } catch {
+          item.responseError = "تعذر قراءة العدد";
+        } finally {
+          completed += 1;
+          onProgress?.({ stage: "responses", current: completed, total: items.length, year: academicYear, items: [...items] });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, () => worker()));
+
+    items.sort((a, b) => Number(a.analyzed) - Number(b.analyzed) || a.file.name.localeCompare(b.file.name, "ar"));
+    return { year: academicYear, semester: academicSemester, items, reportsCount: reports.length };
+  }, [driveToken]);
+
   const ensureDriveTokenClient = useCallback(async () => {
     await loadGisScript();
     if (!tokenClientRef.current) {
@@ -2938,12 +3173,11 @@ export default function App() {
           setDriveConnecting(false);
           setDriveConnection("connected");
           saveStoredToken(DRIVE_TOKEN_KEY, resp.access_token, resp.expires_in);
-          await fetchDriveFiles(resp.access_token);
         },
       });
     }
     return tokenClientRef.current;
-  }, [fetchDriveFiles]);
+  }, []);
 
   const connectDrive = useCallback(async () => {
     if (!GOOGLE_CLIENT_ID) {
@@ -2970,6 +3204,10 @@ export default function App() {
     setDriveAccount("");
     clearStoredToken(DRIVE_TOKEN_KEY);
     setDriveFiles([]);
+    setDriveLibraryFiles([]);
+    setDriveLibraryNextPageToken("");
+    setDriveLibraryLoadingMore(false);
+    setDriveLibraryError("");
     setDriveSelected(null);
     setDriveSelectedIds(new Set());
     setDriveViewMode("list");
@@ -2993,6 +3231,10 @@ export default function App() {
       setDriveToken(null);
       clearStoredToken(DRIVE_TOKEN_KEY);
       setDriveFiles([]);
+      setDriveLibraryFiles([]);
+      setDriveLibraryNextPageToken("");
+      setDriveLibraryLoadingMore(false);
+      setDriveLibraryError("");
       setDriveConnection("disconnected");
       setDriveAccount("");
     });
@@ -3013,13 +3255,19 @@ export default function App() {
     })();
   }, [driveToken, ensureDriveTokenClient]);
 
-  // A token restored from localStorage skips connectDrive() entirely (and the file-list
-  // fetch that normally happens in its callback) — fetch once the Drive tab is actually open.
+  // Fetch only what the currently open workspace needs. This keeps connecting fast and
+  // avoids loading the analysis list while the user is browsing the Drive library.
   useEffect(() => {
     if (uploadTab === "drive" && driveToken && driveFiles.length === 0 && !driveLoading) {
       fetchDriveFiles(driveToken);
     }
   }, [uploadTab, driveToken, driveFiles.length, driveLoading, fetchDriveFiles]);
+
+  useEffect(() => {
+    if (showDriveLibrary && driveToken && driveLibraryFiles.length === 0 && !driveLibraryLoading) {
+      fetchDriveLibraryFiles(driveToken);
+    }
+  }, [showDriveLibrary, driveToken, driveLibraryFiles.length, driveLibraryLoading, fetchDriveLibraryFiles]);
 
   const handleDriveFileSelect = useCallback(async (file) => {
     if (!driveToken || !file) return;
@@ -3437,13 +3685,51 @@ export default function App() {
     setStep(1); setSingleFile(null); setSingleResult(null); setComparison(null);
     setSlots(defaultSlots()); setError(""); setProcessing(false); setShowSettings(false);
     setShowSemesterSurveys(false);
+    setShowDriveLibrary(false);
+    setShowSurveySummary(false);
+    setAnalysisPrompt(null); setCompletionMessage("");
+    setPdfCancelRequested(false); setPdfProgress({ current: 0, total: 0 });
+    setProcSteps(null); setProcFile(""); setDragging(false);
     setSingleHeaders(null); setSingleAllRows(null); setSingleSchema(null);
     setSingleMetaCols(null); setSingleRemoved(new Set());
     setSingleFilters({ dept: "", degree: "" });
     setDetectedAutoType(null); setRawRows(null);
     setBatchMode(false); setBatchFiles([]);
-    setUploadTab("upload"); setDriveSelected(null); setDriveViewMode("list");
+    setUploadTab("upload"); setDriveSelected(null); setDriveSelectedIds(new Set());
+    setDriveProcessing(false); setDriveBatchState(null); setDriveViewMode("list");
     setDriveFilterType(""); setDriveFilterYear(""); setDriveFilterProgram("");
+    pdfCancelRef.current = false;
+    driveBatchCancelRef.current = false;
+    if (singleRef.current) singleRef.current.value = "";
+  };
+
+  const startNewAnalysis = () => {
+    reset();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const openDriveLibraryFile = (file) => {
+    if (!file?.id) return;
+    const url = file.webViewLink || `https://drive.google.com/open?id=${encodeURIComponent(file.id)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const analyzeDriveLibrarySurvey = (file) => {
+    reset();
+    setShowHub(false);
+    setMode("annual");
+    setUploadTab("drive");
+    handleDriveFileSelect(file);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const analyzeSummarySurvey = (file) => {
+    if (file?.mimeType === GOOGLE_FORM_MIME) {
+      openHubTool("semester-quick-analysis");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    analyzeDriveLibrarySurvey(file);
   };
 
   const isAnnual = mode === "annual";
@@ -3457,10 +3743,13 @@ export default function App() {
     if (tool === "semester-create") setSemesterInitialTab("generate");
     if (tool === "semester-quick-analysis") setSemesterInitialTab("quick-analysis");
     if (tool === "semester-dashboard") setSemesterInitialTab("dashboard");
+    if (tool === "drive") setError("");
     setShowHub(false);
     setShowSurveyManagement(tool === "surveys");
     setShowSemesterSurveys(isSemesterTool);
     setShowCourseEval(tool === "courses");
+    setShowDriveLibrary(tool === "drive");
+    setShowSurveySummary(tool === "summary");
     setShowSettings(tool === "settings");
     if (tool === "analytics") reset();
     if (window.innerWidth <= 760) setSidebarOpen(false);
@@ -3507,14 +3796,20 @@ export default function App() {
     setShowSurveyManagement(false);
     setShowSemesterSurveys(false);
     setShowCourseEval(false);
+    setShowDriveLibrary(false);
+    setShowSurveySummary(false);
     setShowSettings(false);
     setShowHub(true);
   };
 
   const activeTool = showHub
     ? "home"
+    : showSurveySummary
+      ? "summary"
     : showSurveyManagement
       ? "surveys"
+    : showDriveLibrary
+      ? "drive"
     : showSemesterSurveys
         ? "semester"
         : showCourseEval
@@ -3526,8 +3821,8 @@ export default function App() {
     ? "الإعدادات"
     : activeTool === "surveys"
       ? "تصميم الاستبيانات"
-      : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة وحدة ضمان الجودة";
-  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool.startsWith("semester"));
+      : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة لجنة القياس والتقويم";
+  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool === "drive" || activeTool === "summary" || activeTool.startsWith("semester"));
   const showAiChat = showHub || (activeTool === "analytics" && step === 5);
 
   return (
@@ -3564,6 +3859,36 @@ export default function App() {
         {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
         {showHub ? (
           <QualityHub onOpen={openHubTool} />
+        ) : showSurveySummary ? (
+          <SurveySummary
+            connected={driveConnection === "connected"}
+            connecting={driveConnecting || driveConnection === "checking"}
+            onConnect={connectDrive}
+            onLoad={loadDriveQuickSummary}
+            onOpenFile={openDriveLibraryFile}
+            onAnalyzeSurvey={analyzeSummarySurvey}
+            schemas={allSchemas()}
+          />
+        ) : showDriveLibrary ? (
+          <DriveLibrary
+            connected={driveConnection === "connected"}
+            connecting={driveConnecting || driveConnection === "checking"}
+            account={driveAccount}
+            files={driveLibraryFiles}
+            loading={driveLibraryLoading}
+            loadingMore={driveLibraryLoadingMore}
+            hasMore={Boolean(driveLibraryNextPageToken)}
+            error={driveLibraryError || error}
+            onConnect={connectDrive}
+            onRefresh={() => fetchDriveLibraryFiles(driveToken)}
+            onLoadMore={() => fetchDriveLibraryFiles(driveToken, { append: true, pageToken: driveLibraryNextPageToken })}
+            onOpenFile={openDriveLibraryFile}
+            onAnalyzeSurvey={analyzeDriveLibrarySurvey}
+            detectYear={detectYearFromFilename}
+            detectProgram={detectProgramFromFilename}
+            detectType={detectTypeHintFromFilename}
+            schemas={allSchemas()}
+          />
         ) : showSurveyManagement ? (
           <SurveyManagement />
         ) : showSemesterSurveys ? (
@@ -3992,7 +4317,7 @@ export default function App() {
                     borderRadius: 16, padding: "20px 24px", marginBottom: 24,
                     display: "flex", alignItems: "center", gap: 20,
                   }}>
-                    <div style={{ fontSize: 52, lineHeight: 1 }}>{s?.icon ?? "📋"}</div>
+                    <div className={`qa-status-icon ${detectedAutoType ? "success" : "warning"}`} style={{ width: 54, height: 54 }}><QualityIcon name="report" size={26} /></div>
                     <div style={{ flex: 1 }}>
                       <div style={{
                         display: "inline-block", padding: "3px 12px", borderRadius: 20, fontSize: 11,
@@ -4045,7 +4370,7 @@ export default function App() {
                       borderRadius: 12, padding: "10px 16px", marginBottom: 24,
                       color: "#ffd54f", fontSize: 12.5,
                     }}>
-                      ⚠ تم رصد {blankRowCount} صف فارغ بالكامل — لن يتم استبعاده تلقائياً وسيُحتسب ضمن عدد المشاركين. يُفضّل حذفه يدوياً من خطوة "معاينة البيانات" التالية.
+                      <span className="qa-icon-label"><QualityIcon name="warning" size={15} /> تم رصد {blankRowCount} صف فارغ بالكامل — لن يتم استبعاده تلقائياً وسيُحتسب ضمن عدد المشاركين. يُفضّل حذفه يدوياً من خطوة "معاينة البيانات" التالية.</span>
                     </div>
                   )}
 
@@ -4086,7 +4411,7 @@ export default function App() {
                             background: surveyType === sc.id ? "rgba(26,188,156,.15)" : "rgba(255,255,255,.04)",
                             color: surveyType === sc.id ? "#1abc9c" : "rgba(255,255,255,.6)",
                           }}>
-                          {sc.icon ?? "📋"} {sc.label}
+                          <span className="qa-icon-label"><QualityIcon name="report" size={14} /> {sc.label}</span>
                         </button>
                       ))}
                     </div>
@@ -4149,7 +4474,8 @@ export default function App() {
 
                   {/* Row-level data preview — collapsible, sits below the dashboard */}
                   <CollapsibleSection
-                    title="🔍 معاينة البيانات"
+                    title="معاينة البيانات"
+                    icon="search"
                     defaultOpen={false}
                     badge={
                       <span style={{ color: "rgba(255,255,255,.4)", fontSize: 12, fontWeight: 400 }}>
@@ -4190,7 +4516,7 @@ export default function App() {
             {/* ══ STEP 5 — Results ══ */}
             {step === 5 && (
               <div>
-                <WorkflowHeader step="6" icon="chart" title="النتائج والتصدير" description="راجع الملخص ثم نزّل Word أو PDF أو افتح المعاينة المحسّنة." />
+                <WorkflowHeader step="6" icon="chart" title="النتائج والتصدير" description="راجع الملخص ثم نزّل التقرير بصيغة Word أو PDF." />
                 {isAnnual && singleResult && (
                   <div>
                     <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14, marginBottom: 18, textAlign: "center" }}>
@@ -4198,7 +4524,7 @@ export default function App() {
                       {meta.program ? ` — ${meta.program}` : ""}
                       {" | "}<span style={{ color: "#d6eaf8" }}>{meta.year}</span>
                     </div>
-                    <CollapsibleSection title="📊 ملخص النتائج" defaultOpen={true}>
+                    <CollapsibleSection title="ملخص النتائج" icon="chart" defaultOpen={true}>
                       <ResultsPreview result={singleResult} />
                     </CollapsibleSection>
                   </div>
@@ -4212,7 +4538,7 @@ export default function App() {
                       {" | مقارنة "}
                       {comparison.slots.map(s => s.year).join(" / ")}
                     </div>
-                    <CollapsibleSection title="📊 ملخص النتائج" defaultOpen={true}>
+                    <CollapsibleSection title="ملخص النتائج" icon="chart" defaultOpen={true}>
                       <ComparisonPreview comparison={comparison} />
                     </CollapsibleSection>
                   </div>
@@ -4221,16 +4547,16 @@ export default function App() {
                 <div style={{ textAlign: "center", padding: "28px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
                     {isAnnual ? (
-                      <button className="btn btn-blue" style={{ fontSize: 16, padding: "14px 36px" }}
+                      <button className="btn btn-blue qa-icon-button" style={{ fontSize: 16, padding: "14px 36px" }}
                         disabled={processing} onClick={downloadAnnual}>
                         {processing
                           ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="white" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري الإنشاء…</>
-                          : "📄 تحميل التقرير (Word)"}
+                          : <><QualityIcon name="download" size={17} /> تحميل التقرير (Word)</>}
                       </button>
                     ) : (
-                      <button className="btn btn-blue" style={{ fontSize: 16, padding: "14px 36px" }}
+                      <button className="btn btn-blue qa-icon-button" style={{ fontSize: 16, padding: "14px 36px" }}
                         disabled={processing} onClick={downloadComparison}>
-                        📄 تحميل تقرير المقارنة (Word)
+                        <QualityIcon name="download" size={17} /> تحميل تقرير المقارنة (Word)
                       </button>
                     )}
                     {isAnnual && singleResult && (
@@ -4243,15 +4569,6 @@ export default function App() {
                         </button>
                       </>
                     )}
-                    {isAnnual && singleResult && (
-                      <button
-                        className="btn btn-ghost"
-                        style={{ fontSize: 16, padding: "14px 36px", background: "rgba(30,58,138,.25)", borderColor: "rgba(37,99,235,.45)", color: "#93c5fd" }}
-                        onClick={() => setShowEnhancedView(true)}
-                      >
-                        ✨ معاينة محسّنة
-                      </button>
-                    )}
                   </div>
                   {isAnnual && singleResult && (
                     <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(255,255,255,.6)", cursor: "pointer" }}>
@@ -4261,11 +4578,25 @@ export default function App() {
                         onChange={e => setPdfIncludeCharts(e.target.checked)}
                         style={{ width: 15, height: 15, cursor: "pointer" }}
                       />
-                      تضمين الرسوم البيانية في تقرير الـ PDF (تعطيلها يقلل عدد الصفحات)
+                      تضمين رسوم تحليل المحاور التفصيلية (رسم ملخص النتائج يظهر دائمًا)
                     </label>
                   )}
                   <div style={{ color: "rgba(255,255,255,.35)", fontSize: 12 }}>
                     Word: تقرير كامل مع جداول ومحاور • PDF: تقرير مصمَّم بنفس الهوية البصرية جاهز للطباعة
+                  </div>
+                  <div style={{ width: "min(100%, 620px)", marginTop: 8, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,.1)" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={startNewAnalysis}
+                      disabled={processing || pdfGenerating || driveProcessing}
+                      style={{ width: "100%", fontSize: 15, padding: "13px 28px", borderColor: "rgba(26,188,156,.5)", color: "#5eead4" }}
+                    >
+                      ↻ قم بتحليل جديد
+                    </button>
+                    <div style={{ color: "rgba(255,255,255,.38)", fontSize: 11.5, marginTop: 8 }}>
+                      الرجوع إلى البداية لاختيار ملف أو استبيان آخر، مع الاحتفاظ بإعدادات التقرير وبيانات القائمين عليه.
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4304,39 +4635,6 @@ export default function App() {
       {/* ── Branded PDF generation overlay ── */}
       {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} cancelling={pdfCancelRequested}
         onCancel={() => { pdfCancelRef.current = true; setPdfCancelRequested(true); }} />}
-
-      {/* ── Enhanced Report View overlay (isolated, zero impact on existing flow) ── */}
-      {showEnhancedView && singleResult && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 9000,
-          background: "#f1f5f9",
-          overflowY: "auto",
-        }}>
-          {/* Close bar */}
-          <div style={{
-            position: "sticky", top: 0, zIndex: 9001,
-            background: "#1e3a8a",
-            padding: "10px 24px",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            boxShadow: "0 2px 12px rgba(0,0,0,.25)",
-          }}>
-            <span style={{ color: "#fff", fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 15 }}>
-              ✨ معاينة التقرير المحسّن
-            </span>
-            <button
-              onClick={() => setShowEnhancedView(false)}
-              style={{
-                background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)",
-                color: "#fff", borderRadius: 8, padding: "7px 20px",
-                fontFamily: "'Cairo',sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
-              }}
-            >
-              ✕ إغلاق
-            </button>
-          </div>
-          <EnhancedReportView result={singleResult} meta={meta} settings={settings} />
-        </div>
-      )}
 
       {/* AI Chat — floating panel, always visible */}
       {showAiChat && <AiChat

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { QualityIcon, QualityPageHeader } from "./UiElements.jsx";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -100,16 +101,16 @@ export default function PdfRecommendationReviewer() {
 
   return (
     <div>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>📄 مراجعة التوصيات (PDF)</div>
-        <div style={{ color: "rgba(255,255,255,.55)", fontSize: 13, marginTop: 4 }}>
-          افتح مجلد فيه ملفات مراجعة المقررات (PDF)، هيتم عرض آخر صفحة من كل ملف — حدّد المقررات اللي فيها توصيات فعلية وصدّر القائمة كـ Excel.
-        </div>
-      </div>
+      <QualityPageHeader
+        icon="report"
+        eyebrow="مراجعة تقارير المقررات"
+        title="مراجعة التوصيات"
+        description="اعرض الصفحة الأخيرة من ملفات PDF وحدد المقررات التي تحتوي على توصيات ثم صدّر القائمة إلى Excel."
+      />
 
       <div className="card" style={{ padding: 22, marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn btn-primary btn-sm" onClick={() => inputRef.current?.click()}>📁 فتح مجلد</button>
+          <button className="btn btn-primary btn-sm qa-icon-button" onClick={() => inputRef.current?.click()}><QualityIcon name="folder" size={15} /> فتح مجلد</button>
           <input
             ref={inputRef} type="file" webkitdirectory="" multiple style={{ display: "none" }}
             onChange={handleFolder}
@@ -118,13 +119,13 @@ export default function PdfRecommendationReviewer() {
             <>
               <button className="btn btn-ghost btn-sm" onClick={selectAll}>تحديد الكل</button>
               <button className="btn btn-ghost btn-sm" onClick={clearAll}>مسح الكل</button>
-              <button className="btn btn-primary btn-sm" disabled={!checkedCount} onClick={doExport}>📊 تصدير Excel ({checkedCount})</button>
+              <button className="btn btn-primary btn-sm qa-icon-button" disabled={!checkedCount} onClick={doExport}><QualityIcon name="download" size={15} /> تصدير Excel ({checkedCount})</button>
             </>
           )}
         </div>
         {total === 0 && (
           <div style={{ marginTop: 14, fontSize: 12, color: "rgba(255,255,255,.4)" }}>
-            ⚠️ يشتغل في Chrome / Edge فقط بسبب استخدام خاصية اختيار المجلد.
+            <span className="qa-icon-label"><QualityIcon name="info" size={14} /> يعمل اختيار المجلد في Chrome وEdge فقط.</span>
           </div>
         )}
         {total > 0 && (
@@ -133,7 +134,7 @@ export default function PdfRecommendationReviewer() {
               إجمالي: {total} · ✅ محدد: {checkedCount} · تم عرض {progress.done}/{progress.total}
             </div>
             <div style={{ height: 3, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%`, height: "100%", background: "linear-gradient(90deg,#1abc9c,#16a085)", transition: "width .3s" }} />
+              <div style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%`, height: "100%", background: "linear-gradient(90deg,#34d399,#60a5fa)", transition: "width .3s" }} />
             </div>
           </div>
         )}
@@ -168,15 +169,15 @@ function PdfCard({ name, state, thumb, on, onToggle }) {
       onClick={onToggle}
       style={{
         padding: 0, overflow: "hidden", cursor: "pointer",
-        borderColor: on ? "#3fbf85" : undefined,
-        boxShadow: on ? "0 0 0 1px #3fbf85, 0 4px 20px rgba(63,191,133,.18)" : undefined,
-        background: on ? "rgba(63,191,133,.08)" : undefined,
+        borderColor: on ? "#34d399" : undefined,
+        boxShadow: on ? "0 0 0 1px #34d399, 0 4px 20px rgba(52,211,153,.18)" : undefined,
+        background: on ? "rgba(52,211,153,.08)" : undefined,
         position: "relative",
       }}
     >
       {on && (
         <div style={{
-          position: "absolute", top: 8, insetInlineEnd: 8, background: "#3fbf85", color: "#031A0C",
+          position: "absolute", top: 8, insetInlineEnd: 8, background: "#34d399", color: "#031A0C",
           fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 20, zIndex: 2,
         }}>✓ توصيات</div>
       )}
@@ -190,9 +191,9 @@ function PdfCard({ name, state, thumb, on, onToggle }) {
         )}
       </div>
       <div style={{ padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid rgba(255,255,255,.08)" }}>
-        <input type="checkbox" checked={on} onChange={onToggle} onClick={e => e.stopPropagation()} style={{ accentColor: "#3fbf85", cursor: "pointer" }} />
+        <input type="checkbox" checked={on} onChange={onToggle} onClick={e => e.stopPropagation()} style={{ accentColor: "#34d399", cursor: "pointer" }} />
         <span title={name} style={{
-          fontSize: 11.5, color: on ? "#3fbf85" : "rgba(255,255,255,.6)", fontWeight: on ? 600 : 400,
+          fontSize: 11.5, color: on ? "#34d399" : "rgba(255,255,255,.6)", fontWeight: on ? 600 : 400,
           flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "ltr", textAlign: "left",
         }}>{nameNoExt}</span>
       </div>

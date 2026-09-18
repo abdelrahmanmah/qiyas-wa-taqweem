@@ -11,7 +11,7 @@ import {
   buildSurveysBackupBlob, importSurveysBackup,
 } from "./engine/customSurveyModel.js";
 import { readExcel } from "./engine/analyze.js";
-import { InlineNotice } from "./UiElements.jsx";
+import { InlineNotice, QualityIcon, QualityPageHeader } from "./UiElements.jsx";
 
 const SURVEY_CATALOG_CSS = `
 .survey-catalog-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
@@ -121,7 +121,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }} onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="card" style={{ maxWidth: 420, padding: 28, textAlign: "center" }}>
-        <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
+        <div className="qa-status-icon danger" style={{ width: 42, height: 42, margin: "0 auto 12px" }}><QualityIcon name="warning" size={21} /></div>
         <div style={{ color: "#fff", fontWeight: 900, fontSize: 17, marginBottom: 8 }}>{title}</div>
         <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 22 }}>{message}</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -215,15 +215,13 @@ function SurveyListView({
   return (
     <div>
       <style>{SURVEY_CATALOG_CSS}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div style={{ color: "#fff", fontWeight: 900, fontSize: 22 }}>مكتبة الاستبيانات</div>
-          <div style={{ color: "rgba(255,255,255,.45)", fontSize: 12.5, marginTop: 4 }}>
-            راجع الاستبيانات المتاحة، اعرف نطاق كل واحد، وأنشئ الاستبيان الناقص بسهولة.
-          </div>
-        </div>
-        <button className="btn btn-primary" onClick={onCreate}>+ استبيان جديد</button>
-      </div>
+      <QualityPageHeader
+        icon="report"
+        eyebrow="تصميم وإدارة النماذج"
+        title="مكتبة الاستبيانات"
+        description="راجع النماذج المتاحة، عدّل نصوصها، وأنشئ الاستبيان الناقص بنفس هوية وحدة الجودة."
+        actions={<button className="btn btn-primary qa-icon-button" onClick={onCreate}><QualityIcon name="plus" size={16} /> استبيان جديد</button>}
+      />
 
       <div style={{
         display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
@@ -231,16 +229,16 @@ function SurveyListView({
         borderRadius: 10, padding: 12, marginBottom: 20,
       }}>
         <span style={{ color: "rgba(255,255,255,.45)", fontSize: 11.5, fontWeight: 700 }}>قالب Excel:</span>
-        <button className="btn btn-ghost btn-sm" onClick={onDownloadTemplate}>⬇ تحميل القالب</button>
+        <button className="btn btn-ghost btn-sm qa-icon-button" onClick={onDownloadTemplate}><QualityIcon name="download" size={14} /> تحميل القالب</button>
         <input ref={templateFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleTemplateFile} />
-        <button className="btn btn-blue btn-sm" onClick={() => templateFileRef.current.click()}>📤 استيراد استبيان من قالب</button>
+        <button className="btn btn-blue btn-sm qa-icon-button" onClick={() => templateFileRef.current.click()}><QualityIcon name="upload" size={14} /> استيراد استبيان من قالب</button>
 
         <span style={{ width: 1, height: 20, background: "rgba(255,255,255,.12)", margin: "0 6px" }} />
 
         <span style={{ color: "rgba(255,255,255,.45)", fontSize: 11.5, fontWeight: 700 }}>نسخة احتياطية:</span>
-        <button className="btn btn-ghost btn-sm" onClick={onExportBackup}>⬇ تصدير نسخة احتياطية (JSON)</button>
+        <button className="btn btn-ghost btn-sm qa-icon-button" onClick={onExportBackup}><QualityIcon name="download" size={14} /> تصدير نسخة احتياطية (JSON)</button>
         <input ref={backupFileRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleBackupFile} />
-        <button className="btn btn-ghost btn-sm" onClick={() => backupFileRef.current.click()}>⬆ استيراد نسخة احتياطية</button>
+        <button className="btn btn-ghost btn-sm qa-icon-button" onClick={() => backupFileRef.current.click()}><QualityIcon name="upload" size={14} /> استيراد نسخة احتياطية</button>
       </div>
 
       {toolbarMsg && (
@@ -264,7 +262,7 @@ function SurveyListView({
         ) : visibleSurveys.map((s, index) => (
           <article key={`${s.builtIn ? "builtin" : "custom"}-${s.id}`} className="survey-catalog-card">
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-              <span className="survey-card-icon">{["◫","◎","◇","▤","◉"][index % 5]}</span>
+              <span className="survey-card-icon"><QualityIcon name={["report", "chart", "users", "table", "sheet"][index % 5]} size={22} /></span>
               {s.builtIn ? <span className="badge" style={{ background: "rgba(96,165,250,.13)", color: "#93c5fd", border: "1px solid rgba(96,165,250,.22)" }}>مدمج بالنظام</span> : <StatusBadge status={s.status} />}
             </div>
             <div className="survey-card-title">{s.name || "(بدون اسم)"}</div>
@@ -451,8 +449,8 @@ const REPORT_TEXT_FIELDS = [
   { key: "introduction", label: "مقدمة خاصة بالتقرير", placeholder: "اكتب مقدمة توضّح هدف هذا الاستبيان ونطاق التقرير...", rows: 4, wide: true },
   { key: "variablesText", label: "نص متغيرات الاستبيان", placeholder: "اشتمل الاستبيان على ({عدد_الأسئلة}) عبارة تتمثل في ({عدد_المحاور}) محور رئيسي.", rows: 3, wide: true },
   { key: "methodologyText", label: "نص المعالجة الإحصائية", placeholder: "النسب والمتوسط الحسابي.", rows: 3, wide: true },
-  { key: "resultsHeading", label: "عنوان قسم النتائج", placeholder: "رابعاً: عرض النتائج وتحليلها ومناقشتها", rows: 1 },
-  { key: "summaryHeading", label: "عنوان ملخص النتائج", placeholder: "خامساً: ملخص النتائج", rows: 1 },
+  { key: "resultsHeading", label: "عنوان قسم النتائج", placeholder: "خامساً: عرض النتائج وتحليلها ومناقشتها", rows: 1 },
+  { key: "summaryHeading", label: "عنوان ملخص النتائج", placeholder: "رابعاً: ملخص النتائج", rows: 1 },
   { key: "recommendationsHeading", label: "عنوان قسم التوصيات", placeholder: "أخيراً: التوصيات", rows: 1 },
   { key: "noRecommendationsText", label: "النص عند عدم وجود توصيات", placeholder: "لا توجد توصيات.", rows: 1 },
   { key: "recommendationTemplate", label: "صيغة التوصية التلقائية", placeholder: "مراجعة محور \"{اسم_المحور}\" لأنه سجل نسبة موافقة {النسبة}%.", rows: 3, wide: true },
@@ -533,7 +531,7 @@ function ImportFromExcel({ onImported }) {
       background: "rgba(26,188,156,.06)", border: "1px dashed rgba(26,188,156,.35)",
       borderRadius: 12, padding: 16, marginBottom: 18,
     }}>
-      <div style={{ color: "#fff", fontWeight: 800, fontSize: 13.5, marginBottom: 4 }}>📥 استيراد تلقائي من ملف Excel (اختياري)</div>
+      <div className="qa-icon-label" style={{ color: "#fff", fontWeight: 800, fontSize: 13.5, marginBottom: 4 }}><QualityIcon name="upload" size={16} /> استيراد تلقائي من ملف Excel (اختياري)</div>
       <div style={{ color: "rgba(255,255,255,.5)", fontSize: 12, marginBottom: 10 }}>
         يكتشف النظام الأسئلة من صفوف العناوين تلقائياً، ويستثني أعمدة المعلومات العامة (الاسم، البريد، الوظيفة/الدرجة، القسم/التخصص، الملاحظات).
         كل الأسئلة المكتشفة توضع في محور واحد جديد — يمكنك بعد ذلك تقسيمها على عدة محاور من تبويب "المحاور".
@@ -607,7 +605,7 @@ function SurveyEditorView({ survey: initial, onSave, onCancel }) {
       <style>{SURVEY_CATALOG_CSS}</style>
       <div className="editor-topbar">
         <div className="editor-title-row">
-          <span className="editor-title-icon">✎</span>
+          <span className="editor-title-icon"><QualityIcon name="edit" size={21} /></span>
           <div style={{ minWidth: 0 }}>
             <div className="editor-title">{survey.name || "استبيان جديد"}</div>
             <div className="editor-kicker">محرر الاستبيان · {survey.sections.length} محاور · {countQuestions(survey)} سؤال</div>
@@ -709,7 +707,7 @@ function SurveyEditorView({ survey: initial, onSave, onCancel }) {
             <div><div style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}>هيكل الاستبيان</div><div style={{ color: "rgba(255,255,255,.42)", fontSize: 11.5, marginTop: 3 }}>قسّم الأسئلة إلى محاور واضحة؛ الإعدادات الأقل استخدامًا موجودة داخل كل سؤال.</div></div>
             <div className="sections-summary"><span className="editor-count-chip">{survey.sections.length} محاور</span><span className="editor-count-chip">{countQuestions(survey)} سؤال</span><button className="btn btn-blue btn-sm" onClick={addSection}>＋ محور جديد</button></div>
           </div>
-          {survey.sections.length === 0 && <div className="editor-empty"><div style={{ fontSize: 32, marginBottom: 8 }}>▤</div><div style={{ color: "#fff", fontWeight: 800, marginBottom: 5 }}>ابدأ بإضافة أول محور</div><div style={{ color: "rgba(255,255,255,.42)", fontSize: 12, marginBottom: 16 }}>كل محور يجمع مجموعة أسئلة تقيس جانبًا محددًا.</div><button className="btn btn-primary" onClick={addSection}>＋ إضافة أول محور</button></div>}
+          {survey.sections.length === 0 && <div className="editor-empty"><div className="qa-status-icon info" style={{ width: 46, height: 46, margin: "0 auto 10px" }}><QualityIcon name="table" size={22} /></div><div style={{ color: "#fff", fontWeight: 800, marginBottom: 5 }}>ابدأ بإضافة أول محور</div><div style={{ color: "rgba(255,255,255,.42)", fontSize: 12, marginBottom: 16 }}>كل محور يجمع مجموعة أسئلة تقيس جانبًا محددًا.</div><button className="btn btn-primary qa-icon-button" onClick={addSection}><QualityIcon name="plus" size={16} /> إضافة أول محور</button></div>}
           {survey.sections.map((sec, i) => (
             <SectionBlock
               key={sec.id} section={sec} index={i} total={survey.sections.length}

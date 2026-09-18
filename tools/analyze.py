@@ -5,8 +5,8 @@ Reads a YAML schema + Excel file and outputs the same result JSON that the
 React frontend produces, making it usable for batch processing or scripting.
 
 Usage:
-  python analyze.py <schema.yaml> <survey.xlsx> [--out result.json]
-  python analyze.py <schemas/> <survey.xlsx>     # auto-detect schema
+  python tools/analyze.py <schema.yaml> <survey.xlsx> [--out result.json]
+  python tools/analyze.py <schemas/> <survey.xlsx>     # auto-detect schema
 """
 import sys
 import re

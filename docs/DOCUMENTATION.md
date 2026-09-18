@@ -467,6 +467,6 @@ server as part of report generation.
 - `docx` 9.x's RTL limitation requires the `cellAlign` workaround throughout `buildDocx.js` —
   a known, permanent constraint of the library, not a defect to fix.
 - The Course Splitter's default block marker/offset were reconstructed against a real,
-  verified-working reference implementation (`course_eval_splitte V3r.html`) but different
+  verified-working reference implementation (`legacy/course_eval_splitte.html`) but different
   UMIS report template versions may still require adjusting them via the exposed
   marker/offset settings.

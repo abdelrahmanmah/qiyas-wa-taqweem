@@ -73,9 +73,14 @@ export const DEFAULT_SETTINGS = {
     "والمراجعة الداخلية والخارجية الدورية مع العمل على التطوير والتحسين المستمر للأرتقاء بالعملية التعليمية " +
     "والبحثية والخدمة المجتمعية بما يحقق رسالة الكلية ، ويتسق مع رسالة الجامعة لكسب ثقة المجتمع وتحقيق " +
     "التنمية المستدامة ويؤهل الكلية للحصول علي الإعتماد المؤسسي والأكاديمي .",
+  qualityEmail:     "qa-mebt@eru.edu.eg",
+  measurementEmail: "meb-maec@eru.edu.eg",
   email: "E-mail: qa-mebt@eru.edu.eg    |    E-mail: meb-maec@eru.edu.eg",
   includeRecommendations: true,
   includeEvaluatorsTable: true,
+  includeCommitteeHead:   true,
+  includeEvaluator:       true,
+  includeReviewer:        true,
   includeParticipants:    true,
   includeVisionMission:   true,
   recommendationsCount:   5,
@@ -244,6 +249,8 @@ function buildHeader(logoData, s) {
 
 // ── Page footer ───────────────────────────────────────────────────────────────
 function buildFooter(s) {
+  const qualityEmail = String(s.qualityEmail || "qa-mebt@eru.edu.eg").trim();
+  const measurementEmail = String(s.measurementEmail || "meb-maec@eru.edu.eg").trim();
   const identity = s.includeVisionMission === false ? [] : [
     new Paragraph({
       bidirectional: true,
@@ -266,77 +273,84 @@ function buildFooter(s) {
         children: [],
       }),
       ...identity,
-      new Paragraph({
+      ...(qualityEmail ? [new Paragraph({
+        bidirectional: true,
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: s.email, font: _font, size: 14, color: _C.primary })],
-      }),
+        spacing: { before: 20, after: 0 },
+        children: [new TextRun({ text: `البريد الإلكتروني للجودة: ${qualityEmail}`, font: _font, size: 14, color: _C.primary, rightToLeft: true })],
+      })] : []),
+      ...(measurementEmail ? [new Paragraph({
+        bidirectional: true,
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 0 },
+        children: [new TextRun({ text: `البريد الإلكتروني للقياس والتقويم: ${measurementEmail}`, font: _font, size: 14, color: _C.primary, rightToLeft: true })],
+      })] : []),
     ],
   });
 }
 
 // ── Cover page ────────────────────────────────────────────────────────────────
-function buildCoverPage(result, meta) {
+function buildCoverPage(result, meta, s) {
   const { n, schemaLabel } = result;
-  const nodes = [
-    spacer(),
-    bodyPara(reportText(result, "reportTitle", "نتائج تحليل استبيان", meta),
-      { bold: true, size: 36, color: _C.primary, align: AlignmentType.CENTER, before: 400, after: 60 }),
-    bodyPara(reportText(result, "reportSubtitle", `قياس آراء ورضا ${schemaLabel}`, meta),
-      { bold: true, size: 28, color: _C.darkGray, align: AlignmentType.CENTER, before: 40, after: 40 }),
-    bodyPara(`للعام الدراسي ${meta.year}`,
-      { bold: true, size: 22, color: _C.secondary, align: AlignmentType.CENTER, before: 40, after: 60 }),
-    spacer(), spacer(),
-    bodyPara(`عدد المشاركين بعد حذف التكرارات: ${n}`, { size: 22, bold: true, align: AlignmentType.CENTER }),
+  const infoRows = [
+    ["اسم الاستبيان", schemaLabel],
+    ...(meta.program ? [["البرنامج / القسم", meta.program]] : []),
+    ["عدد المشاركين في التحليل", String(n)],
+    ["العام الدراسي", meta.year || "—"],
+    ["موجه إلى", "مدير وحدة الجودة بالكلية"],
   ];
-
-  if (meta.program) {
-    nodes.push(bodyPara(`البرنامج / القسم: ${meta.program}`, { bold: true, size: 22, color: _C.secondary, align: AlignmentType.CENTER }));
-  }
+  const labelW = Math.floor(CW * 0.31);
+  const valueW = CW - labelW;
+  const signers = s.includeEvaluatorsTable === false ? [] : [
+    ...(s.includeCommitteeHead !== false ? [{ name: s.qmName || "", role: "رئيس لجنة القياس والتقويم" }] : []),
+    ...(s.includeEvaluator !== false ? [{ name: meta.preparedBy || "", role: "القائم بالتقييم" }] : []),
+    ...(s.includeReviewer !== false ? [{ name: meta.reviewer || "", role: "القائم بالمراجعة" }] : []),
+  ];
+  const signerW = signers.length ? Math.floor(CW / signers.length) : CW;
+  const nodes = [
+    bodyPara(reportText(result, "reportTitle", `استبيان ${schemaLabel}`, meta),
+      { bold: true, size: 34, color: _C.primary, align: AlignmentType.CENTER, before: 180, after: 40 }),
+    bodyPara(reportText(result, "reportSubtitle", "تقرير نتائج تحليل الاستبيانات", meta),
+      { bold: false, size: 22, color: _C.darkGray, align: AlignmentType.CENTER, before: 20, after: 20 }),
+    bodyPara(s.committeeName,
+      { bold: true, size: 24, color: _C.secondary, align: AlignmentType.CENTER, before: 20, after: 140 }),
+    sectionHeading("  البيانات الأساسية  "),
+    spacer(),
+    new Table({
+      width: { size: CW, type: WidthType.DXA },
+      columnWidths: [valueW, labelW],
+      rows: infoRows.map(([label, value], i) => {
+        const bg = i % 2 === 0 ? _C.white : _C.lighter;
+        return new TableRow({ children: [
+          tcNum(String(value), { fill: bg, w: valueW, size: 18, bold: true }),
+          tc(label, { fill: bg, w: labelW, size: 18, bold: true }),
+        ]});
+      }),
+    }),
+  ];
 
   if (result.reportTexts?.introduction?.trim()) {
     nodes.push(bodyPara(reportText(result, "introduction", "", meta), { size: 20, align: AlignmentType.CENTER, before: 80, after: 80 }));
   }
 
-  nodes.push(
-    bodyPara("موجه إلى: مدير وحدة الجودة بالكلية", { bold: true, size: 22, color: _C.primary, align: AlignmentType.CENTER }),
-    spacer(),
-    new Paragraph({ children: [new PageBreak()] }),
-  );
-  return nodes;
-}
+  if (signers.length) {
+    nodes.push(
+      sectionHeading("  القائم بالتقييم  "),
+      spacer(),
+      new Table({
+        width: { size: CW, type: WidthType.DXA },
+        columnWidths: signers.map(() => signerW),
+        rows: [new TableRow({ children: [...signers].reverse().map(({ name, role }) => cell([
+          rp([mk(name || "—", { size: 19, bold: true, color: _C.primary })], { alignment: AlignmentType.CENTER, spacing: { after: 50 } }),
+          rp([mk(role, { size: 17, color: _C.darkGray })], { alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
+          rp([mk("التوقيع: ....................", { size: 15, color: "777777" })], { alignment: AlignmentType.CENTER }),
+        ], { noBorder: true, w: signerW })) })],
+      }),
+    );
+  }
 
-// ── Evaluators table ──────────────────────────────────────────────────────────
-function buildEvaluatorsSection(meta, s) {
-  const cw = [Math.floor(CW * 0.33), Math.floor(CW * 0.33), CW - 2 * Math.floor(CW * 0.33)];
-  return [
-    bodyPara("موجه إلى: مدير وحدة الجودة بالكلية", { bold: true, size: 22, color: _C.primary, align: AlignmentType.CENTER }),
-    spacer(),
-    sectionHeading("  جدول القائم بالتقييم  "),
-    spacer(),
-    new Table({
-      width: { size: CW, type: WidthType.DXA },
-      columnWidths: cw,
-      rows: [
-        new TableRow({ tableHeader: true, children: [
-          hCell("التوقيع", cw[0]), hCell("الوظيفة", cw[1]), hCell("الاسم", cw[2]),
-        ]}),
-        ...[
-          { name: meta.preparedBy || "", role: "أعد التقرير" },
-          { name: meta.reviewer   || "", role: "راجع التقرير" },
-          { name: "",                    role: "" },
-          { name: "",                    role: "" },
-        ].map((row, i) => {
-          const bg = i % 2 === 0 ? _C.lighter : _C.white;
-          return new TableRow({ children: [
-            tc("",             { fill: bg, w: cw[0] }),
-            textCell(row.role, bg, cw[1]),
-            textCell(row.name, bg, cw[2]),
-          ]});
-        }),
-      ],
-    }),
-    spacer(),
-  ];
+  nodes.push(new Paragraph({ children: [new PageBreak()] }));
+  return nodes;
 }
 
 function buildCustomAfterEvaluatorsSection(result) {
@@ -601,7 +615,7 @@ function buildDetailedSection(result) {
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading(`  ${reportText(result, "resultsHeading", result.reportSections?.afterEvaluators ? "خامساً: عرض النتائج وتحليلها ومناقشتها" : "رابعاً: عرض النتائج وتحليلها ومناقشتها")}  `),
+    sectionHeading(`  ${reportText(result, "resultsHeading", result.reportSections?.afterEvaluators ? "سادساً: عرض النتائج وتحليلها ومناقشتها" : "خامساً: عرض النتائج وتحليلها ومناقشتها")}  `),
     spacer(),
     new Table({
       width: { size: CW, type: WidthType.DXA },
@@ -643,7 +657,7 @@ function buildSummarySection(result) {
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading(`  ${reportText(result, "summaryHeading", result.reportSections?.afterEvaluators ? "سادساً: ملخص النتائج" : "خامساً: ملخص النتائج")}  `),
+    sectionHeading(`  ${reportText(result, "summaryHeading", result.reportSections?.afterEvaluators ? "خامساً: ملخص النتائج" : "رابعاً: ملخص النتائج")}  `),
     spacer(),
     new Table({ width: { size: CW, type: WidthType.DXA }, columnWidths: cw,
       rows: [new TableRow({ tableHeader: true, children: headerCells }), ...dataRows, totalRow] }),
@@ -828,7 +842,7 @@ function buildCoordinatorDetailedSection(result) {
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading("  رابعاً: عرض النتائج وتحليلها  "),
+    sectionHeading("  خامساً: عرض النتائج وتحليلها  "),
     spacer(),
     new Table({ width: { size: CW, type: WidthType.DXA }, columnWidths: cw, rows: allRows }),
     spacer(),
@@ -870,7 +884,7 @@ function buildCoordinatorSummarySection(result) {
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
-    sectionHeading("  خامساً: ملخص النتائج  "),
+    sectionHeading("  رابعاً: ملخص النتائج  "),
     spacer(),
     new Table({ width: { size: CW, type: WidthType.DXA }, columnWidths: cw,
       rows: [headerRow, ...dataRows, totalRow] }),
@@ -939,19 +953,22 @@ function applyDesign(s) {
 export async function buildAnnualDocx(result, meta, settings = {}) {
   const perSurvey = settings.surveyReportOptions?.[result.schemaId] ?? {};
   const s = { ...DEFAULT_SETTINGS, ...settings, ...perSurvey };
+  if (s.reportTexts) {
+    result = { ...result, reportTexts: { ...(result.reportTexts ?? {}), ...s.reportTexts } };
+  }
   applyDesign(s);
   const logoData = await getLogoData(s);
   const isCoord = result.schemaId === "coordinator";
+  const skipStandardSections = result.reportSections?.skipStandardSections === true;
   const children = [
-    ...buildCoverPage(result, meta),
-    ...(s.includeEvaluatorsTable ? buildEvaluatorsSection(meta, s) : []),
+    ...buildCoverPage(result, meta, s),
     ...buildCustomAfterEvaluatorsSection(result),
-    ...(s.includeParticipants ? buildFixedParticipantsSection(result) : []), // قبل أولاً
-    ...buildVariablesSection(result),                                       // أولاً
-    ...buildMethodologySection(result),                                     // ثانياً
-    ...(s.includeParticipants ? buildParticipantsSection(result) : []),     // ثالثاً
-    ...(isCoord ? buildCoordinatorDetailedSection(result) : buildDetailedSection(result)),   // رابعاً
-    ...(isCoord ? buildCoordinatorSummarySection(result) : buildSummarySection(result)),     // خامساً
+    ...(!skipStandardSections && s.includeParticipants ? buildFixedParticipantsSection(result) : []),
+    ...(!skipStandardSections ? buildVariablesSection(result) : []),
+    ...(!skipStandardSections ? buildMethodologySection(result) : []),
+    ...(!skipStandardSections && s.includeParticipants ? buildParticipantsSection(result) : []),
+    ...(isCoord ? buildCoordinatorSummarySection(result) : buildSummarySection(result)),     // رابعاً
+    ...(isCoord ? buildCoordinatorDetailedSection(result) : buildDetailedSection(result)),   // خامساً
     ...(!isCoord && s.includeRecommendations ? buildRecommendationsSection(result, s) : []), // أخيراً
     ...buildSignatureBlock(s),
   ];
@@ -959,11 +976,16 @@ export async function buildAnnualDocx(result, meta, settings = {}) {
 }
 
 export async function buildComparisonDocx(comparison, meta, settings = {}) {
-  const s = { ...DEFAULT_SETTINGS, ...settings };
+  const schemaId = comparison.slots[0].result.schemaId;
+  const perSurvey = settings.surveyReportOptions?.[schemaId] ?? {};
+  const s = { ...DEFAULT_SETTINGS, ...settings, ...perSurvey };
+  const coverResult = s.reportTexts
+    ? { ...comparison.slots[0].result, reportTexts: { ...(comparison.slots[0].result.reportTexts ?? {}), ...s.reportTexts } }
+    : comparison.slots[0].result;
   applyDesign(s);
   const logoData = await getLogoData(s);
   const children = [
-    ...buildCoverPage(comparison.slots[0].result, meta),
+    ...buildCoverPage(coverResult, meta, s),
     ...buildComparisonSection(comparison, meta),
     ...buildSignatureBlock(s),
   ];

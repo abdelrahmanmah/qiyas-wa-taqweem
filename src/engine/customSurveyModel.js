@@ -122,6 +122,14 @@ export function createReportTexts(overrides = {}) {
   };
 }
 
+function mergeBuiltInReportTexts(defaults, saved) {
+  const merged = createReportTexts(defaults);
+  Object.entries(saved ?? {}).forEach(([key, value]) => {
+    if (typeof value === "string" && value.trim()) merged[key] = value;
+  });
+  return merged;
+}
+
 export function createSurvey(overrides = {}) {
   const now = new Date().toISOString();
   return {
@@ -559,7 +567,7 @@ export function getAllAnalysisSchemas() {
   const textOverrides = loadBuiltInReportTexts();
   const builtIns = Object.fromEntries(Object.entries(BUILTIN_SCHEMAS).map(([id, schema]) => [id, {
     ...schema,
-    reportTexts: createReportTexts(textOverrides[id]),
+    reportTexts: mergeBuiltInReportTexts(schema.reportTexts, textOverrides[id]),
   }]));
   return { ...builtIns, ...getActiveCustomAnalysisSchemas() };
 }
@@ -589,7 +597,7 @@ export function getBuiltInSurveyCatalog() {
     updatedAt: null,
     builtIn: true,
     isFlat: schema.isFlat === true,
-    reportTexts: createReportTexts(textOverrides[schema.id]),
+    reportTexts: mergeBuiltInReportTexts(schema.reportTexts, textOverrides[schema.id]),
     programs: schema.programs || [],
   }));
 }

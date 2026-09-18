@@ -11,7 +11,7 @@ This release captures the application **exactly as it currently works**, with no
 refactoring, no logic changes, and no new features. Its purpose is to give the team a known,
 named, reviewable baseline (`v1.0.0`) before any further feature work begins.
 
-See [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) for the full technical breakdown and
+See [PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the full technical breakdown and
 [CHANGELOG.md](CHANGELOG.md) for the itemized feature list.
 
 ## Headline capabilities at v1.0.0
@@ -32,7 +32,7 @@ See [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) for the full technical breakdown 
 - No code refactoring.
 - No logic or statistical-computation changes.
 - No new survey types or report formats.
-- No fixes to known limitations (see "Limitations" in `PROJECT_OVERVIEW.md`) — they are
+- No fixes to known limitations (see "Limitations" in `docs/PROJECT_OVERVIEW.md`) — they are
   documented, not resolved, here.
 
 ## Cleanup performed before this release

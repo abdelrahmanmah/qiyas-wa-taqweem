@@ -73,14 +73,24 @@ function balancedChunks(arr, maxSize) {
 // boundary (mid-table-row, mid-bar) further down in downloadBrandedReportPdf.
 // Chunking the summary table, the axis chart, and the recommendations table
 // up front avoids that for the sections most likely to be long.
-const SUMMARY_ROWS_PER_PAGE = 13;
+const SUMMARY_ROWS_PER_PAGE = 16;
 const RECS_ROWS_PER_PAGE = 14;
 
 // ── small building blocks ──────────────────────────────────────────────────────
 function pageOpen(extraClass = "") {
   return `<div class="pdf-page-outer"><div class="pdf-page ${extraClass}">`;
 }
-const pageClose = "</div></div>";
+
+function pageClose(s) {
+  const qualityEmail = String(s.qualityEmail || "qa-mebt@eru.edu.eg").trim();
+  const measurementEmail = String(s.measurementEmail || "meb-maec@eru.edu.eg").trim();
+  return `
+    <div class="pdf-page-footer">
+      ${qualityEmail ? `<span>Quality Assurance: ${esc(qualityEmail)}</span>` : ""}
+      ${measurementEmail ? `<span>Measurement &amp; Evaluation: ${esc(measurementEmail)}</span>` : ""}
+    </div>
+  </div></div>`;
+}
 
 function pageHeader(s, logoSrc) {
   return `
@@ -142,9 +152,13 @@ function buildCoverPage(result, meta, s, logoSrc) {
     ...(meta.program ? [["البرنامج / القسم", meta.program]] : []),
     ["عدد المشاركين في التحليل", n],
     ["العام الدراسي", meta.year || "—"],
-    ...(meta.preparedBy ? [["أعدّ التقرير", meta.preparedBy]] : []),
-    ...(meta.reviewer ? [["راجع التقرير", meta.reviewer]] : []),
     ["موجه إلى", "مدير وحدة الجودة بالكلية"],
+  ];
+
+  const signers = s.includeEvaluatorsTable === false ? [] : [
+    ...(s.includeCommitteeHead !== false ? [{ name: s.qmName || "", role: "رئيس لجنة القياس والتقويم" }] : []),
+    ...(s.includeEvaluator !== false ? [{ name: meta.preparedBy || "", role: "القائم بالتقييم" }] : []),
+    ...(s.includeReviewer !== false ? [{ name: meta.reviewer || "", role: "القائم بالمراجعة" }] : []),
   ];
 
   return `
@@ -155,56 +169,53 @@ function buildCoverPage(result, meta, s, logoSrc) {
         <div class="pdf-cover-subtitle">${esc(reportText(result, "reportSubtitle", "تقرير نتائج تحليل الاستبيانات", meta))}</div>
         <div class="pdf-cover-committee">${esc(s.committeeName)}</div>
       </div>
-      ${result.reportTexts?.introduction?.trim() ? `<p class="pdf-cover-intro">${esc(reportText(result, "introduction", "", meta))}</p>` : ""}
       ${sectionHeading("البيانات الأساسية")}
       <div class="pdf-info-table">
         ${rows.map(([l, v], i) => infoRow(l, v, i)).join("")}
       </div>
-      ${sectionHeading("القائم بالتقييم")}
-      <div class="pdf-sig-row">
-        <div class="pdf-sig-box">
-          <div class="pdf-sig-name">${esc(meta.preparedBy || "—")}</div>
-          <div class="pdf-sig-role">أعد التقرير</div>
-          <div class="pdf-sig-line">التوقيع: ....................</div>
-        </div>
-        <div class="pdf-sig-box">
-          <div class="pdf-sig-name">${esc(meta.reviewer || "—")}</div>
-          <div class="pdf-sig-role">راجع التقرير</div>
-          <div class="pdf-sig-line">التوقيع: ....................</div>
-        </div>
-      </div>
-    ${pageClose}`;
+      ${signers.length ? `
+        ${sectionHeading("القائم بالتقييم")}
+        <div class="pdf-sig-row">
+          ${signers.map(({ name, role }) => `
+            <div class="pdf-sig-box">
+              <div class="pdf-sig-name">${esc(name || "—")}</div>
+              <div class="pdf-sig-role">${esc(role)}</div>
+              <div class="pdf-sig-line">التوقيع: ....................</div>
+            </div>`).join("")}
+        </div>` : ""}
+    ${pageClose(s)}`;
 }
 
-function buildVisionPage(s, logoSrc) {
-  return `
-    ${pageOpen()}
-      ${pageHeader(s, logoSrc)}
-      ${sectionHeading(`رؤية ورسالة ${s.unitName}`)}
-      <div class="pdf-vm-block">
-        <div class="pdf-vm-title">الرؤية</div>
-        <div class="pdf-vm-text">${esc(s.vision)}</div>
-      </div>
-      <div class="pdf-vm-block">
-        <div class="pdf-vm-title">الرسالة</div>
-        <div class="pdf-vm-text">${esc(s.mission)}</div>
-      </div>
-      <div class="pdf-vm-footer">${esc(s.email)}</div>
-    ${pageClose}`;
-}
-
-function buildCustomReportSectionPage(result, s, logoSrc) {
+function buildContextPage(result, meta, s, logoSrc) {
   const section = result.reportSections?.afterEvaluators;
-  if (!section) return "";
+  const introduction = result.reportTexts?.introduction?.trim()
+    ? reportText(result, "introduction", "", meta)
+    : "";
+  const includeVisionMission = s.includeVisionMission !== false;
+  if (!section && !introduction && !includeVisionMission) return "";
   return `
-    ${pageOpen()}
+    ${pageOpen("pdf-context-page")}
       ${pageHeader(s, logoSrc)}
-      ${sectionHeading(section.title)}
-      ${section.intro ? `<p class="pdf-body-text">${esc(section.intro)}</p>` : ""}
-      <ol class="pdf-procedure-list">
-        ${(section.items ?? []).map(item => `<li>${esc(item)}</li>`).join("")}
-      </ol>
-    ${pageClose}`;
+      ${introduction ? `
+        ${sectionHeading("مقدمة")}
+        <p class="pdf-body-text">${esc(introduction)}</p>` : ""}
+      ${includeVisionMission ? `
+        ${sectionHeading("رؤية ورسالة وحدة ضمان الجودة")}
+        <div class="pdf-vm-block">
+          <div class="pdf-vm-title">الرؤية</div>
+          <div class="pdf-vm-text">${esc(s.vision)}</div>
+        </div>
+        <div class="pdf-vm-block">
+          <div class="pdf-vm-title">الرسالة</div>
+          <div class="pdf-vm-text">${esc(s.mission)}</div>
+        </div>` : ""}
+      ${section ? `
+        ${sectionHeading(section.title)}
+        ${section.intro ? `<p class="pdf-body-text">${esc(section.intro)}</p>` : ""}
+        <ol class="pdf-procedure-list">
+          ${(section.items ?? []).map(item => `<li>${esc(item)}</li>`).join("")}
+        </ol>` : ""}
+    ${pageClose(s)}`;
 }
 
 // Same fixed degree×department headcount table as buildFixedParticipantsSection
@@ -288,12 +299,14 @@ function buildMethodologyPage(result, s, logoSrc) {
       </div>` : ""}
 
       ${buildFixedParticipantsBlock(result)}
-    ${pageClose}`;
+    ${pageClose(s)}`;
 }
 
 function buildSummaryTablePages(result, s, logoSrc) {
   const { axes, n, overallAgreePct, overallDirection } = result;
-  const pages = balancedChunks(axes, SUMMARY_ROWS_PER_PAGE);
+  // Fill each summary page before opening the next one. The previous balanced
+  // split (for example 9 + 8 rows) left a large unused area on the first page.
+  const pages = chunk(axes, SUMMARY_ROWS_PER_PAGE);
 
   return pages.map((pageAxes, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
@@ -323,17 +336,47 @@ function buildSummaryTablePages(result, s, logoSrc) {
               </tr>` : ""}
           </tbody>
         </table>
-      ${pageClose}`;
+        ${isLast ? `
+          <div class="pdf-summary-chart">
+            ${sectionHeading("التمثيل البياني لنسب تحقق المحاور")}
+            ${axesOverviewChart(axes.map(ax => ({ label: ax.name, pct: ax.axisAgreePct })))}
+          </div>` : ""}
+      ${pageClose(s)}`;
   }).join("");
 }
 
-function buildChartPages(result, s, logoSrc) {
+function buildCompactFlatSummary(result) {
+  const { axes, n, overallAgreePct, overallDirection } = result;
+  const ax = axes[0];
+  if (!ax) return "";
   return `
-    ${pageOpen()}
-      ${pageHeader(s, logoSrc)}
-      ${sectionHeading("التمثيل البياني لنسب تحقق المحاور")}
-      ${axesOverviewChart(result.axes.map(ax => ({ label: ax.name, pct: ax.axisAgreePct })))}
-    ${pageClose}`;
+    <div class="pdf-compact-summary">
+      ${sectionHeading(reportText(result, "summaryHeading", "ملخص النتائج"))}
+      <table class="pdf-table">
+        <colgroup><col style="width:58%"><col style="width:12%"><col style="width:13%"><col style="width:17%"></colgroup>
+        <thead>
+          <tr><th class="pdf-th-wide">المحور</th><th>العدد</th><th>النسبة</th><th>الاتجاه العام</th></tr>
+        </thead>
+        <tbody>
+          <tr class="alt">
+            <td class="pdf-td-right">${esc(ax.name)}</td>
+            <td>${n}</td>
+            <td class="pdf-td-strong">${ax.axisAgreePct}%</td>
+            <td>${esc(ax.direction)}</td>
+          </tr>
+          <tr class="pdf-total-row">
+            <td class="pdf-td-right">المتوسط العام</td>
+            <td>${n}</td>
+            <td>${overallAgreePct}%</td>
+            <td>${esc(overallDirection)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pdf-summary-chart">
+        ${sectionHeading("التمثيل البياني لنسب تحقق المحاور")}
+        ${axesOverviewChart(axes.map(item => ({ label: item.name, pct: item.axisAgreePct })))}
+      </div>
+    </div>`;
 }
 
 function buildAxisBlock(ax, result, includeCharts, options = {}) {
@@ -419,7 +462,7 @@ async function measureBlockHeightsPx(htmlBlocks, shouldCancel) {
 // header block (~110) and top/bottom padding (~68), with a safety margin.
 const AXIS_PAGE_BUDGET_PX = 850;
 
-async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCancel) {
+async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCancel, firstPagePrefix = "") {
   const maxQuestionsPerBlock = includeCharts ? 5 : 12;
   const blocks = result.axes.flatMap(ax => {
     const questionGroups = chunk(ax.questions, maxQuestionsPerBlock);
@@ -429,14 +472,17 @@ async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCan
     ));
   });
   const heights = await measureBlockHeightsPx(blocks, shouldCancel);
+  const prefixHeight = firstPagePrefix
+    ? (await measureBlockHeightsPx([firstPagePrefix], shouldCancel))[0]
+    : 0;
 
   const groups = [];
   let current = [];
-  let currentHeight = 0;
+  let currentHeight = prefixHeight;
 
   blocks.forEach((blockHtml, i) => {
     const h = heights[i];
-    if (current.length > 0 && currentHeight + h > AXIS_PAGE_BUDGET_PX) {
+    if ((current.length > 0 || (groups.length === 0 && firstPagePrefix)) && currentHeight + h > AXIS_PAGE_BUDGET_PX) {
       groups.push(current);
       current = [];
       currentHeight = 0;
@@ -449,9 +495,10 @@ async function buildAxisDetailPages(result, s, logoSrc, includeCharts, shouldCan
   return groups.map((group, groupIndex) => `
     ${pageOpen()}
       ${pageHeader(s, logoSrc)}
-      ${groupIndex === 0 && (result.isFlat || result.reportTexts?.resultsHeading?.trim()) ? sectionHeading(reportText(result, "resultsHeading", "عرض النتائج وتحليلها")) : ""}
+      ${groupIndex === 0 ? firstPagePrefix : ""}
+      ${group.length > 0 && (groupIndex === 0 || (groupIndex === 1 && firstPagePrefix && groups[0].length === 0)) && (result.isFlat || result.reportTexts?.resultsHeading?.trim()) ? sectionHeading(reportText(result, "resultsHeading", "عرض النتائج وتحليلها")) : ""}
       ${group.join("")}
-    ${pageClose}`).join("");
+    ${pageClose(s)}`).join("");
 }
 
 function buildSignaturesBlock(s) {
@@ -492,7 +539,7 @@ function buildRecommendationsPages(result, s, logoSrc) {
         ${sectionHeading(reportText(result, "recommendationsHeading", "التوصيات"))}
         <div class="pdf-no-recs">${esc(reportText(result, "noRecommendationsText", "لا توجد توصيات"))}</div>
         ${buildSignaturesBlock(s)}
-      ${pageClose}`;
+      ${pageClose(s)}`;
   }
 
   const pages = balancedChunks(rows, RECS_ROWS_PER_PAGE);
@@ -517,7 +564,7 @@ function buildRecommendationsPages(result, s, logoSrc) {
           </tbody>
         </table>
         ${isLast ? buildSignaturesBlock(s) : ""}
-      ${pageClose}`;
+      ${pageClose(s)}`;
   }).join("");
 }
 
@@ -530,7 +577,7 @@ const PDF_CSS = `
   }
   .pdf-page {
     width: 780px; min-height: 1080px; background: #fff; margin: 0 auto;
-    padding: 34px 44px; position: relative;
+    padding: 34px 44px 76px; position: relative;
     border-left: 5px solid ${PINK_LINE}; border-right: 5px solid ${PINK_LINE};
   }
   .pdf-header { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 22px; padding-bottom: 14px; border-bottom: 2px solid ${PINK}; }
@@ -538,6 +585,7 @@ const PDF_CSS = `
   .pdf-header-text { text-align: center; }
   .pdf-uni-name { font-size: 19px; font-weight: 900; color: ${TEXT_DARK}; }
   .pdf-faculty-name { font-size: 12px; color: ${TEXT_MUTED}; margin-top: 2px; }
+  .pdf-page-footer { position: absolute; right: 44px; bottom: 20px; left: 44px; display: flex; justify-content: center; gap: 22px; padding-top: 8px; border-top: 1px solid ${PINK_LINE}; color: ${TEXT_MUTED}; font-size: 10.5px; direction: ltr; }
 
   .pdf-cover-title-wrap { text-align: center; margin: 30px 0 26px; }
   .pdf-cover-title { display: inline-block; font-size: 26px; font-weight: 900; padding: 6px 22px; background: ${PINK}; border-radius: 6px; color: ${TEXT_DARK}; }
@@ -563,8 +611,14 @@ const PDF_CSS = `
   .pdf-vm-block { margin-bottom: 22px; }
   .pdf-vm-title { font-weight: 900; font-size: 14px; color: ${ACCENT}; margin-bottom: 6px; }
   .pdf-vm-text { font-size: 13px; line-height: 1.9; text-align: justify; }
-  .pdf-vm-footer { margin-top: 30px; font-size: 12px; color: ${TEXT_MUTED}; text-align: center; }
-
+  .pdf-context-page { direction: rtl; text-align: right; }
+  .pdf-context-page .pdf-section-heading { margin-top: 14px; margin-bottom: 8px; direction: rtl; text-align: right; justify-content: flex-start; }
+  .pdf-context-page .pdf-vm-block { margin-bottom: 10px; }
+  .pdf-context-page .pdf-vm-title { direction: rtl; text-align: right; }
+  .pdf-context-page .pdf-vm-text { font-size: 12px; line-height: 1.65; direction: rtl; text-align: justify; }
+  .pdf-context-page .pdf-body-text { font-size: 12px; line-height: 1.7; direction: rtl; text-align: justify; }
+  .pdf-context-page .pdf-procedure-list { margin-top: 7px; font-size: 12px; line-height: 1.7; }
+  .pdf-context-page .pdf-procedure-list li { margin-bottom: 4px; }
   .pdf-formula-block { background: ${PINK_SOFT}; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
   .pdf-formula-title { font-weight: 800; font-size: 13px; margin-bottom: 6px; }
   .pdf-formula { font-size: 16px; font-weight: 700; direction: ltr; text-align: center; margin: 6px 0; }
@@ -581,6 +635,8 @@ const PDF_CSS = `
   .pdf-table .pdf-td-strong { font-weight: 800; }
   .pdf-total-row td { background: ${PINK}; font-weight: 900; }
   .pdf-table-detail td { font-size: 11.5px; }
+  .pdf-compact-summary { margin-bottom: 14px; }
+  .pdf-summary-chart .pdf-section-heading { margin-top: 18px; }
 
   .pdf-axes-chart { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 16px; direction: rtl; }
   .pdf-axes-chart.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; row-gap: 8px; }
@@ -601,8 +657,9 @@ const PDF_CSS = `
   .pdf-axis-spacer { height: 22px; }
 
   .pdf-no-recs { text-align: center; font-weight: 800; color: ${ACCENT}; font-size: 15px; margin-top: 30px; }
-  .pdf-procedure-list { direction: rtl; list-style-position: inside; margin: 18px 0 0; padding: 0 18px 0 0; color: ${TEXT_DARK}; font-size: 13px; line-height: 2.05; text-align: right; }
-  .pdf-procedure-list li { direction: rtl; padding-right: 7px; margin-bottom: 8px; text-align: right; }
+  .pdf-procedure-list { direction: rtl; list-style: none; counter-reset: procedure-item; margin: 18px 0 0; padding: 0; color: ${TEXT_DARK}; font-size: 13px; line-height: 2.05; text-align: right; }
+  .pdf-procedure-list li { direction: rtl; display: flex; flex-direction: row; align-items: flex-start; gap: 8px; counter-increment: procedure-item; margin-bottom: 8px; text-align: right; }
+  .pdf-procedure-list li::before { content: counter(procedure-item) "."; flex: 0 0 22px; direction: ltr; text-align: right; font-weight: 700; color: ${ACCENT}; }
 `;
 
 function themedPdfCss(themeId) {
@@ -652,6 +709,9 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
 
   const perSurvey = settings.surveyReportOptions?.[result.schemaId] ?? {};
   settings = { ...settings, ...perSurvey };
+  if (settings.reportTexts) {
+    result = { ...result, reportTexts: { ...(result.reportTexts ?? {}), ...settings.reportTexts } };
+  }
   let logoSrc = settings.logoDataUrl || "/logo.png";
 
   const container = document.createElement("div");
@@ -673,23 +733,24 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
 
   const includeCharts = settings.includePdfCharts !== false;
 
-  // Section order mirrors buildAnnualDocx() in buildDocx.js: detailed
-  // per-axis breakdown (رابعاً) first, then the results summary (خامساً)
-  // right before the recommendations — not summary-then-detail.
+  // The summary overview chart is mandatory and is rendered directly under
+  // the final summary-table chunk. includeCharts only controls axis details.
   const leadingPages = [
     buildCoverPage(result, meta, settings, logoSrc),
-    buildCustomReportSectionPage(result, settings, logoSrc),
-    settings.includeVisionMission !== false ? buildVisionPage(settings, logoSrc) : "",
-    buildMethodologyPage(result, settings, logoSrc),
+    buildContextPage(result, meta, settings, logoSrc),
+    result.reportSections?.skipStandardSections === true ? "" : buildMethodologyPage(result, settings, logoSrc),
   ];
-  const axisPages = await buildAxisDetailPages(result, settings, logoSrc, includeCharts, shouldCancel);
+  const compactFlatSummary = result.isFlat && result.axes.length === 1;
+  const axisPages = await buildAxisDetailPages(
+    result, settings, logoSrc, includeCharts, shouldCancel,
+    compactFlatSummary ? buildCompactFlatSummary(result) : ""
+  );
   await yieldToBrowser();
   throwIfCancelled(shouldCancel);
   root.innerHTML = [
     ...leadingPages,
+    compactFlatSummary ? "" : buildSummaryTablePages(result, settings, logoSrc),
     axisPages,
-    buildSummaryTablePages(result, settings, logoSrc),
-    includeCharts ? buildChartPages(result, settings, logoSrc) : "",
     buildRecommendationsPages(result, settings, logoSrc),
   ].join("");
 

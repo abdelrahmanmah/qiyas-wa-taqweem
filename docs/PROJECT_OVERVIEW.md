@@ -63,8 +63,10 @@ Redaa2/
 ├── dist/                        # Last production build output (gitignored)
 ├── .gitignore                   # Excludes node_modules/, dist/, .env.local, credentials.json,
                                   # apis.txt, and real survey sample data
-└── (loose root-level files)     # analyze.py + requirements.txt (standalone Python CLI mirror),
-                                  # generate_report.js (standalone docx utility), surveys_guide.md,
+├── tools/                        # analyze.py + requirements.txt (standalone Python CLI mirror),
+│                                 # generate_report.js (standalone docx utility)
+├── legacy/                       # standalone HTML reference tools
+└── docs/                         # project documentation and survey guide
                                   # real sample survey .xlsx/.docx files — kept locally, gitignored
 ```
 
@@ -384,10 +386,10 @@ generation. Filenames are auto-generated from schema label, program, and year(s)
 
 ### Intentionally kept (verified as legitimate, separate from the app runtime)
 
-- `analyze.py` / `requirements.txt` — a standalone Python CLI mirror of the analysis engine
+- `tools/analyze.py` / `tools/requirements.txt` — a standalone Python CLI mirror of the analysis engine
   (reads a YAML schema + Excel file, outputs the same result JSON the React app produces).
   Not used by the app at runtime; kept as a useful scripting/batch tool.
-- `generate_report.js` — a standalone Node script that builds a `.docx` report from a JSON
+- `tools/generate_report.js` — a standalone Node script that builds a `.docx` report from a JSON
   result file. Not used by the app at runtime; kept as a separate utility.
 - `surveys_guide.md` — reference documentation, unrelated to runtime behavior.
 - Real sample survey `.xlsx`/`.docx` files and the `استبيانات/` folder — left on disk (useful

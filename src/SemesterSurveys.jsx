@@ -16,7 +16,7 @@ import { analyze } from "./engine/analyze.js";
 import { DEFAULT_SETTINGS } from "./engine/buildDocx.js";
 import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
 import { getAllAnalysisSchemas, detectAnySurveyType } from "./engine/customSurveyModel.js";
-import { GoogleDriveIcon, InlineNotice } from "./UiElements.jsx";
+import { GoogleDriveIcon, InlineNotice, QualityIcon } from "./UiElements.jsx";
 
 const SETTINGS_KEY = "eruQA_settings_v1"; // same key App.jsx's SettingsPanel writes to
 const REPORT_AUTHORS_KEY = "eruQA_report_authors_v1";
@@ -126,11 +126,11 @@ function LinksExportButtons({ rows, title, filename, pushToast }) {
     <div style={{ display: "flex", gap: 10 }}>
       <button className="btn btn-ghost btn-sm" onClick={() => {
         copyToClipboard(buildOrganizedMessage(rows, title), pushToast);
-      }}>📋 نسخ الروابط كرسالة</button>
+      }}><span className="qa-icon-label"><QualityIcon name="copy" size={14} /> نسخ الروابط كرسالة</span></button>
       <button className="btn btn-ghost btn-sm" onClick={() => {
         downloadBlob(buildLinksWorkbookBlob(rows), filename);
         pushToast("تم تنزيل ملف Excel.", "success");
-      }}>⬇ تنزيل Excel</button>
+      }}><span className="qa-icon-label"><QualityIcon name="download" size={14} /> تنزيل Excel</span></button>
     </div>
   );
 }
@@ -746,8 +746,8 @@ function AnalysisDialog({ count, authors, delivery, error, onAuthorsChange, onDe
         <h3 id="analysis-dialog-title">تحليل {count} استبيان</h3>
         <p>راجع بيانات التقرير واختر مكان حفظ الملفات قبل بدء التحليل.</p>
         <div className="ssg-analysis-fields">
-          <div><label className="ssg-field-label">مُعدّ التقرير *</label><input autoFocus className="ssg-field" value={authors.preparedBy} onChange={e => onAuthorsChange({ ...authors, preparedBy: e.target.value })} placeholder="الاسم الكامل" /></div>
-          <div><label className="ssg-field-label">مراجع التقرير *</label><input className="ssg-field" value={authors.reviewer} onChange={e => onAuthorsChange({ ...authors, reviewer: e.target.value })} placeholder="الاسم الكامل" /></div>
+          <div><label className="ssg-field-label">القائم بالتقييم *</label><input autoFocus className="ssg-field" value={authors.preparedBy} onChange={e => onAuthorsChange({ ...authors, preparedBy: e.target.value })} placeholder="الاسم الكامل" /></div>
+          <div><label className="ssg-field-label">القائم بالمراجعة *</label><input className="ssg-field" value={authors.reviewer} onChange={e => onAuthorsChange({ ...authors, reviewer: e.target.value })} placeholder="الاسم الكامل" /></div>
         </div>
         <div className="ssg-delivery-options">
           <label className={`ssg-delivery-option ${delivery === "download" ? "selected" : ""}`}><input type="radio" name="delivery" checked={delivery === "download"} onChange={() => onDeliveryChange("download")} />تحميل على الجهاز</label>

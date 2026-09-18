@@ -831,7 +831,7 @@ entry point moved from the header into the hub's sub-tab bar.
 ### Course Splitter (`src/CourseSplitter.jsx`)
 
 Fully independent of the survey wizard/analysis engine — it's a self-contained utility ported
-from a standalone HTML tool (`course_eval_splitte V3r.html`) that a UMIS export needs run
+from a standalone HTML tool (`legacy/course_eval_splitte.html`) that a UMIS export needs run
 through *before* any of those files can be analyzed as individual surveys, since a single UMIS
 "course evaluation" report export bundles every course's results into **one Excel sheet with
 repeating block headers**, not one file per course.
@@ -840,7 +840,7 @@ repeating block headers**, not one file per course.
 
 The block marker (`DEFAULT_MARKER`, default `"بنود الاستبيان"`) and `BLOCK_OFFSET` (rows
 between a course's data start and its marker row, default `10`) now match the verified-working
-standalone tool (`course_eval_splitte V3r.html`) byte-for-byte — an earlier port had
+standalone tool (`legacy/course_eval_splitte.html`) byte-for-byte — an earlier port had
 `DEFAULT_MARKER` as `"بيانات الاستبيان"` (reconstructed from a garbled copy-paste), which matched
 zero rows in real UMIS exports and made the splitter silently produce no courses; fixed by
 copying the exact string from the standalone tool's source. Different UMIS report
@@ -925,7 +925,7 @@ cover the three exportable reports asked for, plus a combined one with a status 
 
 ### PDF Recommendation Reviewer (`src/PdfRecommendationReviewer.jsx`)
 
-Ported from the standalone `pdf_rec_reviewer.html`. Renders the **last page** of every PDF in a
+Ported from the standalone `legacy/pdf_rec_reviewer.html`. Renders the **last page** of every PDF in a
 user-picked folder (`webkitdirectory` input, Chrome/Edge-only — same constraint the standalone
 tool had) as a thumbnail — that's where a reviewer's recommendation section typically lives —
 via a 4-way concurrent render pool (`CONCURRENCY = 4`, identical batching idea to the

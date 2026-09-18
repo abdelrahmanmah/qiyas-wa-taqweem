@@ -132,6 +132,7 @@ export function compileSchema(raw) {
     desc:        raw.desc    || null,
     programs:    raw.programs || [],
     isFlat:      raw.flat === true || !raw.axes,
+    reportTexts: raw.reportTexts || null,
     reportSections: raw.reportSections || null,
     scale,
     metadata:    meta,

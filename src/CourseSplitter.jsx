@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
+import { QualityIcon, QualityPageHeader } from "./UiElements.jsx";
 
 // ── UMIS merged-report course splitter ──────────────────────────────────────
 // Ports the standalone "course_eval_splitte" tool into the app: takes a
@@ -11,7 +12,7 @@ import JSZip from "jszip";
 // downloads.
 
 // The exact Arabic marker text that repeats once per course block, matching
-// the verified-working standalone tool (course_eval_splitte V3r.html). Still
+// the verified-working standalone tool (legacy/course_eval_splitte.html). Still
 // user-editable in the UI (see `markerText` state below) in case a different
 // UMIS report template/version uses different text — `findMarkerCandidates()`
 // scans the sheet for other repeating strings so the user can pick the right
@@ -246,10 +247,10 @@ function FileItem({ name, size, onRemove }) {
       background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)",
       borderRadius: 8, padding: "8px 12px", fontSize: 13, marginTop: 6,
     }}>
-      <span style={{ color: "#e8f0fe" }}>📄 {name}</span>
+      <span className="qa-icon-label" style={{ color: "#e8f0fe" }}><QualityIcon name="sheet" size={15} /> {name}</span>
       <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ color: "rgba(255,255,255,.45)", fontSize: 11 }}>{bytesToSize(size)}</span>
-        {onRemove && <button onClick={onRemove} aria-label={`إزالة الملف ${name}`} title={`إزالة ${name}`} style={{ background: "none", border: "none", color: "#e0555a", cursor: "pointer", fontSize: 15, padding: "0 4px" }}>✕</button>}
+        {onRemove && <button onClick={onRemove} aria-label={`إزالة الملف ${name}`} title={`إزالة ${name}`} style={{ background: "none", border: "none", color: "#fb7185", cursor: "pointer", padding: "2px 4px" }}><QualityIcon name="close" size={15} /></button>}
       </span>
     </div>
   );
@@ -272,7 +273,7 @@ function DropZone({ icon, main, sub, onFiles, multiple, inputRef }) {
           e.target.value = "";
           onFiles(picked);
         }} />
-      <div style={{ fontSize: 26, marginBottom: 4, opacity: .85 }}>{icon}</div>
+      <div style={{ width: 45, height: 45, margin: "0 auto 8px", display: "grid", placeItems: "center", borderRadius: 13, color: "#6ee7b7", background: "rgba(52,211,153,.1)", border: "1px solid rgba(52,211,153,.16)" }}><QualityIcon name={icon} size={23} /></div>
       <div style={{ fontSize: 14, color: "#e8f0fe" }}>{main}</div>
       <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)", marginTop: 4 }}>{sub}</div>
     </div>
@@ -439,29 +440,24 @@ const doneCourses = extractedCourses;
 
   return (
     <div>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{
-          display: "inline-block", fontSize: 11, color: "#1abc9c",
-          background: "rgba(26,188,156,.12)", border: "1px solid rgba(26,188,156,.35)",
-          padding: "3px 12px", borderRadius: 999, marginBottom: 10, letterSpacing: .3,
-        }}>ERU · UMIS Course Evaluation</div>
-        <div style={{ color: "#fff", fontSize: 22, fontWeight: 900 }}>🧩 تقسيم ملفات تقييم المقررات</div>
-        <div style={{ color: "rgba(255,255,255,.55)", fontSize: 13, marginTop: 4 }}>
-          يحوّل ملف الـ Excel المجمّع (كل المواد في ملف واحد) إلى ملف مستقل لكل مادة، يقارنها بقائمة المواد المتوقعة، ويصنّفها حسب القسم العلمي.
-        </div>
-      </div>
+      <QualityPageHeader
+        icon="split"
+        eyebrow="ERU · UMIS COURSE EVALUATION"
+        title="تقسيم ملفات تقييم المقررات"
+        description="حوّل ملف Excel المجمّع إلى ملف مستقل لكل مقرر، ثم طابقه مع قائمة المواد وصنّفه حسب القسم العلمي."
+      />
 
       {/* Step 1: reference list */}
-      <div className="card" style={{ padding: 22, marginBottom: 18, borderColor: "rgba(26,188,156,.35)" }}>
+      <div className="card" style={{ padding: 22, marginBottom: 18, borderColor: "rgba(52,211,153,.35)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,.08)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#1abc9c" }}>1</span>
+          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(52,211,153,.1)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#34d399" }}>1</span>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>قائمة المواد الأساسية</span>
-          <span style={{ fontSize: 11, color: "#1abc9c", background: "rgba(26,188,156,.12)", border: "1px solid rgba(26,188,156,.35)", padding: "2px 10px", borderRadius: 999, fontWeight: 700 }}>المرجع الرئيسي</span>
+          <span style={{ fontSize: 11, color: "#6ee7b7", background: "rgba(52,211,153,.1)", border: "1px solid rgba(52,211,153,.22)", padding: "2px 10px", borderRadius: 999, fontWeight: 700 }}>المرجع الرئيسي</span>
         </div>
         <p style={{ color: "rgba(255,255,255,.5)", fontSize: 13, margin: "0 0 14px" }}>
           ده الأساس اللي هيتحدد بيه أي مادة من ضمن استبيانات فعلًا، وأي مادة ناقصة. يجب أن تحتوي على أعمدة COURSE_CODE و COURSE_DESCR_EN.
         </p>
-        <DropZone icon="📋" main="اضغط لاختيار الملف أو اسحبه هنا" sub="xlsx / xls — يحتوي على أعمدة COURSE_CODE و COURSE_DESCR"
+        <DropZone icon="sheet" main="اضغط لاختيار الملف أو اسحبه هنا" sub="xlsx / xls — يحتوي على أعمدة COURSE_CODE و COURSE_DESCR"
           onFiles={files => { if (files.length) setRefFile(files[0]); }} inputRef={refInputRef} />
         {refFile && <FileItem name={refFile.name} size={refFile.size} onRemove={() => setRefFile(null)} />}
       </div>
@@ -469,13 +465,13 @@ const doneCourses = extractedCourses;
       {/* Step 2: department distribution (optional) */}
       <div className="card" style={{ padding: 22, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,.08)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#1abc9c" }}>2</span>
+          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(52,211,153,.1)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#34d399" }}>2</span>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>توزيع المقررات على الأقسام (اختياري)</span>
         </div>
         <p style={{ color: "rgba(255,255,255,.5)", fontSize: 13, margin: "0 0 14px" }}>
           يحدد قسم كل مادة. المطابقة تتم بالاسم أولًا (كود المادة ممكن يختلف بين الأنظمة)، ثم بالكود.
         </p>
-        <DropZone icon="🗂️" main="اضغط لاختيار الملف أو اسحبه هنا" sub="xlsx / xls — يحتوي على أعمدة اسم المقرر، كود المقرر، القسم العلمي"
+        <DropZone icon="folder" main="اضغط لاختيار الملف أو اسحبه هنا" sub="xlsx / xls — يحتوي على أعمدة اسم المقرر، كود المقرر، القسم العلمي"
           onFiles={files => { if (files.length) setDeptFile(files[0]); }} inputRef={deptInputRef} />
         {deptFile && <FileItem name={deptFile.name} size={deptFile.size} onRemove={() => setDeptFile(null)} />}
       </div>
@@ -483,11 +479,11 @@ const doneCourses = extractedCourses;
       {/* Step 3: merged files */}
       <div className="card" style={{ padding: 22, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,.08)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#1abc9c" }}>3</span>
+          <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(52,211,153,.1)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#34d399" }}>3</span>
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>الملفات المجمّعة من السيستم</span>
         </div>
         <p style={{ color: "rgba(255,255,255,.5)", fontSize: 13, margin: "0 0 14px" }}>يمكن رفع أكثر من ملف مرة واحدة (مثلاً ملف لكل قسم/كلية).</p>
-        <DropZone icon="📦" main="اضغط لاختيار ملف أو أكثر أو اسحبها هنا" sub="xlsx / xls — نفس تنسيق تقرير الـ RDLC الصادر من UMIS"
+        <DropZone icon="package" main="اضغط لاختيار ملف أو أكثر أو اسحبها هنا" sub="xlsx / xls — نفس تنسيق تقرير الـ RDLC الصادر من UMIS"
           onFiles={files => { setMergedFiles(prev => [...prev, ...Array.from(files)]); }} multiple inputRef={mergedInputRef} />
         {mergedFiles.map((f, idx) => (
           <FileItem key={idx} name={f.name} size={f.size} onRemove={() => setMergedFiles(prev => prev.filter((_, i) => i !== idx))} />
@@ -497,7 +493,7 @@ const doneCourses = extractedCourses;
           background: "none", border: "none", color: "#8ea3b4", fontSize: 12, cursor: "pointer",
           marginTop: 14, padding: 0, textDecoration: "underline",
         }}>
-          {showAdvanced ? "▲ إخفاء الإعدادات المتقدمة" : "⚙ إعدادات متقدمة (تخصيص نص التقسيم)"}
+          <span className="qa-icon-label"><QualityIcon name="settings" size={14} /> {showAdvanced ? "إخفاء الإعدادات المتقدمة" : "إعدادات متقدمة لتخصيص نص التقسيم"}</span>
         </button>
         {showAdvanced && (
           <div style={{ background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: 16, marginTop: 10, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -531,13 +527,13 @@ const doneCourses = extractedCourses;
         )}
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>
-          <button className="btn btn-primary" disabled={mergedFiles.length === 0 || processing} onClick={handleProcess}>
-            {processing ? "⏳ جارٍ المعالجة..." : "🧩 قسّم الملفات وابدأ المطابقة"}
+          <button className="btn btn-primary qa-icon-button" disabled={mergedFiles.length === 0 || processing} onClick={handleProcess}>
+            <QualityIcon name={processing ? "refresh" : "split"} size={16} className={processing ? "spin" : ""} /> {processing ? "جارٍ المعالجة..." : "قسّم الملفات وابدأ المطابقة"}
           </button>
           <button className="btn btn-ghost" onClick={resetAll}>تفريغ الكل</button>
         </div>
         {status.msg && (
-          <div style={{ marginTop: 14, fontSize: 13, color: status.kind === "err" ? "#e0555a" : status.kind === "ok" ? "#3fbf85" : "rgba(255,255,255,.5)" }}>
+          <div style={{ marginTop: 14, fontSize: 13, color: status.kind === "err" ? "#fb7185" : status.kind === "ok" ? "#34d399" : "rgba(255,255,255,.5)" }}>
             {status.msg}
           </div>
         )}
@@ -547,7 +543,7 @@ const doneCourses = extractedCourses;
       {showResults && (
         <div className="card" style={{ padding: 22 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,.08)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#1abc9c" }}>4</span>
+            <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(52,211,153,.1)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#34d399" }}>4</span>
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>النتائج</span>
           </div>
 
@@ -562,11 +558,11 @@ const doneCourses = extractedCourses;
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-            <button className="btn btn-primary" onClick={handleZipAll}>
-              ⬇ تحميل كل المواد (ZIP {hasDept ? "مقسّم حسب القسم" : ""})
+            <button className="btn btn-primary qa-icon-button" onClick={handleZipAll}>
+              <QualityIcon name="download" size={16} /> تحميل كل المواد (ZIP {hasDept ? "مقسّم حسب القسم" : ""})
             </button>
-            <button className="btn btn-ghost" onClick={handleDownloadReport}>
-              📊 تنزيل تقرير Excel (موجودة / ناقصة / مكررة)
+            <button className="btn btn-ghost qa-icon-button" onClick={handleDownloadReport}>
+              <QualityIcon name="chart" size={16} /> تنزيل تقرير Excel (موجودة / ناقصة / مكررة)
             </button>
           </div>
 
@@ -696,7 +692,7 @@ const doneCourses = extractedCourses;
 }
 
 function Stat({ n, l, cls }) {
-  const color = cls === "good" ? "#3fbf85" : cls === "bad" ? "#e0555a" : cls === "warn" ? "#e0a336" : "#fff";
+  const color = cls === "good" ? "#34d399" : cls === "bad" ? "#fb7185" : cls === "warn" ? "#fcd34d" : "#fff";
   return (
     <div style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 16px", minWidth: 110 }}>
       <div style={{ fontSize: 20, fontWeight: 700, color }}>{n}</div>

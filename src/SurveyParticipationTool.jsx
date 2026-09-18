@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { QualityIcon, QualityPageHeader } from "./UiElements.jsx";
 
 // ── Survey participation report analyzer ────────────────────────────────────
 // Reads the system's survey-performance export (COURSE_CODE, COURSE_DESCR_EN,
@@ -38,10 +39,10 @@ function classify(voted, total, threshold) {
 }
 
 const STATUS = {
-  "none-enrolled": { label: "لا يوجد طلاب مسجلين", color: "#8ea3b4" },
-  "not-voted": { label: "لم يتم التقييم", color: "#e0555a" },
-  "suspicious": { label: "مشكوك في انتظامها", color: "#e0a336" },
-  "regular": { label: "طبيعية", color: "#3fbf85" },
+  "none-enrolled": { label: "لا يوجد طلاب مسجلين", color: "#94a3b8" },
+  "not-voted": { label: "لم يتم التقييم", color: "#fb7185" },
+  "suspicious": { label: "مشكوك في انتظامها", color: "#fcd34d" },
+  "regular": { label: "طبيعية", color: "#34d399" },
 };
 
 function courseRowsToWorkbook(rows, sheetName) {
@@ -118,16 +119,16 @@ export default function SurveyParticipationTool() {
 
   return (
     <div>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>📊 أداء الاستبيانات</div>
-        <div style={{ color: "rgba(255,255,255,.55)", fontSize: 13, marginTop: 4 }}>
-          ارفع تقرير أداء الاستبيانات من السيستم (COURSE_CODE، COURSE_DESCR_EN، NoOfVotes) لمعرفة المواد اللي معندهاش طلاب، اللي محدش قيّمها، واللي عدد المصوتين فيها قليل ومحتاج تأكد يدوي.
-        </div>
-      </div>
+      <QualityPageHeader
+        icon="chart"
+        eyebrow="متابعة المشاركة"
+        title="أداء الاستبيانات"
+        description="راجع نسب مشاركة الطلاب وحدد المقررات التي تحتاج متابعة قبل إصدار التقارير."
+      />
 
       <div className="card" style={{ padding: 22, marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn btn-primary btn-sm" onClick={() => inputRef.current?.click()}>📤 رفع ملف تقرير الأداء</button>
+          <button className="btn btn-primary btn-sm qa-icon-button" onClick={() => inputRef.current?.click()}><QualityIcon name="upload" size={15} /> رفع ملف تقرير الأداء</button>
           <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleUpload} />
           <label style={{ fontSize: 12, color: "#8ea3b4", display: "flex", alignItems: "center", gap: 6 }}>
             حد "الشك" (أقل من)
@@ -137,7 +138,7 @@ export default function SurveyParticipationTool() {
           </label>
         </div>
         {status.msg && (
-          <div style={{ marginTop: 12, fontSize: 13, color: status.kind === "err" ? "#e0555a" : "#3fbf85" }}>{status.msg}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: status.kind === "err" ? "#fb7185" : "#34d399" }}>{status.msg}</div>
         )}
       </div>
 
@@ -152,21 +153,21 @@ export default function SurveyParticipationTool() {
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
-            <button className="btn btn-ghost btn-sm" disabled={!filled.length}
+            <button className="btn btn-ghost btn-sm qa-icon-button" disabled={!filled.length}
               onClick={() => handleExport(filled, "تم التقييم", "مواد_تم_تقييمها.xlsx")}>
-              ⬇ تنزيل المواد اللي فيها طلبة ملوها ({filled.length})
+              <QualityIcon name="download" size={14} /> تنزيل المواد اللي فيها طلبة ملوها ({filled.length})
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={!notFilled.length}
+            <button className="btn btn-ghost btn-sm qa-icon-button" disabled={!notFilled.length}
               onClick={() => handleExport(notFilled, "لم يتم التقييم", "مواد_لم_تُقيّم.xlsx")}>
-              ⬇ تنزيل المواد اللي مفيش طلبة ملوها ({notFilled.length})
+              <QualityIcon name="download" size={14} /> تنزيل المواد اللي مفيش طلبة ملوها ({notFilled.length})
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={!buckets["suspicious"].length}
+            <button className="btn btn-ghost btn-sm qa-icon-button" disabled={!buckets["suspicious"].length}
               onClick={() => handleExport(buckets["suspicious"], "مشكوك فيها", "مواد_مشكوك_في_انتظامها.xlsx")}>
-              ⬇ تنزيل المواد المشكوك فيها ({buckets["suspicious"].length})
+              <QualityIcon name="download" size={14} /> تنزيل المواد المشكوك فيها ({buckets["suspicious"].length})
             </button>
-            <button className="btn btn-primary btn-sm" disabled={!classified.length}
+            <button className="btn btn-primary btn-sm qa-icon-button" disabled={!classified.length}
               onClick={() => handleExport(classified, "تقرير كامل", "تقرير_أداء_الاستبيانات_كامل.xlsx")}>
-              ⬇ تنزيل التقرير الكامل
+              <QualityIcon name="download" size={14} /> تنزيل التقرير الكامل
             </button>
           </div>
 
@@ -216,7 +217,7 @@ export default function SurveyParticipationTool() {
 }
 
 function Stat({ n, l, cls }) {
-  const color = cls === "good" ? "#3fbf85" : cls === "bad" ? "#e0555a" : cls === "warn" ? "#e0a336" : "#fff";
+  const color = cls === "good" ? "#34d399" : cls === "bad" ? "#fb7185" : cls === "warn" ? "#fcd34d" : "#fff";
   return (
     <div style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: "10px 16px", minWidth: 110 }}>
       <div style={{ fontSize: 20, fontWeight: 700, color }}>{n}</div>
