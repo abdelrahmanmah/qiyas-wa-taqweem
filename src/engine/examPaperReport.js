@@ -143,6 +143,8 @@ export function examPaperReportFilename({ department, semester, year }) {
   return `تقرير تقييم الورقة الامتحانية من حيث الشكل - ${clean(department)} - ${clean(semester)} ${clean(year)}.docx`;
 }
 
+const learningOutcomeLabel = value => value === "" || value === null || value === undefined ? "" : `${value}%`;
+
 export async function buildExamPaperReportDocx(report, settings = {}) {
   const logo = await loadLogo(settings);
   const summary = summarizeExamPaperEvaluations(report.courses);
@@ -166,7 +168,7 @@ export async function buildExamPaperReportDocx(report, settings = {}) {
       ["م", "كود المقرر", "المقرر", "تقييم مخرجات التعلم"],
       [650, 1900, 4850, 2500],
       summary.completed.length
-        ? summary.completed.map((course, index) => [index + 1, course.code, course.name, `${course.learningOutcomes}%`])
+        ? summary.completed.map((course, index) => [index + 1, course.code, course.name, learningOutcomeLabel(course.learningOutcomes)])
         : [["—", "—", "لا توجد مقررات مستوفاة", "—"]],
       [2],
     ),
@@ -176,7 +178,7 @@ export async function buildExamPaperReportDocx(report, settings = {}) {
       ["م", "كود المقرر", "المقرر", "العناصر غير المستوفاة", "تقييم مخرجات التعلم"],
       [550, 1450, 2850, 3300, 1750],
       summary.incomplete.length
-        ? summary.incomplete.map((course, index) => [index + 1, course.code, course.name, course.missingItems, `${course.learningOutcomes}%`])
+        ? summary.incomplete.map((course, index) => [index + 1, course.code, course.name, course.missingItems, learningOutcomeLabel(course.learningOutcomes)])
         : [["—", "—", "لا توجد مقررات غير مستوفاة", "—", "—"]],
       [2, 3],
     ),

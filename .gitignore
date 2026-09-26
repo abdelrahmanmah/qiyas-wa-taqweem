@@ -12,6 +12,7 @@ apis.txt
 *.xlsx
 *.xls
 *.docx
+!public/course_codes_and_names.xlsx
 استبيانات/
 
 # Local-only design exports / scratch assets — not part of the app
