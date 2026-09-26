@@ -86,6 +86,7 @@ function pageClose(s) {
   const measurementEmail = String(s.measurementEmail || "meb-maec@eru.edu.eg").trim();
   return `
     <div class="pdf-page-footer">
+      <i class="pdf-capture-bottom-marker" aria-hidden="true"></i>
       ${qualityEmail ? `<span>Quality Assurance: ${esc(qualityEmail)}</span>` : ""}
       ${measurementEmail ? `<span>Measurement &amp; Evaluation: ${esc(measurementEmail)}</span>` : ""}
     </div>
@@ -97,6 +98,7 @@ function pageHeader(s, logoSrc) {
     <div class="pdf-header">
       ${logoSrc ? `<img class="pdf-logo" src="${logoSrc}" alt="" />` : ""}
       <div class="pdf-header-text">
+        <i class="pdf-capture-top-marker" aria-hidden="true"></i>
         <div class="pdf-uni-name">${esc(s.uniName)}</div>
         <div class="pdf-faculty-name">${esc(s.facultyName)}</div>
       </div>
@@ -568,6 +570,80 @@ function buildRecommendationsPages(result, s, logoSrc) {
   }).join("");
 }
 
+function buildComparisonPages(comparison, meta, s, logoSrc) {
+  const firstResult = comparison.slots?.find(slot => slot?.result)?.result ?? {};
+  const years = comparison.overall.map(item => item.year);
+  const title = `مقارنة نتائج ${years.length} ${years.length === 2 ? "عامين" : "أعوام"}`;
+  const rows = [
+    ["نوع الاستبيان", firstResult.schemaLabel || "—"],
+    ...(meta.program ? [["البرنامج / القسم", meta.program]] : []),
+    ["الأعوام محل المقارنة", years.join(" / ") || "—"],
+    ["عدد المحاور", comparison.axes.length],
+    ["موجه إلى", "مدير وحدة الجودة بالكلية"],
+  ];
+  const signers = s.includeEvaluatorsTable === false ? [] : [
+    ...(s.includeCommitteeHead !== false ? [{ name: s.qmName || "", role: "رئيس لجنة القياس والتقويم" }] : []),
+    ...(s.includeEvaluator !== false ? [{ name: meta.preparedBy || "", role: "القائم بالتقييم" }] : []),
+    ...(s.includeReviewer !== false ? [{ name: meta.reviewer || "", role: "القائم بالمراجعة" }] : []),
+  ];
+  const cover = `
+    ${pageOpen("pdf-cover")}
+      ${pageHeader(s, logoSrc)}
+      <div class="pdf-cover-title-wrap">
+        <div class="pdf-cover-title">${esc(title)}</div>
+        <div class="pdf-cover-subtitle">تقرير مقارنة نتائج الاستبيانات</div>
+        <div class="pdf-cover-committee">${esc(s.committeeName)}</div>
+      </div>
+      ${sectionHeading("البيانات الأساسية")}
+      <div class="pdf-info-table">${rows.map(([l, v], i) => infoRow(l, v, i)).join("")}</div>
+      ${signers.length ? `
+        ${sectionHeading("القائم بالتقييم")}
+        <div class="pdf-sig-row">
+          ${signers.map(({ name, role }) => `
+            <div class="pdf-sig-box">
+              <div class="pdf-sig-name">${esc(name || "—")}</div>
+              <div class="pdf-sig-role">${esc(role)}</div>
+              <div class="pdf-sig-line">التوقيع: ....................</div>
+            </div>`).join("")}
+        </div>` : ""}
+    ${pageClose(s)}`;
+
+  const axesPerPage = years.length === 3 ? 13 : 14;
+  const axisChunks = chunk(comparison.axes, axesPerPage);
+  const tablePages = axisChunks.map((pageAxes, pageIdx) => {
+    const isLast = pageIdx === axisChunks.length - 1;
+    return `
+      ${pageOpen()}
+        ${pageHeader(s, logoSrc)}
+        ${sectionHeading(pageIdx === 0 ? title : `${title} (تابع)`)}
+        <table class="pdf-table pdf-comparison-table">
+          <colgroup>
+            <col style="width:5%"><col style="width:${years.length === 3 ? 43 : 49}%">
+            ${years.map(() => `<col style="width:${years.length === 3 ? 13 : 17}%">`).join("")}
+            <col style="width:${years.length === 3 ? 13 : 12}%">
+          </colgroup>
+          <thead><tr><th>م</th><th class="pdf-th-wide">المحور</th>${years.map(y => `<th>${esc(y)}</th>`).join("")}<th>الاتجاه</th></tr></thead>
+          <tbody>
+            ${pageAxes.map((axis, index) => `
+              <tr class="${index % 2 === 0 ? "alt" : ""}">
+                <td>${pageIdx * axesPerPage + index + 1}</td>
+                <td class="pdf-td-right">${esc(axis.name)}</td>
+                ${axis.years.map(year => `<td class="pdf-td-strong">${year.agreePct == null ? "—" : `${year.agreePct}%`}</td>`).join("")}
+                <td class="pdf-trend ${axis.trend === "تحسن" ? "up" : axis.trend === "تراجع" ? "down" : "steady"}">${esc(axis.trend || "—")}</td>
+              </tr>`).join("")}
+            ${isLast ? `
+              <tr class="pdf-total-row"><td></td><td class="pdf-td-right">الإجمالي</td>
+                ${comparison.overall.map(item => `<td>${item.agreePct == null ? "—" : `${item.agreePct}%`}</td>`).join("")}<td></td>
+              </tr>` : ""}
+          </tbody>
+        </table>
+        ${isLast ? `<div class="pdf-comparison-legend"><span class="up">تحسن</span><span class="down">تراجع</span><span class="steady">استقرار</span></div>` : ""}
+      ${pageClose(s)}`;
+  }).join("");
+
+  return cover + tablePages;
+}
+
 // ── CSS ─────────────────────────────────────────────────────────────────────────
 const PDF_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -580,12 +656,15 @@ const PDF_CSS = `
     padding: 34px 44px 76px; position: relative;
     border-left: 5px solid ${PINK_LINE}; border-right: 5px solid ${PINK_LINE};
   }
-  .pdf-header { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 22px; padding-bottom: 14px; border-bottom: 2px solid ${PINK}; }
+  .pdf-header { position: relative; display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 22px; padding-bottom: 14px; border-bottom: 2px solid ${PINK}; }
   .pdf-logo { width: 52px; height: 52px; object-fit: contain; }
   .pdf-header-text { text-align: center; }
   .pdf-uni-name { font-size: 19px; font-weight: 900; color: ${TEXT_DARK}; }
   .pdf-faculty-name { font-size: 12px; color: ${TEXT_MUTED}; margin-top: 2px; }
   .pdf-page-footer { position: absolute; right: 44px; bottom: 20px; left: 44px; display: flex; justify-content: center; gap: 22px; padding-top: 8px; border-top: 1px solid ${PINK_LINE}; color: ${TEXT_MUTED}; font-size: 10.5px; direction: ltr; }
+  .pdf-capture-top-marker, .pdf-capture-bottom-marker { display: block; flex: 0 0 4px; width: 4px; height: 4px; }
+  .pdf-capture-top-marker { margin: 0 auto; background: rgb(0, 255, 255); }
+  .pdf-capture-bottom-marker { align-self: center; background: rgb(255, 0, 255); }
 
   .pdf-cover-title-wrap { text-align: center; margin: 30px 0 26px; }
   .pdf-cover-title { display: inline-block; font-size: 26px; font-weight: 900; padding: 6px 22px; background: ${PINK}; border-radius: 6px; color: ${TEXT_DARK}; }
@@ -635,6 +714,12 @@ const PDF_CSS = `
   .pdf-table .pdf-td-strong { font-weight: 800; }
   .pdf-total-row td { background: ${PINK}; font-weight: 900; }
   .pdf-table-detail td { font-size: 11.5px; }
+  .pdf-comparison-table td { font-size: 12px; }
+  .pdf-trend { font-weight: 900; }
+  .pdf-trend.up, .pdf-comparison-legend .up { color: #168447; }
+  .pdf-trend.down, .pdf-comparison-legend .down { color: #b4232d; }
+  .pdf-trend.steady, .pdf-comparison-legend .steady { color: #8a6116; }
+  .pdf-comparison-legend { display: flex; justify-content: center; gap: 26px; margin-top: 18px; font-size: 12px; font-weight: 900; }
   .pdf-compact-summary { margin-bottom: 14px; }
   .pdf-summary-chart .pdf-section-heading { margin-top: 18px; }
 
@@ -691,6 +776,215 @@ function waitForLayout() {
   return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
+function consumeCaptureMarkers(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let topMarker = null;
+  let bottomMarker = null;
+  const topLimit = canvas.height * 0.08;
+  const bottomLimit = canvas.height * 0.92;
+  for (let pixel = 0; pixel < image.data.length; pixel += 4) {
+    const index = pixel / 4;
+    const x = index % canvas.width;
+    const y = Math.floor(index / canvas.width);
+    const red = image.data[pixel];
+    const green = image.data[pixel + 1];
+    const blue = image.data[pixel + 2];
+    if (!topMarker && y < topLimit && red < 20 && green > 245 && blue > 245) {
+      topMarker = { x, y };
+    } else if (!bottomMarker && y > bottomLimit && red > 245 && green < 20 && blue > 245) {
+      bottomMarker = { x, y };
+    }
+    if (topMarker && bottomMarker) break;
+  }
+  if (!topMarker || !bottomMarker) return false;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(topMarker.x - 2, topMarker.y - 2, 10, 10);
+  ctx.fillRect(bottomMarker.x - 2, bottomMarker.y - 2, 10, 10);
+  ctx.restore();
+  return true;
+}
+
+function hasCompletePageFrame(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const band = Math.max(2, Math.floor(canvas.width * 0.05));
+  let sampledRows = 0;
+  let framedRows = 0;
+  const isFramePixel = offset => image[offset] < 248 || image[offset + 1] < 248 || image[offset + 2] < 248;
+  for (let y = 0; y < canvas.height; y += 4) {
+    sampledRows++;
+    let left = false;
+    let right = false;
+    for (let x = 0; x < band && (!left || !right); x++) {
+      const leftOffset = (y * canvas.width + x) * 4;
+      const rightOffset = (y * canvas.width + (canvas.width - 1 - x)) * 4;
+      if (!left && isFramePixel(leftOffset)) left = true;
+      if (!right && isFramePixel(rightOffset)) right = true;
+    }
+    if (left && right) framedRows++;
+  }
+  return framedRows / Math.max(1, sampledRows) > 0.85;
+}
+
+async function renderRootToPdf({ root, container, settings, onProgress, shouldCancel, filename, html2canvas, jsPDF }) {
+  const savedScrollX = window.scrollX;
+  const savedScrollY = window.scrollY;
+  try {
+    const pageEls = Array.from(root.querySelectorAll(".pdf-page-outer"));
+    root.remove();
+    // html2canvas's first clone can inherit the live page scroll offset even
+    // when scrollY is supplied in its options. Normalise the real viewport
+    // once before capturing so page 1 cannot start below its header.
+    window.scrollTo(0, 0);
+    await waitForLayout();
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageWidthMm = pdf.internal.pageSize.getWidth();
+    const pageHeightMm = pdf.internal.pageSize.getHeight();
+    let firstImage = true;
+    let pageIndex = 0;
+
+    for (const el of pageEls) {
+      throwIfCancelled(shouldCancel);
+      pageIndex++;
+      onProgress?.(pageIndex, pageEls.length);
+      const captureRoot = document.createElement("div");
+      captureRoot.className = "pdf-root";
+      const captureEl = el.cloneNode(true);
+      captureRoot.appendChild(captureEl);
+      container.appendChild(captureRoot);
+      captureRoot.style.width = `${captureEl.offsetWidth}px`;
+      captureRoot.style.height = `${captureEl.offsetHeight}px`;
+      captureRoot.style.overflow = "hidden";
+      await waitForLayout();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      throwIfCancelled(shouldCancel);
+      let canvas = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        window.scrollTo(0, 0);
+        await waitForLayout();
+        canvas = await html2canvas(captureRoot, {
+          scale: Math.min(2, Math.max(1, Number(settings.pdfRenderScale) || 1.5)),
+          useCORS: true, logging: false, backgroundColor: "#ffffff",
+          x: 0, y: 0, width: captureRoot.offsetWidth, height: captureRoot.offsetHeight,
+          scrollX: 0, scrollY: 0, imageTimeout: 4000,
+          onclone: clonedDocument => {
+            clonedDocument.documentElement.scrollTop = 0;
+            clonedDocument.body.scrollTop = 0;
+          },
+        });
+        if (consumeCaptureMarkers(canvas) && hasCompletePageFrame(canvas)) break;
+        canvas.width = 1;
+        canvas.height = 1;
+        canvas = null;
+        await waitForLayout();
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (!canvas) {
+        throw new Error(`تعذّر التقاط الصفحة ${pageIndex} كاملة بالترويسة والتذييل`);
+      }
+      captureRoot.remove();
+      await yieldToBrowser();
+      throwIfCancelled(shouldCancel);
+      const fullHeightMm = (canvas.height * pageWidthMm) / canvas.width;
+      const sliceCount = Math.max(1, Math.ceil(fullHeightMm / pageHeightMm));
+      const sliceHeightPx = Math.ceil(canvas.height / sliceCount);
+
+      for (let sliceIndex = 0; sliceIndex < sliceCount; sliceIndex++) {
+        throwIfCancelled(shouldCancel);
+        await yieldToBrowser();
+        const sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeightPx;
+        const ctx = sliceCanvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(
+          canvas, 0, sliceIndex * sliceHeightPx, canvas.width, sliceHeightPx,
+          0, 0, canvas.width, sliceHeightPx
+        );
+        const sliceImgData = sliceCanvas.toDataURL("image/jpeg", 0.9);
+        const sliceHeightMm = (sliceHeightPx * pageWidthMm) / canvas.width;
+        if (!firstImage) pdf.addPage();
+        firstImage = false;
+        pdf.addImage(
+          sliceImgData, "JPEG", 0, 0, pageWidthMm, sliceHeightMm,
+          `pdf-page-${pageIndex}-${sliceIndex}`, "FAST"
+        );
+        sliceCanvas.width = 1;
+        sliceCanvas.height = 1;
+      }
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+
+    await yieldToBrowser();
+    throwIfCancelled(shouldCancel);
+    return { blob: pdf.output("blob"), filename };
+  } finally {
+    container.remove();
+    window.scrollTo(savedScrollX, savedScrollY);
+  }
+}
+
+// Comparison reports are short enough to capture as one canvas. Cropping that
+// canvas at the measured page boundaries avoids Chromium shifting alternate
+// per-page captures while keeping the same page design as regular reports.
+async function renderComparisonRootToPdf({ root, container, settings, onProgress, shouldCancel, filename, html2canvas, jsPDF }) {
+  const savedScrollX = window.scrollX;
+  const savedScrollY = window.scrollY;
+  try {
+    window.scrollTo(0, 0);
+    await waitForLayout();
+    const pageEls = Array.from(root.querySelectorAll(".pdf-page-outer"));
+    if (!pageEls.length) throw new Error("لا توجد صفحات مقارنة قابلة للتصدير");
+    root.style.width = `${pageEls[0].offsetWidth}px`;
+    await waitForLayout();
+    const pages = pageEls.map(el => ({ top: el.offsetTop, height: el.offsetHeight }));
+    const scale = Math.min(2, Math.max(1, Number(settings.pdfRenderScale) || 1.5));
+    const canvas = await html2canvas(root, {
+      scale, useCORS: true, logging: false, backgroundColor: "#ffffff",
+      x: 0, y: 0, width: root.offsetWidth, height: root.scrollHeight,
+      scrollX: 0, scrollY: 0, imageTimeout: 4000,
+      onclone: clonedDocument => {
+        clonedDocument.documentElement.scrollTop = 0;
+        clonedDocument.body.scrollTop = 0;
+        clonedDocument.querySelectorAll(".pdf-capture-top-marker,.pdf-capture-bottom-marker")
+          .forEach(marker => { marker.style.visibility = "hidden"; });
+      },
+    });
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageWidthMm = pdf.internal.pageSize.getWidth();
+    for (let index = 0; index < pages.length; index++) {
+      throwIfCancelled(shouldCancel);
+      onProgress?.(index + 1, pages.length);
+      const topPx = Math.round(pages[index].top * scale);
+      const heightPx = Math.round(pages[index].height * scale);
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = heightPx;
+      const ctx = pageCanvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(canvas, 0, topPx, canvas.width, heightPx, 0, 0, canvas.width, heightPx);
+      if (index > 0) pdf.addPage();
+      const pageHeightMm = (heightPx * pageWidthMm) / pageCanvas.width;
+      pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, pageWidthMm, pageHeightMm);
+      pageCanvas.width = 1;
+      pageCanvas.height = 1;
+      await yieldToBrowser();
+    }
+    canvas.width = 1;
+    canvas.height = 1;
+    return { blob: pdf.output("blob"), filename };
+  } finally {
+    container.remove();
+    window.scrollTo(savedScrollX, savedScrollY);
+  }
+}
+
 // ── main export ─────────────────────────────────────────────────────────────────
 // Renders one .pdf-page at a time (rather than one giant html2canvas capture of
 // the whole multi-page report) because a long report — e.g. the 25-axis
@@ -715,7 +1009,7 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
   let logoSrc = settings.logoDataUrl || "/logo.png";
 
   const container = document.createElement("div");
-  container.style.cssText = "position:absolute;top:0;left:0;width:850px;z-index:-2147483647;pointer-events:none;";
+ container.style.cssText = "position:absolute;top:0;left:0;width:850px;z-index:-2147483647;pointer-events:none;";
 
   const styleEl = document.createElement("style");
   styleEl.textContent = themedPdfCss(settings.colorTheme);
@@ -762,86 +1056,45 @@ export async function buildBrandedReportPdf(result, meta, settings, onProgress, 
   const filenameBase = (sourceBase || fallbackBase || "استبيان").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
   const filename = `تقرير تحليل - ${filenameBase}.pdf`;
 
-  try {
-    const pageEls = Array.from(root.querySelectorAll(".pdf-page-outer"));
-    root.remove();
-    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageWidthMm = pdf.internal.pageSize.getWidth();
-    const pageHeightMm = pdf.internal.pageSize.getHeight();
-    let firstImage = true;
-    let pageIndex = 0;
+  return renderRootToPdf({
+    root, container, settings, onProgress, shouldCancel, filename, html2canvas, jsPDF,
+  });
+}
 
-    for (const el of pageEls) {
-      throwIfCancelled(shouldCancel);
-      pageIndex++;
-      onProgress?.(pageIndex, pageEls.length);
-      // Keep the page being captured at a stable document position. Capturing
-      // pages from one very tall off-screen stack can make Chromium omit the
-      // header or start halfway through a distant page.
-      const captureRoot = document.createElement("div");
-      captureRoot.className = "pdf-root";
-      const captureEl = el.cloneNode(true);
-      captureRoot.appendChild(captureEl);
-      container.appendChild(captureRoot);
-      captureRoot.style.width = `${captureEl.offsetWidth}px`;
-      captureRoot.style.height = `${captureEl.offsetHeight}px`;
-      captureRoot.style.overflow = "hidden";
-      await waitForLayout();
-      await new Promise(resolve => setTimeout(resolve, 50));
-      throwIfCancelled(shouldCancel);
-      const canvas = await html2canvas(captureRoot, {
-        // 1.5x is sharp enough for A4 text while using ~44% less pixel work
-        // than 2x. This materially reduces long UI stalls on large reports.
-        scale: Math.min(2, Math.max(1, Number(settings.pdfRenderScale) || 1.5)),
-        useCORS: true, logging: false, backgroundColor: "#ffffff",
-        x: 0, y: 0, width: captureRoot.offsetWidth, height: captureRoot.offsetHeight,
-        scrollX: 0, scrollY: 0, imageTimeout: 4000,
-        onclone: clonedDocument => {
-          clonedDocument.documentElement.scrollTop = 0;
-          clonedDocument.body.scrollTop = 0;
-        },
-      });
-      captureRoot.remove();
-      await yieldToBrowser();
-      throwIfCancelled(shouldCancel);
-      const fullHeightMm = (canvas.height * pageWidthMm) / canvas.width;
-      // A section can render taller than one physical A4 page (e.g. a 25-axis
-      // summary table) — slice the canvas across as many PDF pages as needed
-      // instead of silently cropping it to a single page's height.
-      const sliceCount = Math.max(1, Math.ceil(fullHeightMm / pageHeightMm));
-      const sliceHeightPx = Math.ceil(canvas.height / sliceCount);
+export async function buildComparisonReportPdf(comparison, meta, settings, onProgress, options = {}) {
+  const shouldCancel = options.shouldCancel;
+  throwIfCancelled(shouldCancel);
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  throwIfCancelled(shouldCancel);
 
-      for (let s = 0; s < sliceCount; s++) {
-        throwIfCancelled(shouldCancel);
-        await yieldToBrowser();
-        const sliceCanvas = document.createElement("canvas");
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceHeightPx;
-        const ctx = sliceCanvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        ctx.drawImage(
-          canvas, 0, s * sliceHeightPx, canvas.width, sliceHeightPx,
-          0, 0, canvas.width, sliceHeightPx
-        );
-        const sliceImgData = sliceCanvas.toDataURL("image/jpeg", 0.9);
-        const sliceHeightMm = (sliceHeightPx * pageWidthMm) / canvas.width;
-        if (!firstImage) pdf.addPage();
-        firstImage = false;
-        pdf.addImage(sliceImgData, "JPEG", 0, 0, pageWidthMm, sliceHeightMm);
-        sliceCanvas.width = 1;
-        sliceCanvas.height = 1;
-      }
-      canvas.width = 1;
-      canvas.height = 1;
-    }
+  const firstResult = comparison?.slots?.find(slot => slot?.result)?.result;
+  if (!firstResult || !comparison?.overall?.length) throw new Error("بيانات المقارنة غير مكتملة");
+  const perSurvey = settings.surveyReportOptions?.[firstResult.schemaId] ?? {};
+  settings = { ...settings, ...perSurvey };
+  const logoSrc = settings.logoDataUrl || "/logo.png";
+  const container = document.createElement("div");
+  container.style.cssText = "position:absolute;top:0;left:0;width:850px;z-index:-2147483647;pointer-events:none;";
+  const styleEl = document.createElement("style");
+  styleEl.textContent = themedPdfCss(settings.colorTheme);
+  container.appendChild(styleEl);
+  const root = document.createElement("div");
+  root.className = "pdf-root";
+  root.innerHTML = buildComparisonPages(comparison, meta, settings, logoSrc);
+  container.appendChild(root);
+  document.body.appendChild(container);
+  await waitForLayout();
+  throwIfCancelled(shouldCancel);
 
-    await yieldToBrowser();
-    throwIfCancelled(shouldCancel);
-    return { blob: pdf.output("blob"), filename };
-  } finally {
-    document.body.removeChild(container);
-  }
+  const years = comparison.overall.map(item => item.year).filter(Boolean).join(" و ");
+  const filenameBase = ["مقارنة", firstResult.schemaLabel, meta.program, years]
+    .filter(Boolean).join(" - ").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+  const filename = `${filenameBase || "تقرير مقارنة"}.pdf`;
+  return renderComparisonRootToPdf({
+    root, container, settings, onProgress, shouldCancel, filename, html2canvas, jsPDF,
+  });
 }
 
 export async function downloadBrandedReportPdf(result, meta, settings, onProgress, options) {

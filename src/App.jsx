@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import JSZip from "jszip";
 import { analyze, analyzeRows, prepareData, readExcel, buildComparison } from "./engine/analyze.js";
 import { buildAnnualDocx, buildComparisonDocx, DEFAULT_SETTINGS } from "./engine/buildDocx.js";
-import { buildBrandedReportPdf } from "./engine/buildReportPdf.js";
+import { buildBrandedReportPdf, buildComparisonReportPdf } from "./engine/buildReportPdf.js";
 import AiChat, { PROVIDERS, DEFAULT_AI_SETTINGS } from "./AiChat.jsx";
 import SurveyManagement from "./SurveyManagement.jsx";
 import SemesterSurveys from "./SemesterSurveys.jsx";
 import SemesterFormPicker from "./SemesterFormPicker.jsx";
 import CourseEvaluationHub from "./CourseEvaluationHub.jsx";
+import ExamPaperEvaluationTool from "./ExamPaperEvaluationTool.jsx";
 import DriveLibrary from "./DriveLibrary.jsx";
 import SurveySummary from "./SurveySummary.jsx";
 import { GoogleDriveIcon, InlineNotice, QualityIcon, QualityPageHeader, QualitySectionTitle } from "./UiElements.jsx";
@@ -2753,6 +2754,7 @@ const HUB_ICONS = {
   drive: <><path d="M8 3h8l5 8-4 7H7l-4-7 5-8Z"/><path d="m8 3 5 8-3 7M21 11h-8M3 11h10"/></>,
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
   courses: <><path d="m3 6 9-4 9 4-9 4-9-4Z"/><path d="M7 8.2v5.3c0 1.7 2.2 3 5 3s5-1.3 5-3V8.2M21 6v7"/></>,
+  exam: <><path d="M5 3h14v18H5z"/><path d="M8 8h8M8 12h5M8 16h4"/><path d="m14.5 16 1.4 1.4 2.8-3"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.36.5.75 1 .97.35.16.73.24 1.1.23h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></>,
   help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.45-1.2.9-1.2 2M12 17h.01"/></>,
 };
@@ -2787,6 +2789,11 @@ function QualityHub({ onOpen }) {
       id: "courses", icon: "courses", color: "#a78bfa",
       title: "تقييم المقررات", tag: "دورة تقييم متكاملة",
       description: "جهّز بيانات المقررات، تابع نسب المشاركة، قسّم ملفات التقييم وراجع التوصيات من مساحة واحدة.",
+    },
+    {
+      id: "exam-paper", icon: "exam", color: "#fb7185",
+      title: "تقييم الورقة الامتحانية", tag: "الشكل والاستيفاء",
+      description: "حمّل قالب المقررات، قيّم استيفاء شكل الورقة ومخرجات التعلم، ثم أنشئ التقرير أو ارفعه على Drive.",
     },
   ];
 
@@ -2834,6 +2841,7 @@ const SIDEBAR_ITEMS = [
   { id: "analytics", icon: "analytics", label: "تحليل الاستبيانات" },
   { id: "semester", icon: "semester", label: "استبيانات الفصل الدراسي" },
   { id: "courses", icon: "courses", label: "تقييم المقررات" },
+  { id: "exam-paper", icon: "exam", label: "تقييم الورقة الامتحانية" },
 ];
 
 function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
@@ -2891,6 +2899,7 @@ export default function App() {
   const [showSurveyManagement, setShowSurveyManagement] = useState(false);
   const [showSemesterSurveys, setShowSemesterSurveys] = useState(false);
   const [showCourseEval, setShowCourseEval] = useState(false);
+  const [showExamPaperTool, setShowExamPaperTool] = useState(false);
   const [showDriveLibrary, setShowDriveLibrary] = useState(false);
   const [showSurveySummary, setShowSurveySummary] = useState(false);
   const [showHub, setShowHub] = useState(true);
@@ -3681,6 +3690,31 @@ export default function App() {
     } finally { setProcessing(false); }
   };
 
+  const downloadComparisonPdf = async () => {
+    if (!String(meta.preparedBy ?? "").trim() || !String(meta.reviewer ?? "").trim()) {
+      setError("يجب إدخال اسم مُعدّ التحليل واسم مراجع التحليل قبل إنشاء التقرير.");
+      return;
+    }
+    pdfCancelRef.current = false;
+    setPdfCancelRequested(false);
+    setPdfGenerating(true);
+    setPdfProgress({ current: 0, total: 0 });
+    try {
+      const builtPdf = await buildComparisonReportPdf(
+        comparison, { ...meta }, settings,
+        (current, total) => setPdfProgress({ current, total }),
+        { shouldCancel: () => pdfCancelRef.current }
+      );
+      if (!pdfCancelRef.current) {
+        downloadBlob(builtPdf.blob, builtPdf.filename);
+        setCompletionMessage("✓ تم إنشاء وتحميل تقرير المقارنة PDF.");
+        setTimeout(() => setCompletionMessage(""), 4500);
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") setError(`تعذّر إنشاء ملف PDF للمقارنة: ${err.message}`);
+    } finally { setPdfGenerating(false); setPdfCancelRequested(false); }
+  };
+
   const reset = () => {
     setStep(1); setSingleFile(null); setSingleResult(null); setComparison(null);
     setSlots(defaultSlots()); setError(""); setProcessing(false); setShowSettings(false);
@@ -3748,6 +3782,7 @@ export default function App() {
     setShowSurveyManagement(tool === "surveys");
     setShowSemesterSurveys(isSemesterTool);
     setShowCourseEval(tool === "courses");
+    setShowExamPaperTool(tool === "exam-paper");
     setShowDriveLibrary(tool === "drive");
     setShowSurveySummary(tool === "summary");
     setShowSettings(tool === "settings");
@@ -3796,6 +3831,7 @@ export default function App() {
     setShowSurveyManagement(false);
     setShowSemesterSurveys(false);
     setShowCourseEval(false);
+    setShowExamPaperTool(false);
     setShowDriveLibrary(false);
     setShowSurveySummary(false);
     setShowSettings(false);
@@ -3814,6 +3850,8 @@ export default function App() {
         ? "semester"
         : showCourseEval
           ? "courses"
+          : showExamPaperTool
+            ? "exam-paper"
           : showSettings
             ? "settings"
             : "analytics";
@@ -3822,7 +3860,7 @@ export default function App() {
     : activeTool === "surveys"
       ? "تصميم الاستبيانات"
       : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة لجنة القياس والتقويم";
-  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool === "drive" || activeTool === "summary" || activeTool.startsWith("semester"));
+  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool === "drive" || activeTool === "summary" || activeTool === "exam-paper" || activeTool.startsWith("semester"));
   const showAiChat = showHub || (activeTool === "analytics" && step === 5);
 
   return (
@@ -3895,6 +3933,11 @@ export default function App() {
           <SemesterSurveys key={semesterInitialTab} initialTab={semesterInitialTab} onOpenAnalysis={openSemesterAnalysis} onAnalyzeForms={handleSemesterFormsBatch} onSectionChange={setSemesterInitialTab} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
         ) : showCourseEval ? (
           <CourseEvaluationHub />
+        ) : showExamPaperTool ? (
+          <ExamPaperEvaluationTool
+            googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }}
+            reportSettings={settings}
+          />
         ) : showSettings ? (
           <div className="card" style={{ padding: 32 }}>
             <SettingsPanel
@@ -4554,10 +4597,18 @@ export default function App() {
                           : <><QualityIcon name="download" size={17} /> تحميل التقرير (Word)</>}
                       </button>
                     ) : (
-                      <button className="btn btn-blue qa-icon-button" style={{ fontSize: 16, padding: "14px 36px" }}
-                        disabled={processing} onClick={downloadComparison}>
-                        <QualityIcon name="download" size={17} /> تحميل تقرير المقارنة (Word)
-                      </button>
+                      <>
+                        <button className="btn btn-blue qa-icon-button" style={{ fontSize: 16, padding: "14px 36px" }}
+                          disabled={processing || pdfGenerating} onClick={downloadComparison}>
+                          <QualityIcon name="download" size={17} /> تحميل تقرير المقارنة (Word)
+                        </button>
+                        <button className="btn btn-primary qa-icon-button" style={{ fontSize: 16, padding: "14px 36px" }}
+                          disabled={processing || pdfGenerating} onClick={downloadComparisonPdf}>
+                          {pdfGenerating
+                            ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
+                            : <><QualityIcon name="download" size={17} /> تحميل تقرير المقارنة (PDF)</>}
+                        </button>
+                      </>
                     )}
                     {isAnnual && singleResult && (
                       <>
