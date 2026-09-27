@@ -644,6 +644,119 @@ function buildComparisonPages(comparison, meta, s, logoSrc) {
   return cover + tablePages;
 }
 
+function examPaperSummary(report) {
+  const completed = report.courses.filter(course => course.status === "complete");
+  const incomplete = report.courses.filter(course => course.status === "incomplete");
+  const total = report.courses.length;
+  const percentage = count => total ? Math.round(count * 1000 / total) / 10 : 0;
+  return { completed, incomplete, total, completedPct: percentage(completed.length), incompletePct: percentage(incomplete.length) };
+}
+
+function buildExamPaperCover(report, summary, s, logoSrc) {
+  const rows = [
+    ["القسم", report.department],
+    ["الفصل الدراسي", report.semester],
+    ["العام الدراسي", report.year],
+    ["عدد المقررات التي تم تقييمها", summary.total],
+    ["الجهة القائمة بالتقييم", s.committeeName || "لجنة القياس والتقويم"],
+  ];
+  return `
+    ${pageOpen("pdf-cover pdf-exam-cover")}
+      ${pageHeader(s, logoSrc)}
+      <div class="pdf-cover-title-wrap">
+        <div class="pdf-cover-title">تقييم الورقة الامتحانية من حيث الشكل</div>
+        <div class="pdf-cover-subtitle">تقرير مراجعة استيفاء عناصر الورقة الامتحانية</div>
+        <div class="pdf-cover-committee">${esc(report.department)}</div>
+      </div>
+      ${sectionHeading("البيانات الأساسية")}
+      <div class="pdf-info-table">${rows.map(([label, value], index) => infoRow(label, value, index)).join("")}</div>
+      ${sectionHeading("ملخص حالة المقررات")}
+      <div class="pdf-exam-stats">
+        <div><b>${summary.total}</b><span>إجمالي المقررات</span></div>
+        <div class="complete"><b>${summary.completed.length}</b><span>مستوفاة لجميع العناصر</span></div>
+        <div class="incomplete"><b>${summary.incomplete.length}</b><span>غير مستوفاة لبعض العناصر</span></div>
+      </div>
+    ${pageClose(s)}`;
+}
+
+function buildExamPaperSummaryPage(report, summary, s, logoSrc) {
+  return `
+    ${pageOpen("pdf-exam-summary")}
+      ${pageHeader(s, logoSrc)}
+      ${sectionHeading("أولًا: الملخص التنفيذي لتقييم أوراق القسم")}
+      <p class="pdf-body-text">تم تقييم أوراق ${summary.total} مقررًا بقسم ${esc(report.department)} خلال الفصل الدراسي ${esc(report.semester)} للعام ${esc(report.year)}.</p>
+      <table class="pdf-table pdf-exam-summary-table">
+        <thead><tr><th class="pdf-th-wide">حالة المقررات</th><th>العدد</th><th>النسبة</th></tr></thead>
+        <tbody>
+          <tr class="alt"><td class="pdf-td-right">المقررات المستوفاة لجميع عناصر التقييم</td><td class="pdf-td-strong">${summary.completed.length}</td><td class="pdf-td-strong">${summary.completedPct}%</td></tr>
+          <tr><td class="pdf-td-right">المقررات غير المستوفاة لبعض عناصر التقييم</td><td class="pdf-td-strong">${summary.incomplete.length}</td><td class="pdf-td-strong">${summary.incompletePct}%</td></tr>
+          <tr class="pdf-total-row"><td class="pdf-td-right">الإجمالي</td><td>${summary.total}</td><td>100%</td></tr>
+        </tbody>
+      </table>
+      ${sectionHeading("التوزيع النسبي")}
+      <div class="pdf-exam-bars">
+        <div><span>المقررات المستوفاة</span><b>${summary.completedPct}%</b><i><u style="width:${summary.completedPct}%"></u></i></div>
+        <div class="incomplete"><span>المقررات غير المستوفاة</span><b>${summary.incompletePct}%</b><i><u style="width:${summary.incompletePct}%"></u></i></div>
+      </div>
+    ${pageClose(s)}`;
+}
+
+function buildExamPaperCoursePages(rows, kind, s, logoSrc) {
+  const completed = kind === "completed";
+  const pageSize = completed ? 14 : 9;
+  const pages = chunk(rows, pageSize);
+  if (!pages.length) pages.push([]);
+  const heading = completed
+    ? "ثانيًا: المقررات المستوفاة لجميع عناصر التقييم"
+    : "ثالثًا: المقررات غير المستوفاة لبعض عناصر التقييم";
+  return pages.map((pageRows, pageIndex) => `
+    ${pageOpen("pdf-exam-courses")}
+      ${pageHeader(s, logoSrc)}
+      ${sectionHeading(`${heading}${pages.length > 1 ? ` - صفحة ${pageIndex + 1} من ${pages.length}` : ""}`)}
+      <table class="pdf-table pdf-table-detail">
+        <colgroup>${completed
+          ? '<col style="width:8%"><col style="width:20%"><col style="width:48%"><col style="width:24%">'
+          : '<col style="width:7%"><col style="width:16%"><col style="width:27%"><col style="width:32%"><col style="width:18%">'}</colgroup>
+        <thead><tr><th>م</th><th>كود المقرر</th><th class="pdf-th-wide">اسم المقرر</th>${completed ? "" : '<th class="pdf-th-wide">العناصر غير المستوفاة</th>'}<th>مخرجات التعلم</th></tr></thead>
+        <tbody>${pageRows.length ? pageRows.map((course, index) => `
+          <tr class="${index % 2 === 0 ? "alt" : ""}">
+            <td>${pageIndex * pageSize + index + 1}</td><td>${esc(course.code)}</td><td class="pdf-td-right">${esc(course.name)}</td>
+            ${completed ? "" : `<td class="pdf-td-right">${esc(course.missingItems || "—")}</td>`}
+            <td class="pdf-td-strong">${course.learningOutcomes === "" || course.learningOutcomes == null ? "—" : `${esc(course.learningOutcomes)}%`}</td>
+          </tr>`).join("") : `<tr><td colspan="${completed ? 4 : 5}" class="pdf-exam-empty">لا توجد مقررات ضمن هذه الفئة</td></tr>`}</tbody>
+      </table>
+    ${pageClose(s)}`).join("");
+}
+
+function buildExamPaperEvaluatorsPage(report, s, logoSrc) {
+  const evaluators = report.evaluators?.length ? report.evaluators : [{ name: "—", role: "—" }];
+  return `
+    ${pageOpen("pdf-exam-evaluators")}
+      ${pageHeader(s, logoSrc)}
+      ${sectionHeading("القائمون بالتقييم والاعتماد")}
+      <table class="pdf-table">
+        <thead><tr><th style="width:10%">م</th><th class="pdf-th-wide">الاسم</th><th class="pdf-th-wide">الوظيفة</th></tr></thead>
+        <tbody>${evaluators.map((evaluator, index) => `<tr class="${index % 2 === 0 ? "alt" : ""}"><td>${index + 1}</td><td class="pdf-td-right pdf-td-strong">${esc(evaluator.name)}</td><td class="pdf-td-right">${esc(evaluator.role)}</td></tr>`).join("")}</tbody>
+      </table>
+      <div class="pdf-exam-approval">
+        <span>رئيس لجنة القياس والتقويم</span>
+        <b>${esc(report.committeeHead || evaluators[0]?.name || "—")}</b>
+        <i>التوقيع: ................................................</i>
+      </div>
+    ${pageClose(s)}`;
+}
+
+function buildExamPaperPages(report, s, logoSrc) {
+  const summary = examPaperSummary(report);
+  return [
+    buildExamPaperCover(report, summary, s, logoSrc),
+    buildExamPaperSummaryPage(report, summary, s, logoSrc),
+    buildExamPaperCoursePages(summary.completed, "completed", s, logoSrc),
+    buildExamPaperCoursePages(summary.incomplete, "incomplete", s, logoSrc),
+    buildExamPaperEvaluatorsPage(report, s, logoSrc),
+  ].join("");
+}
+
 // ── CSS ─────────────────────────────────────────────────────────────────────────
 const PDF_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -742,6 +855,30 @@ const PDF_CSS = `
   .pdf-axis-spacer { height: 22px; }
 
   .pdf-no-recs { text-align: center; font-weight: 800; color: ${ACCENT}; font-size: 15px; margin-top: 30px; }
+  .pdf-exam-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+  .pdf-exam-stats > div { padding: 18px 10px; text-align: center; border: 1px solid #dde4ea; border-radius: 9px; background: #f8fafc; }
+  .pdf-exam-stats b, .pdf-exam-stats span { display: block; }
+  .pdf-exam-stats b { color: ${ACCENT}; font-size: 25px; }
+  .pdf-exam-stats span { margin-top: 5px; color: ${TEXT_MUTED}; font-size: 10.5px; line-height: 1.5; }
+  .pdf-exam-stats .complete { background: #eef9f2; border-color: #b9e1c6; }
+  .pdf-exam-stats .complete b { color: #168447; }
+  .pdf-exam-stats .incomplete { background: #fff8e8; border-color: #eed69d; }
+  .pdf-exam-stats .incomplete b { color: #a66a09; }
+  .pdf-exam-summary-table { margin-bottom: 28px; }
+  .pdf-exam-bars { display: grid; gap: 20px; margin-top: 20px; }
+  .pdf-exam-bars > div { display: grid; grid-template-columns: 1fr 52px; gap: 8px 12px; align-items: center; }
+  .pdf-exam-bars span { font-size: 12.5px; font-weight: 800; }
+  .pdf-exam-bars b { direction: ltr; color: #168447; text-align: left; font-size: 13px; }
+  .pdf-exam-bars i { grid-column: 1 / -1; height: 18px; overflow: hidden; border-radius: 9px; background: #edf1f4; }
+  .pdf-exam-bars u { display: block; height: 100%; border-radius: inherit; background: #27ae60; text-decoration: none; }
+  .pdf-exam-bars .incomplete b { color: #b7790a; }
+  .pdf-exam-bars .incomplete u { background: #f0a725; }
+  .pdf-exam-empty { padding: 30px !important; color: ${TEXT_MUTED}; font-weight: 800; }
+  .pdf-exam-approval { width: 58%; margin: 80px auto 0; padding: 22px; text-align: center; border: 1px dashed ${PINK_LINE}; border-radius: 10px; }
+  .pdf-exam-approval span, .pdf-exam-approval b, .pdf-exam-approval i { display: block; }
+  .pdf-exam-approval span { color: ${TEXT_MUTED}; font-size: 12px; }
+  .pdf-exam-approval b { margin-top: 9px; color: ${ACCENT}; font-size: 16px; }
+  .pdf-exam-approval i { margin-top: 28px; color: #888; font-size: 11px; font-style: normal; }
   .pdf-procedure-list { direction: rtl; list-style: none; counter-reset: procedure-item; margin: 18px 0 0; padding: 0; color: ${TEXT_DARK}; font-size: 13px; line-height: 2.05; text-align: right; }
   .pdf-procedure-list li { direction: rtl; display: flex; flex-direction: row; align-items: flex-start; gap: 8px; counter-increment: procedure-item; margin-bottom: 8px; text-align: right; }
   .pdf-procedure-list li::before { content: counter(procedure-item) "."; flex: 0 0 22px; direction: ltr; text-align: right; font-weight: 700; color: ${ACCENT}; }
@@ -773,7 +910,16 @@ function yieldToBrowser() {
 }
 
 function waitForLayout() {
-  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return new Promise(resolve => {
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      resolve();
+    };
+    setTimeout(done, 120);
+    requestAnimationFrame(() => requestAnimationFrame(done));
+  });
 }
 
 function consumeCaptureMarkers(canvas) {
@@ -983,6 +1129,44 @@ async function renderComparisonRootToPdf({ root, container, settings, onProgress
     container.remove();
     window.scrollTo(savedScrollX, savedScrollY);
   }
+}
+
+export async function buildExamPaperReportPdf(report, settings = {}, onProgress, options = {}) {
+  const shouldCancel = options.shouldCancel;
+  throwIfCancelled(shouldCancel);
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  throwIfCancelled(shouldCancel);
+
+  const s = {
+    uniName: "Egyptian Russian University",
+    facultyName: "Faculty of Management, Economics and Business Technology",
+    committeeName: "لجنة القياس والتقويم",
+    qualityEmail: "qa-mebt@eru.edu.eg",
+    measurementEmail: "meb-maec@eru.edu.eg",
+    ...settings,
+  };
+  const logoSrc = s.logoDataUrl || "/logo.png";
+  const container = document.createElement("div");
+  container.style.cssText = "position:absolute;top:0;left:0;width:850px;z-index:-2147483647;pointer-events:none;";
+  const styleEl = document.createElement("style");
+  styleEl.textContent = themedPdfCss(s.colorTheme);
+  container.appendChild(styleEl);
+  const root = document.createElement("div");
+  root.className = "pdf-root";
+  root.innerHTML = buildExamPaperPages(report, s, logoSrc);
+  container.appendChild(root);
+  document.body.appendChild(container);
+  await waitForLayout();
+  throwIfCancelled(shouldCancel);
+
+  const clean = value => String(value || "").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+  const filename = `تقرير تقييم الورقة الامتحانية من حيث الشكل - ${clean(report.department)} - ${clean(report.semester)} ${clean(report.year)}.pdf`;
+  return renderRootToPdf({
+    root, container, settings: s, onProgress, shouldCancel, filename, html2canvas, jsPDF,
+  });
 }
 
 // ── main export ─────────────────────────────────────────────────────────────────
