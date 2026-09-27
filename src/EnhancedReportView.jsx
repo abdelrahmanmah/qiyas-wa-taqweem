@@ -784,11 +784,15 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
   const handlePrint = async () => {
     if (pdfBusy) return;
     setPdfBusy(true);
+    let container = null;
     try {
-      const { default: html2pdf } = await import("html2pdf.js");
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
 
       // Build an off-screen container that mirrors only the report content
-      const container = document.createElement("div");
+      container = document.createElement("div");
       container.style.cssText = "position:fixed;top:-99999px;left:-99999px;width:900px;direction:rtl;";
 
       // Inject combined CSS (screen + PDF overrides)
@@ -812,32 +816,35 @@ export default function EnhancedReportView({ result, meta = {}, settings = {} })
       document.body.appendChild(container);
 
       const filename = `تقرير-${schemaLabel || "استبيان"}.pdf`;
-
-      await html2pdf()
-        .set({
-          margin: [12, 12, 12, 12],          // mm — top right bottom left
-          filename,
-          image:      { type: "jpeg", quality: 0.97 },
-          html2canvas: {
-            scale:       2,                   // high-DPI
-            useCORS:     true,
-            logging:     false,
-            windowWidth: 900,                 // same as container width
-          },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          pagebreak: {
-            mode:  ["css", "legacy"],
-            avoid: [".erv-axis-block", ".erv-stat-card", ".erv-section-heading", ".erv-overall-row"],
-          },
-        })
-        .from(root)
-        .save();
-
-      document.body.removeChild(container);
+      const canvas = await html2canvas(root, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff", windowWidth: 900 });
+      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+      const margin = 12;
+      const outputWidth = 210 - (margin * 2);
+      const outputHeight = 297 - (margin * 2);
+      const sourcePageHeight = Math.max(1, Math.floor(canvas.width * (outputHeight / outputWidth)));
+      let sourceY = 0;
+      let pageIndex = 0;
+      while (sourceY < canvas.height) {
+        const sliceHeight = Math.min(sourcePageHeight, canvas.height - sourceY);
+        const slice = document.createElement("canvas");
+        slice.width = canvas.width;
+        slice.height = sliceHeight;
+        const context = slice.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, slice.width, slice.height);
+        context.drawImage(canvas, 0, sourceY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        if (pageIndex > 0) pdf.addPage();
+        const renderedHeight = sliceHeight * (outputWidth / canvas.width);
+        pdf.addImage(slice.toDataURL("image/jpeg", 0.97), "JPEG", margin, margin, outputWidth, renderedHeight, undefined, "FAST");
+        sourceY += sliceHeight;
+        pageIndex += 1;
+      }
+      pdf.save(filename);
     } catch (err) {
       console.error("PDF generation failed:", err);
       alert("حدث خطأ أثناء إنشاء PDF. حاول مرة أخرى.");
     } finally {
+      container?.remove();
       setPdfBusy(false);
     }
   };

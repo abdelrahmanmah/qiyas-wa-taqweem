@@ -81,7 +81,7 @@ function PickerLoader({ label = "جاري تجهيز الاستبيانات" }) 
   );
 }
 
-export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, googleAuth }) {
+export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, onPrepareForms, googleAuth }) {
   const localAuth = useSemesterAuth(!googleAuth);
   const auth = googleAuth ?? localAuth;
   const [years, setYears] = useState(null);
@@ -149,7 +149,12 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
   }
 
   async function analyzeForms(items, delivery = "upload") {
-    if (!onAnalyzeForms || !items.length || analyzing) return;
+    if (!items.length || analyzing) return;
+    if (onPrepareForms) {
+      onPrepareForms(items, auth.token, { year, semester });
+      return;
+    }
+    if (!onAnalyzeForms) return;
     const preparedBy = reportAuthors.preparedBy.trim();
     const reviewer = reportAuthors.reviewer.trim();
     if (!preparedBy || !reviewer) {
@@ -203,16 +208,16 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
             {(semesters ?? []).map(f => <option key={f.id} value={f.name} style={{ color: "#000" }}>{f.name}</option>)}
           </select>
         </div>
-        <div style={{ flex: "1 1 180px" }}>
+        {!onPrepareForms && <div style={{ flex: "1 1 180px" }}>
           <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginBottom: 5 }}>مُعدّ التحليل *</div>
           <input value={reportAuthors.preparedBy} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, preparedBy: e.target.value }))}
             style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 13 }} />
-        </div>
-        <div style={{ flex: "1 1 180px" }}>
+        </div>}
+        {!onPrepareForms && <div style={{ flex: "1 1 180px" }}>
           <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginBottom: 5 }}>مراجع التحليل *</div>
           <input value={reportAuthors.reviewer} required placeholder="الاسم الكامل" onChange={e => setReportAuthors(a => ({ ...a, reviewer: e.target.value }))}
             style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontFamily: "'Cairo',sans-serif", fontSize: 13 }} />
-        </div>
+        </div>}
       </div>
 
       <InlineNotice text={loadError} style={{ marginBottom: 12 }} />
@@ -244,10 +249,8 @@ export default function SemesterFormPicker({ onFormSelected, onAnalyzeForms, goo
               {!!selectedIds.size && <button className="btn btn-ghost btn-sm" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button>}
             </div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              <button className="btn btn-ghost btn-sm" disabled={!selectedIds.size || analyzing} style={{ opacity: selectedIds.size && !analyzing ? 1 : .45 }} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)), "download")}>تحليل وتحميل المحدد</button>
-              <button className="btn btn-primary btn-sm" disabled={!selectedIds.size || analyzing} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)), "upload")}>تحليل ورفع المحدد</button>
-              <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms, "download")}>تحليل وتحميل الكل</button>
-              <button className="btn btn-primary btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms, "upload")}>تحليل ورفع الكل</button>
+              <button className="btn btn-primary btn-sm" disabled={!selectedIds.size || analyzing} style={{ opacity: selectedIds.size && !analyzing ? 1 : .45 }} onClick={() => analyzeForms(forms.filter(f => selectedIds.has(f.id)))}>تحليل المحدد ({selectedIds.size})</button>
+              <button className="btn btn-ghost btn-sm" disabled={analyzing} onClick={() => analyzeForms(forms)}>تحليل الكل ({forms.length})</button>
             </div>
           </div>
           {forms.map(f => (

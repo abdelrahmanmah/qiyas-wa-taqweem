@@ -12,6 +12,27 @@ import ExamPaperEvaluationTool from "./ExamPaperEvaluationTool.jsx";
 import DriveLibrary from "./DriveLibrary.jsx";
 import SurveySummary from "./SurveySummary.jsx";
 import { GoogleDriveIcon, InlineNotice, QualityIcon, QualityPageHeader, QualitySectionTitle } from "./UiElements.jsx";
+import { AnalysisJourneyHeader, AnalysisReview, AnalysisStart } from "./AnalysisWorkflow.jsx";
+import {
+  ANALYSIS_MODES,
+  ANALYSIS_SOURCES,
+  ANALYSIS_STAGES,
+  createAnalysisRequest,
+  validateAnalysisRequest,
+} from "./analysisWorkflow.js";
+import "./analysisWorkflow.css";
+import {
+  AUXILIARY_NAV_ITEMS,
+  EVALUATION_NAV_ITEMS,
+  HOME_TOOL_CARDS,
+  SEMESTER_TAB_BY_TOOL,
+  WORKSPACE_NAV_ITEMS,
+  canonicalToolId,
+  getToolLabel,
+  getToolTag,
+  isSemesterTool,
+  needsGoogleConnection,
+} from "./navigationConfig.js";
 import { getAllAnalysisSchemas as allSchemas, detectAnySurveyType as detectSurveyType } from "./engine/customSurveyModel.js";
 import { saveStoredToken, getStoredToken, clearStoredToken, getForm, listAllResponses, responsesToRows, departmentFromSurveyName, SEMESTER_SCOPE, SEMESTER_TOKEN_KEY } from "./engine/semesterSurveyModel.js";
 
@@ -270,7 +291,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .app-shell{display:block;direction:rtl;min-height:calc(100vh - 75px)}
 .tool-sidebar{position:fixed;right:0;top:0;bottom:0;width:254px;max-width:calc(100vw - 20px);height:auto;box-sizing:border-box;padding:0 13px 18px;
   display:flex;flex-direction:column;border-left:1px solid rgba(255,255,255,.08);background:rgba(5,20,36,.48);
-  backdrop-filter:blur(18px);transition:width .24s ease,transform .24s ease;z-index:35;overflow:hidden}
+  backdrop-filter:blur(18px);transition:width .24s ease,transform .24s ease;z-index:35;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
 .tool-sidebar.collapsed{width:76px;padding-inline:10px}
 .sidebar-brand{height:75px;display:flex;align-items:center;gap:9px;flex:0 0 75px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:17px;white-space:nowrap}
 .sidebar-brand-mark{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:11px;color:#fff;background:linear-gradient(145deg,#20c5a4,#197ca4)}
@@ -280,6 +301,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tool-sidebar.collapsed .sidebar-brand-mark,.tool-sidebar.collapsed .sidebar-brand-copy{display:none}
 .sidebar-heading{padding:0 10px 12px;color:rgba(255,255,255,.58);font-size:10.5px;font-weight:900;white-space:nowrap;letter-spacing:.2px}
 .sidebar-nav{display:flex;flex-direction:column;gap:6px}
+.sidebar-group{flex:0 0 auto}
 .sidebar-item{width:100%;min-height:46px;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:13px;border:1px solid transparent;
   color:rgba(232,240,254,.75);background:transparent;font-family:inherit;font-size:13px;font-weight:750;text-align:right;cursor:pointer;white-space:nowrap;transition:.18s ease}
 .sidebar-item:hover{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.07)}
@@ -291,13 +313,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .tool-sidebar.collapsed .sidebar-item{justify-content:center;padding-inline:0;gap:0}
 .sidebar-separator{height:1px;background:rgba(255,255,255,.07);margin:13px 8px}
 .sidebar-bottom{margin-top:auto}
+.sidebar-group{display:flex;flex-direction:column;gap:6px}
 .sidebar-toggle{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.12);
   color:#dffbf5;background:rgba(255,255,255,.055);cursor:pointer;transition:.18s}
 .sidebar-toggle:hover{background:rgba(26,188,156,.14);border-color:rgba(94,234,212,.24)}
+.sidebar-backdrop{display:none}
 .app-content{min-width:0;margin-right:254px;transition:margin-right .24s ease}
 .app-shell.sidebar-closed .app-content{margin-right:76px}
 .quality-header.sidebar-open{margin-right:254px}.quality-header.sidebar-closed{margin-right:76px}
 .quality-header{min-height:75px;min-width:0;transition:margin-right .24s ease}
+.active-tool-copy{min-width:0;display:flex;flex-direction:column;gap:2px}
+.active-tool-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.active-tool-kicker{color:rgba(255,255,255,.45);font-size:10px;font-weight:800;line-height:1.2}
 .google-global-btn{display:inline-flex;align-items:center;gap:9px;min-height:40px;padding:8px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.12);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;transition:.18s}
 .google-global-btn.disconnected{color:#e8f0fe;background:rgba(255,255,255,.06)}
 .google-global-btn.connected{color:#9ff5df;background:rgba(26,188,156,.1);border-color:rgba(94,234,212,.22);cursor:pointer}
@@ -320,6 +347,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:760px){
   .app-shell,.app-content,.app-shell.sidebar-closed .app-content{margin-right:0;width:100%}
   .quality-header.sidebar-open,.quality-header.sidebar-closed{margin-right:0}
+  .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:34;border:0;background:rgba(1,11,22,.48);backdrop-filter:blur(2px);cursor:pointer}
+  .app-shell.sidebar-open .sidebar-backdrop{display:block}
   .tool-sidebar{top:10px;right:10px;bottom:10px;height:auto;border:1px solid rgba(255,255,255,.11);border-radius:18px;box-shadow:0 28px 70px rgba(0,0,0,.48);background:rgba(7,25,42,.96)}
   .tool-sidebar.collapsed{display:none;transform:none;width:254px;padding-inline:13px}
   .tool-sidebar.open{display:flex;transform:none}
@@ -329,7 +358,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .mobile-nav-toggle{display:grid;flex:0 0 40px}
   .quality-header{padding:11px 12px!important;gap:8px!important}
   .quality-header>div:first-child{min-width:0;flex:1;overflow:hidden}
-  .quality-header>div:first-child>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .active-tool-kicker{display:none}
   .google-global-btn{flex:0 0 auto;min-height:40px;padding:7px 10px;font-size:11px}
   .google-global-btn .google-global-label{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .upload-workspace{padding:16px!important}.upload-source-grid{grid-template-columns:1fr}.drive-control-bar{align-items:flex-start;flex-direction:column}.drive-view-switch{width:100%;overflow-x:auto}.drive-view-btn{flex:1}.drive-filter-grid{grid-template-columns:1fr 1fr}.drive-filter-grid>*:nth-child(3){grid-column:1/-1}.drive-batch-toolbar{top:8px;align-items:stretch;flex-direction:column}.drive-file-grid{grid-template-columns:1fr;max-height:none}.drive-file-analyze{opacity:1;transform:none}.upload-drop-modern{min-height:230px}.app-main{padding:18px 12px!important}
@@ -350,7 +379,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   backdrop-filter:blur(20px);box-shadow:0 10px 35px rgba(2,12,27,.16)}
 .brand-mark{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;
   color:#fff;background:linear-gradient(145deg,#20c5a4,#197ca4);box-shadow:0 10px 24px rgba(26,188,156,.22)}
-.hub{animation:fadeInUp .4s cubic-bezier(.22,1,.36,1)}
+.hub{width:100%;max-width:100%;min-width:0;overflow:hidden;animation:fadeInUp .4s cubic-bezier(.22,1,.36,1)}
 .hub-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr);
   gap:32px;padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:28px;
   background:linear-gradient(125deg,rgba(15,49,74,.98),rgba(13,66,61,.94));
@@ -379,8 +408,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   color:inherit;font-family:inherit;border-radius:20px;border:1px solid rgba(255,255,255,.1);
   background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));cursor:pointer;
   transition:transform .24s,border-color .24s,background .24s,box-shadow .24s;display:flex;flex-direction:column;align-items:stretch}
-.tool-card:hover{transform:translateY(-5px);border-color:rgba(110,231,207,.38);
+.tool-card:focus-visible,.tool-card:hover{transform:translateY(-5px);border-color:rgba(110,231,207,.38);
   background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.055));box-shadow:0 20px 42px rgba(2,12,27,.2)}
+.tool-card:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .tool-card.featured{grid-column:span 6;background:linear-gradient(145deg,rgba(26,188,156,.17),rgba(255,255,255,.045))}
 .tool-card-icon{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;margin-bottom:20px;
   color:var(--tool-color,#65d8c0);background:color-mix(in srgb,var(--tool-color,#65d8c0) 14%,transparent);
@@ -399,8 +429,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .hub-note-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;
   background:rgba(96,165,250,.12);color:#93c5fd}
 @media(max-width:900px){.hub-hero{grid-template-columns:1fr;padding:30px}.tool-card,.tool-card.featured{grid-column:span 6}}
-@media(max-width:640px){.quality-header .brand-copy small{display:none}.quality-header{position:sticky}.hub-hero{padding:22px;border-radius:22px}
-  .hub-title{font-size:30px;letter-spacing:0}.hub-subtitle{font-size:14px}.hub-snapshot{display:none}.tool-card,.tool-card.featured{grid-column:1/-1;min-height:190px;padding:20px}.hub-section-head{align-items:start;flex-direction:column;gap:3px}.hub-note{align-items:flex-start;flex-direction:column}}
+@media(max-width:640px){.quality-header .brand-copy small{display:none}.quality-header{position:sticky}.hub-hero{width:100%;max-width:100%;min-width:0;padding:22px;border-radius:22px}
+  .hub-hero::after{display:none}.hub-eyebrow{width:auto;max-width:100%;white-space:normal;line-height:1.7}.hub-title{font-size:27px;letter-spacing:0;overflow-wrap:anywhere}.hub-subtitle{font-size:13px;max-width:100%;overflow-wrap:anywhere}.hub-snapshot{display:none}.tool-grid{width:100%;max-width:100%;min-width:0;display:flex;flex-direction:column}.tool-card,.tool-card.featured{width:100%;min-width:0;max-width:100%;min-height:190px;padding:20px}.tool-card h3,.tool-card p,.tool-tag{overflow-wrap:anywhere}.hub-section-head{align-items:start;flex-direction:column;gap:3px}.hub-note{max-width:100%;min-width:0;align-items:flex-start;flex-direction:column}.hub-note-copy{min-width:0;overflow-wrap:anywhere}}
 `;
 
 const STEPS = [
@@ -1107,7 +1137,7 @@ function SettingsPanel({ settings, onChange, aiSettings, onAiChange }) {
 }
 
 // ── BatchItem ─────────────────────────────────────────────────────────────────
-function BatchItem({ item, year, settings, reportMeta }) {
+function BatchItem({ item, year, settings, reportMeta, onRetry }) {
   const [downloading, setDownloading] = useState(false);
 
   const doDownload = async () => {
@@ -1189,12 +1219,13 @@ function BatchItem({ item, year, settings, reportMeta }) {
             : "⬇ Word"}
         </button>
       )}
+      {item.status === "error" && <button className="btn btn-ghost btn-sm" onClick={onRetry} style={{ flexShrink: 0, fontSize: 11 }}>إعادة المحاولة</button>}
     </div>
   );
 }
 
 // ── BatchProcessor ────────────────────────────────────────────────────────────
-function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onReportMetaChange, onBack }) {
+function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onReportMetaChange, onBack, request, autoStart = false, onStageChange }) {
   const [items, setItems] = useState(() =>
     files.map(f => ({ file: f, status: "pending", result: null, error: null, type: null, program: null }))
   );
@@ -1203,6 +1234,7 @@ function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onRep
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [authorError, setAuthorError] = useState("");
   const cancelRef = useRef(false);
+  const autoStartedRef = useRef(false);
   const [cancelRequested, setCancelRequested] = useState(false);
 
   const doneCount  = items.filter(i => i.status === "done").length;
@@ -1243,7 +1275,16 @@ function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onRep
     }
     setRunning(false);
     setAllDone(true);
+    onStageChange?.(ANALYSIS_STAGES.RESULTS);
   };
+
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    startProcessing();
+  // startProcessing intentionally runs once for the prepared request.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const downloadAll = async () => {
     setDownloadingAll(true);
@@ -1263,8 +1304,26 @@ function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onRep
     setDownloadingAll(false);
   };
 
+  const retryItem = async (idx) => {
+    const file = files[idx];
+    if (!file) return;
+    setItems(prev => prev.map((item, index) => index === idx ? { ...item, status: "processing", error: null } : item));
+    try {
+      const buffer = await readFileAsBuffer(file);
+      const rows = readExcel(buffer);
+      const detectedType = detectSurveyType(file.name, rows[0]) ?? "faculty";
+      const result = analyze(rows, allSchemas()[detectedType]);
+      const program = detectProgramFromFilename(file.name);
+      setItems(prev => prev.map((item, index) => index === idx ? { ...item, status: "done", result, type: detectedType, program } : item));
+    } catch (retryError) {
+      setItems(prev => prev.map((item, index) => index === idx ? { ...item, status: "error", error: retryError.message || "تعذرت إعادة المحاولة" } : item));
+    }
+  };
+
   return (
-    <div className="card" style={{ padding: 36 }}>
+    <div>
+      <AnalysisJourneyHeader stage={allDone ? ANALYSIS_STAGES.RESULTS : ANALYSIS_STAGES.PROCESSING} request={request} nextLabel={allDone ? "تنزيل التقارير أو بدء تحليل جديد" : "مركز النتائج"} />
+      <div className="card" style={{ padding: 36 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between",
                     marginBottom: 24, gap: 16 }}>
@@ -1328,7 +1387,7 @@ function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onRep
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28,
                     maxHeight: 480, overflowY: "auto" }}>
         {items.map((it, i) => (
-          <BatchItem key={i} item={it} year={year} settings={settings} reportMeta={reportMeta} />
+          <BatchItem key={i} item={it} year={year} settings={settings} reportMeta={reportMeta} onRetry={() => retryItem(i)} />
         ))}
       </div>
 
@@ -1362,7 +1421,8 @@ function BatchProcessor({ files, year, onYearChange, settings, reportMeta, onRep
           </button>
         )}
       </div>
-    </div>
+      </div>
+      </div>
   );
 }
 
@@ -2059,7 +2119,7 @@ function LoadingOverlay({ message = "جاري المعالجة…", progress, on
   );
 }
 
-function DriveBatchOverlay({ state, onClose, onCancel }) {
+function DriveBatchOverlay({ state, onClose, onCancel, onRetry, inline = false }) {
   if (!state) return null;
   const doneCount = state.items.filter(item => item.status === "done").length;
   const errorCount = state.items.filter(item => item.status === "error").length;
@@ -2067,15 +2127,15 @@ function DriveBatchOverlay({ state, onClose, onCancel }) {
   const finished = doneCount + errorCount;
   const pct = state.total ? Math.round((finished / state.total) * 100) : 0;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 8950, background: "rgba(5,14,28,.94)", backdropFilter: "blur(15px)", display: "grid", placeItems: "center", padding: 18 }}>
-      <div className="proc-overlay" style={{ width: "min(650px,100%)", maxHeight: "min(720px,92vh)", display: "flex", flexDirection: "column", background: "linear-gradient(150deg,#10253e,#0b1b2f)", border: "1px solid rgba(255,255,255,.13)", borderRadius: 24, padding: 26, boxShadow: "0 36px 90px rgba(0,0,0,.58)" }}>
+    <div style={inline ? { width: "100%" } : { position: "fixed", inset: 0, zIndex: 8950, background: "rgba(5,14,28,.94)", backdropFilter: "blur(15px)", display: "grid", placeItems: "center", padding: 18 }}>
+      <div className="proc-overlay" style={{ width: inline ? "100%" : "min(650px,100%)", maxHeight: inline ? "none" : "min(720px,92vh)", display: "flex", flexDirection: "column", background: "linear-gradient(150deg,#10253e,#0b1b2f)", border: "1px solid rgba(255,255,255,.13)", borderRadius: 24, padding: 26, boxShadow: "0 36px 90px rgba(0,0,0,.35)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
           <div className="loader-visual" style={{ width: 58, height: 58, margin: 0, flexShrink: 0 }}>
             <span className="loader-ring" style={state.done ? { animation: "none", borderColor: errorCount ? "#f59e0b" : "#1abc9c" } : undefined}/>
             <span style={{ width: 21, height: 21, color: state.done ? (errorCount ? "#fbbf24" : "#71e8d4") : "#d8fff7" }}><StepIcon name={state.done ? "shield" : "upload"}/></span>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>{state.done ? "اكتملت تقارير PDF" : "تحليل الاستبيانات وإنشاء PDF"}</div>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900 }}>{state.done ? "مركز نتائج التقارير" : "تحليل الاستبيانات وإنشاء PDF"}</div>
             <div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginTop: 3 }}>
               {state.done ? `${state.cancelled ? "تم إلغاء العملية بعد" : state.delivery === "download" ? "تم تنزيل" : "تم رفع"} ${doneCount} تقرير${errorCount ? ` وتعذر ${errorCount}` : ""}` : state.cancelRequested ? "جارٍ إلغاء العملية…" : `جاري معالجة الملف ${state.current} من ${state.total}`}
             </div>
@@ -2105,6 +2165,7 @@ function DriveBatchOverlay({ state, onClose, onCancel }) {
                   {item.localBlob && <button type="button" onClick={() => downloadBlob(item.localBlob, item.reportName || "report.pdf")} style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid rgba(96,165,250,.22)", background: "rgba(59,130,246,.1)", color: "#a9d1ff", fontFamily: "inherit", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>تحميل PDF</button>}
                 </div>
               )}
+              {item.status === "error" && onRetry && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onRetry(item.id)} style={{ flexShrink: 0, fontSize: 10.5 }}>إعادة المحاولة</button>}
             </div>
           ))}
         </div>
@@ -2159,7 +2220,7 @@ function WorkflowHeader({ step, icon, title, description }) {
 }
 
 // ── ReportModePicker ──────────────────────────────────────────────────────────
-function ReportModePicker({ value, onChange }) {
+function ReportModePicker({ value, onChange, comparisonOnly = false }) {
   const MODES = [
     { id: "annual",   icon: "chart", label: "تقرير سنة واحدة", desc: "تحليل عام دراسي محدد" },
     { id: "compare2", icon: "table", label: "مقارنة سنتين",     desc: "مقارنة عامين دراسيين" },
@@ -2169,7 +2230,7 @@ function ReportModePicker({ value, onChange }) {
     <div className="card" style={{ padding: 36 }}>
       <WorkflowHeader step="1" icon="layout" title="نوع التقرير" description="اختر نطاق التحليل؛ يمكنك الرجوع وتغييره لاحقًا." />
       <div className="type-card-row" style={{ display: "flex", gap: 16 }}>
-        {MODES.map(m => (
+        {MODES.filter(mode => !comparisonOnly || mode.id !== "annual").map(m => (
           <div key={m.id} className={`type-card ${value === m.id ? "selected" : ""}`} onClick={() => onChange(m.id)}>
             <div style={{ width: 34, height: 34, margin: "0 auto 10px", color: value === m.id ? "#71e8d4" : "rgba(255,255,255,.58)" }}><StepIcon name={m.icon}/></div>
             <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{m.label}</div>
@@ -2746,56 +2807,12 @@ function ComparisonPreview({ comparison }) {
 const LOCAL_STEPS = ["قراءة البيانات", "تنظيف البيانات", "كشف نوع الاستبيان", "حساب المؤشرات", "تجهيز العرض"];
 const DRIVE_STEPS = ["تحميل الملف من Drive", "قراءة البيانات", "تنظيف البيانات", "كشف نوع الاستبيان", "تجهيز العرض"];
 
-const HUB_ICONS = {
-  home: <><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
-  analytics: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 7 6-4 6 5 4-3"/></>,
-  surveys: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6M9 8h6M9 12h6M9 16h4"/></>,
-  semester: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
-  drive: <><path d="M8 3h8l5 8-4 7H7l-4-7 5-8Z"/><path d="m8 3 5 8-3 7M21 11h-8M3 11h10"/></>,
-  dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-  courses: <><path d="m3 6 9-4 9 4-9 4-9-4Z"/><path d="M7 8.2v5.3c0 1.7 2.2 3 5 3s5-1.3 5-3V8.2M21 6v7"/></>,
-  exam: <><path d="M5 3h14v18H5z"/><path d="M8 8h8M8 12h5M8 16h4"/><path d="m14.5 16 1.4 1.4 2.8-3"/></>,
-  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.17.36.5.75 1 .97.35.16.73.24 1.1.23h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></>,
-  help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.45-1.2.9-1.2 2M12 17h.01"/></>,
-};
-
 function HubIcon({ name }) {
-  return <svg viewBox="0 0 24 24" aria-hidden="true">{HUB_ICONS[name]}</svg>;
+  return <QualityIcon name={name} size={22} />;
 }
 
 function QualityHub({ onOpen }) {
-  const toolCards = [
-    {
-      id: "summary", icon: "dashboard", color: "#fbbf24", featured: true,
-      title: "ملخص الاستبيانات", tag: "السنة والفصل",
-      description: "اعرف بسرعة ما تم تحليله وما لم يُحلل بعد، مع عدد المشاركين في كل استبيان.",
-    },
-    {
-      id: "analytics", icon: "analytics", color: "#5eead4",
-      title: "تحليل نتائج موجودة", tag: "Excel أو Google Drive",
-      description: "ابدأ بملف واحد أو مجموعة ملفات، ودع النظام يتعرّف على نوع الاستبيان ثم أنشئ تقرير Word أو PDF.",
-    },
-    {
-      id: "semester", icon: "semester", color: "#60a5fa",
-      title: "إنشاء استبيانات الفصل الدراسي", tag: "Google Forms",
-      description: "اختر القوالب والسنة والفصل، وأنشئ كل استبيانات الفصل منظمةً تلقائياً على Google Drive.",
-    },
-    {
-      id: "drive", icon: "drive", color: "#34d399",
-      title: "مكتبة Drive", tag: "تقارير واستبيانات",
-      description: "تصفح كل تقارير الجودة والاستبيانات من مكان واحد، مع عدادات فورية وبحث وفلاتر دقيقة ووصول سريع للملفات.",
-    },
-    {
-      id: "courses", icon: "courses", color: "#a78bfa",
-      title: "تقييم المقررات", tag: "دورة تقييم متكاملة",
-      description: "جهّز بيانات المقررات، تابع نسب المشاركة، قسّم ملفات التقييم وراجع التوصيات من مساحة واحدة.",
-    },
-    {
-      id: "exam-paper", icon: "exam", color: "#fb7185",
-      title: "تقييم الورقة الامتحانية", tag: "الشكل والاستيفاء",
-      description: "حمّل قالب المقررات، قيّم استيفاء شكل الورقة ومخرجات التعلم، ثم أنشئ التقرير أو ارفعه على Drive.",
-    },
-  ];
+  const toolCards = HOME_TOOL_CARDS;
 
   return (
     <section className="hub" aria-label="الصفحة الرئيسية لبوابة لجنة القياس والتقويم">
@@ -2834,17 +2851,13 @@ function QualityHub({ onOpen }) {
   );
 }
 
-const SIDEBAR_ITEMS = [
-  { id: "home", icon: "home", label: "الرئيسية" },
-  { id: "summary", icon: "dashboard", label: "ملخص الاستبيانات" },
-  { id: "drive", icon: "drive", label: "مكتبة Drive" },
-  { id: "analytics", icon: "analytics", label: "تحليل الاستبيانات" },
-  { id: "semester", icon: "semester", label: "استبيانات الفصل الدراسي" },
-  { id: "courses", icon: "courses", label: "تقييم المقررات" },
-  { id: "exam-paper", icon: "exam", label: "تقييم الورقة الامتحانية" },
-];
-
 function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
+  const sidebarGroups = [
+    { label: "مساحات العمل", items: WORKSPACE_NAV_ITEMS },
+    { label: "التقييم الأكاديمي", items: EVALUATION_NAV_ITEMS },
+    { label: "الإدارة", items: AUXILIARY_NAV_ITEMS.filter(item => item.navGroup === "management") },
+  ];
+
   return (
     <aside className={`tool-sidebar ${open ? "open" : "collapsed"}`} aria-label="التنقل بين أدوات الجودة">
       <div className="sidebar-brand">
@@ -2854,29 +2867,29 @@ function ToolSidebar({ open, active, onNavigate, onTutorial, onToggle }) {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
       </div>
-      <div className="sidebar-heading">مساحات العمل</div>
-      <nav className="sidebar-nav">
-        {SIDEBAR_ITEMS.map(item => (
-          <button key={item.id} type="button" className={`sidebar-item ${active === item.id ? "active" : ""}`} onClick={() => onNavigate(item.id)} title={!open ? item.label : undefined}>
-            <span className="sidebar-icon"><HubIcon name={item.icon} /></span>
-            <span className="sidebar-label">{item.label}</span>
-          </button>
-        ))}
-      </nav>
-      <div className="sidebar-separator" />
-      <div className="sidebar-heading">أدوات إضافية</div>
-      <nav className="sidebar-nav">
-        <button type="button" className={`sidebar-item ${active === "surveys" ? "active" : ""}`} onClick={() => onNavigate("surveys")} title={!open ? "تصميم الاستبيانات" : undefined}>
-          <span className="sidebar-icon"><HubIcon name="surveys" /></span><span className="sidebar-label">تصميم الاستبيانات</span>
-        </button>
-      </nav>
+      {sidebarGroups.map((group, index) => (
+        <div key={group.label} className="sidebar-group">
+          {index > 0 && <div className="sidebar-separator" />}
+          <div className="sidebar-heading">{group.label}</div>
+          <nav className="sidebar-nav" aria-label={group.label}>
+            {group.items.map(item => (
+              <button key={item.id} type="button" className={`sidebar-item ${active === item.id ? "active" : ""}`} onClick={() => onNavigate(item.id)} title={!open ? item.label : undefined} aria-current={active === item.id ? "page" : undefined}>
+                <span className="sidebar-icon"><HubIcon name={item.icon} /></span>
+                <span className="sidebar-label">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      ))}
       <div className="sidebar-bottom sidebar-nav">
         <button type="button" className="sidebar-item" onClick={onTutorial} title={!open ? "دليل الاستخدام" : undefined}>
           <span className="sidebar-icon"><HubIcon name="help" /></span><span className="sidebar-label">دليل الاستخدام</span>
         </button>
-        <button type="button" className={`sidebar-item ${active === "settings" ? "active" : ""}`} onClick={() => onNavigate("settings")} title={!open ? "الإعدادات" : undefined}>
-          <span className="sidebar-icon"><HubIcon name="settings" /></span><span className="sidebar-label">الإعدادات</span>
-        </button>
+        {AUXILIARY_NAV_ITEMS.filter(item => item.navGroup === "system").map(item => (
+          <button key={item.id} type="button" className={`sidebar-item ${active === item.id ? "active" : ""}`} onClick={() => onNavigate(item.id)} title={!open ? item.label : undefined} aria-current={active === item.id ? "page" : undefined}>
+            <span className="sidebar-icon"><HubIcon name={item.icon} /></span><span className="sidebar-label">{item.label}</span>
+          </button>
+        ))}
       </div>
     </aside>
   );
@@ -2888,21 +2901,16 @@ export default function App() {
   const [surveyType, setSurveyType] = useState("faculty");
   const [mode, setMode]         = useState("annual");
   const [meta, setMeta]         = useState(initialReportMeta);
-  const [analysisPrompt, setAnalysisPrompt] = useState(null);
+  const [analysisStage, setAnalysisStage] = useState(ANALYSIS_STAGES.SELECTING);
+  const [analysisEntry, setAnalysisEntry] = useState(null);
+  const [analysisRequest, setAnalysisRequest] = useState(() => createAnalysisRequest());
   const [completionMessage, setCompletionMessage] = useState("");
   const [processing, setProcessing] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [pdfCancelRequested, setPdfCancelRequested] = useState(false);
   const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 });
   const [error, setError]       = useState("");
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSurveyManagement, setShowSurveyManagement] = useState(false);
-  const [showSemesterSurveys, setShowSemesterSurveys] = useState(false);
-  const [showCourseEval, setShowCourseEval] = useState(false);
-  const [showExamPaperTool, setShowExamPaperTool] = useState(false);
-  const [showDriveLibrary, setShowDriveLibrary] = useState(false);
-  const [showSurveySummary, setShowSurveySummary] = useState(false);
-  const [showHub, setShowHub] = useState(true);
+  const [activeView, setActiveView] = useState("home");
   const [showTutorial, setShowTutorial] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 760);
   const [semesterInitialTab, setSemesterInitialTab] = useState("home");
@@ -2956,7 +2964,10 @@ export default function App() {
   const [driveAccount,      setDriveAccount]      = useState("");
   const [driveFiles,        setDriveFiles]        = useState([]);
   const [driveLibraryFiles, setDriveLibraryFiles] = useState([]);
+  const [driveLibraryPairCandidates, setDriveLibraryPairCandidates] = useState([]);
+  const [driveLibraryFolders, setDriveLibraryFolders] = useState([]);
   const [driveLibraryLoading, setDriveLibraryLoading] = useState(false);
+  const [driveLibraryFoldersLoading, setDriveLibraryFoldersLoading] = useState(false);
   const [driveLibraryLoadingMore, setDriveLibraryLoadingMore] = useState(false);
   const [driveLibraryNextPageToken, setDriveLibraryNextPageToken] = useState("");
   const [driveLibraryError, setDriveLibraryError] = useState("");
@@ -3052,11 +3063,60 @@ export default function App() {
         return [...new Map([...previous, ...incoming].map(file => [file.id, file])).values()];
       });
       setDriveLibraryNextPageToken(data.nextPageToken || "");
+      if (!append) {
+        try {
+          const pairQuery = [...DRIVE_FILE_MIMES, GOOGLE_FORM_MIME]
+            .map(mime => `mimeType='${mime}'`)
+            .join(" or ");
+          const pairParams = new URLSearchParams({
+            q: `(${pairQuery}) and trashed=false`,
+            fields: "files(id,name,mimeType,modifiedTime,parents,webViewLink)",
+            orderBy: "modifiedTime desc",
+            pageSize: "1000",
+          });
+          const pairRes = await fetch(`https://www.googleapis.com/drive/v3/files?${pairParams}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const pairData = await pairRes.json();
+          if (pairRes.ok && !pairData.error) setDriveLibraryPairCandidates(pairData.files || []);
+        } catch { /* The visible page still works; linking falls back to loaded files. */ }
+      }
     } catch (e) {
       setDriveLibraryError("تعذر تحميل مكتبة Google Drive: " + e.message);
     } finally {
       if (append) setDriveLibraryLoadingMore(false);
       else setDriveLibraryLoading(false);
+    }
+  }, []);
+
+  const fetchDriveLibraryFolders = useCallback(async (token) => {
+    if (!token) return;
+    setDriveLibraryFoldersLoading(true);
+    setDriveLibraryError("");
+    try {
+      const folders = [];
+      let pageToken = "";
+      do {
+        const params = new URLSearchParams({
+          q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+          fields: "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,parents,webViewLink)",
+          orderBy: "name",
+          pageSize: "1000",
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error?.message || `Google Drive (${res.status})`);
+        folders.push(...(data.files || []));
+        pageToken = data.nextPageToken || "";
+      } while (pageToken);
+      setDriveLibraryFolders(folders);
+    } catch (e) {
+      setDriveLibraryError("تعذر تحميل مجلدات Google Drive: " + e.message);
+    } finally {
+      setDriveLibraryFoldersLoading(false);
     }
   }, []);
 
@@ -3214,6 +3274,8 @@ export default function App() {
     clearStoredToken(DRIVE_TOKEN_KEY);
     setDriveFiles([]);
     setDriveLibraryFiles([]);
+    setDriveLibraryPairCandidates([]);
+    setDriveLibraryFolders([]);
     setDriveLibraryNextPageToken("");
     setDriveLibraryLoadingMore(false);
     setDriveLibraryError("");
@@ -3241,6 +3303,8 @@ export default function App() {
       clearStoredToken(DRIVE_TOKEN_KEY);
       setDriveFiles([]);
       setDriveLibraryFiles([]);
+      setDriveLibraryPairCandidates([]);
+      setDriveLibraryFolders([]);
       setDriveLibraryNextPageToken("");
       setDriveLibraryLoadingMore(false);
       setDriveLibraryError("");
@@ -3249,6 +3313,22 @@ export default function App() {
     });
     return () => { cancelled = true; };
   }, [driveToken]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    const mobileViewport = window.matchMedia("(max-width: 760px)");
+    const syncSidebarWithViewport = (event) => setSidebarOpen(!event.matches);
+    mobileViewport.addEventListener("change", syncSidebarWithViewport);
+    return () => mobileViewport.removeEventListener("change", syncSidebarWithViewport);
+  }, []);
 
   // Token persisted from a previous visit? Great, no Google call needed at all. Otherwise,
   // once on mount, try a silent refresh (no popup) before ever showing the connect button.
@@ -3273,10 +3353,10 @@ export default function App() {
   }, [uploadTab, driveToken, driveFiles.length, driveLoading, fetchDriveFiles]);
 
   useEffect(() => {
-    if (showDriveLibrary && driveToken && driveLibraryFiles.length === 0 && !driveLibraryLoading) {
+    if (activeView === "drive" && driveToken && driveLibraryFiles.length === 0 && !driveLibraryLoading) {
       fetchDriveLibraryFiles(driveToken);
     }
-  }, [showDriveLibrary, driveToken, driveLibraryFiles.length, driveLibraryLoading, fetchDriveLibraryFiles]);
+  }, [activeView, driveToken, driveLibraryFiles.length, driveLibraryLoading, fetchDriveLibraryFiles]);
 
   const handleDriveFileSelect = useCallback(async (file) => {
     if (!driveToken || !file) return;
@@ -3296,7 +3376,16 @@ export default function App() {
       setDetectedAutoType(detected);
       setSurveyType(detected ?? "faculty");
       const prog = detectProgramFromFilename(filename);
-      if (prog) setMeta(m => ({ ...m, program: prog }));
+      const detectedYear = detectYearFromFilename(filename);
+      setMeta(m => ({ ...m, ...(prog ? { program: prog } : {}), ...(detectedYear ? { year: detectedYear } : {}) }));
+      setAnalysisRequest(createAnalysisRequest({
+        source: ANALYSIS_SOURCES.DRIVE,
+        mode: ANALYSIS_MODES.SINGLE,
+        items: [{ ...file, name: filename, type: detected }],
+        detected: { type: detected || "", year: detectedYear || "", program: prog || "" },
+        returnView: "drive",
+      }));
+      setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
 
       // Animate remaining steps (download already done = step 0 done)
       runStepAnim(DRIVE_STEPS, 1, 400, () => {
@@ -3392,7 +3481,6 @@ export default function App() {
     }
     const cancelled = driveBatchCancelRef.current;
     setDriveBatchState(prev => prev ? { ...prev, done: true, cancelled } : prev);
-    if (delivery === "download" && !cancelled) await downloadReports(reports, requiredMeta.year || meta.year);
     setDriveProcessing(false);
   }, [driveToken, driveProcessing, meta, settings]);
 
@@ -3446,7 +3534,7 @@ export default function App() {
         if (delivery === "upload") {
           updateItem(file.id, { stage: "رفع التقرير بجوار النموذج" });
           const uploaded = await uploadReportNextToSource(builtPdf.blob, reportName, { parents: [file.parentId] }, token);
-          updateItem(file.id, { status: "done", stage: "تم رفع تقرير PDF", report: uploaded, localBlob: builtPdf.blob, reportName });
+          updateItem(file.id, { status: "done", stage: "تم رفع التقرير إلى Drive", report: uploaded, localBlob: builtPdf.blob, reportName });
         } else {
           reports.push({ blob: builtPdf.blob, filename: reportName });
           updateItem(file.id, { status: "done", stage: "تم إنشاء تقرير PDF", localBlob: builtPdf.blob, reportName });
@@ -3460,7 +3548,6 @@ export default function App() {
     }
     const cancelled = driveBatchCancelRef.current;
     setDriveBatchState(prev => prev ? { ...prev, done: true, cancelled } : prev);
-    if (delivery === "download" && !cancelled) await downloadReports(reports, requiredMeta.year || meta.year);
     setDriveProcessing(false);
     return {
       cancelled,
@@ -3468,12 +3555,12 @@ export default function App() {
       doneCount,
       errorCount,
     };
-  }, [driveProcessing, meta, settings]);
+  }, [driveProcessing, meta, settings, analysisRequest.detected.semester]);
 
   // Same tail as handleDriveFileSelect, but for a survey picked via SemesterFormPicker —
   // rows are already fetched (Forms API responses converted to Excel-row shape) by the
   // time this runs, so "step 0: تحميل الملف من Drive" is marked done immediately.
-  const handleDriveFormSelect = useCallback((rows, filename, department) => {
+  const handleDriveFormSelect = useCallback((rows, filename, department, returnView = "semester") => {
     setDriveProcessing(true);
     setError("");
     setProcFile(filename);
@@ -3484,7 +3571,16 @@ export default function App() {
       const detected = detectSurveyType(filename, rows[0]) ?? null;
       setDetectedAutoType(detected);
       setSurveyType(detected ?? "faculty");
-      if (department) setMeta(m => ({ ...m, program: department }));
+      const detectedYear = detectYearFromFilename(filename);
+      setMeta(m => ({ ...m, ...(department ? { program: department } : {}), ...(detectedYear ? { year: detectedYear } : {}) }));
+      setAnalysisRequest(createAnalysisRequest({
+        source: ANALYSIS_SOURCES.FORMS,
+        mode: ANALYSIS_MODES.SINGLE,
+        items: [{ name: filename, type: detected }],
+        detected: { type: detected || "", year: detectedYear || "", program: department || "" },
+        returnView,
+      }));
+      setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
       runStepAnim(DRIVE_STEPS, 1, 400, () => {
         setDriveProcessing(false);
         setStep(2);
@@ -3511,7 +3607,15 @@ export default function App() {
         setDetectedAutoType(detected);
         setSurveyType(detected ?? "faculty");
         const prog = detectProgramFromFilename(file.name);
-        if (prog) setMeta(m => ({ ...m, program: prog }));
+        const detectedYear = detectYearFromFilename(file.name);
+        setMeta(m => ({ ...m, ...(prog ? { program: prog } : {}), ...(detectedYear ? { year: detectedYear } : {}) }));
+        setAnalysisRequest(createAnalysisRequest({
+          source: ANALYSIS_SOURCES.LOCAL,
+          mode: ANALYSIS_MODES.SINGLE,
+          items: [{ file, name: file.name, type: detected }],
+          detected: { type: detected || "", year: detectedYear || "", program: prog || "" },
+        }));
+        setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
         // Animate all 5 steps then advance
         runStepAnim(LOCAL_STEPS, 0, 520, () => setStep(2));
       } catch (err) {
@@ -3538,6 +3642,7 @@ export default function App() {
       // Auto-fill preparedBy from settings responsible person (if empty)
       const responsible = settings.surveyResponsible?.[surveyType];
       if (responsible) setMeta(m => ({ ...m, preparedBy: m.preparedBy || responsible }));
+      setAnalysisStage(ANALYSIS_STAGES.CLEANING);
       setStep(3);
     } catch (err) {
       setError(err.message ?? "خطأ في تحضير البيانات.");
@@ -3622,7 +3727,8 @@ export default function App() {
             if (validResults.length > 0) {
               const cmp = buildComparison(validResults);
               setComparison({ ...cmp, slots: results });
-              setStep(4);
+              setAnalysisStage(ANALYSIS_STAGES.RESULTS);
+              setStep(5);
             }
           }
         }
@@ -3636,7 +3742,12 @@ export default function App() {
     const files = [...e.dataTransfer.files].filter(f => /\.(xlsx|xls|csv)$/i.test(f.name));
     if (!files.length) return;
     if (files.length === 1) { handleFileSelected(files[0]); }
-    else                    { setBatchFiles(files); setBatchMode(true); }
+    else {
+      setBatchFiles(files);
+      setBatchMode(true);
+      setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.LOCAL, mode: ANALYSIS_MODES.BATCH, items: files.map(file => ({ file, name: file.name })) }));
+      setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+    }
   };
 
   const downloadAnnual = async () => {
@@ -3717,11 +3828,8 @@ export default function App() {
 
   const reset = () => {
     setStep(1); setSingleFile(null); setSingleResult(null); setComparison(null);
-    setSlots(defaultSlots()); setError(""); setProcessing(false); setShowSettings(false);
-    setShowSemesterSurveys(false);
-    setShowDriveLibrary(false);
-    setShowSurveySummary(false);
-    setAnalysisPrompt(null); setCompletionMessage("");
+    setSlots(defaultSlots()); setError(""); setProcessing(false);
+    setCompletionMessage("");
     setPdfCancelRequested(false); setPdfProgress({ current: 0, total: 0 });
     setProcSteps(null); setProcFile(""); setDragging(false);
     setSingleHeaders(null); setSingleAllRows(null); setSingleSchema(null);
@@ -3734,6 +3842,9 @@ export default function App() {
     setDriveFilterType(""); setDriveFilterYear(""); setDriveFilterProgram("");
     pdfCancelRef.current = false;
     driveBatchCancelRef.current = false;
+    setAnalysisStage(ANALYSIS_STAGES.SELECTING);
+    setAnalysisEntry(null);
+    setAnalysisRequest(createAnalysisRequest());
     if (singleRef.current) singleRef.current.value = "";
   };
 
@@ -3748,9 +3859,31 @@ export default function App() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  const analyzeDriveLibrarySurvey = (file) => {
+  const analyzeDriveLibrarySurvey = async (file) => {
+    if (file?.mimeType === GOOGLE_FORM_MIME) {
+      reset();
+      setActiveView("analytics");
+      setAnalysisEntry("files");
+      const detectedProgram = detectProgramFromFilename(file.name) || "";
+      setDriveProcessing(true);
+      setProcFile(file.name);
+      setProcSteps(DRIVE_STEPS.map((label, index) => ({ label, status: index === 0 ? "active" : "pending" })));
+      try {
+        const [form, responses] = await Promise.all([
+          getForm(driveToken, file.id),
+          listAllResponses(driveToken, file.id),
+        ]);
+        handleDriveFormSelect(responsesToRows(form, responses), file.name, detectedProgram, "drive");
+      } catch (formError) {
+        setDriveProcessing(false);
+        setProcSteps(null);
+        setError("تعذر قراءة ردود Google Form: " + (formError.message || "خطأ غير معروف"));
+      }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     reset();
-    setShowHub(false);
+    setActiveView("analytics");
     setMode("annual");
     setUploadTab("drive");
     handleDriveFileSelect(file);
@@ -3759,7 +3892,22 @@ export default function App() {
 
   const analyzeSummarySurvey = (file) => {
     if (file?.mimeType === GOOGLE_FORM_MIME) {
-      openHubTool("semester-quick-analysis");
+      const form = { ...file, parentId: file.parentId || file.parents?.[0] };
+      setActiveView("analytics");
+      setAnalysisEntry("semester");
+      const detectedYear = detectYearFromFilename(file.name) || "";
+      const detectedSemester = detectSemesterFromFilename(file.name) || "";
+      if (detectedYear) setMeta(current => ({ ...current, year: detectedYear }));
+      setAnalysisRequest(createAnalysisRequest({
+        source: ANALYSIS_SOURCES.SEMESTER,
+        mode: ANALYSIS_MODES.SINGLE,
+        items: [form],
+        detected: { year: detectedYear, semester: detectedSemester },
+        output: { word: false, pdf: true, destination: "upload" },
+        returnView: "summary",
+        context: { token: driveToken },
+      }));
+      setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -3772,20 +3920,9 @@ export default function App() {
   const openHubTool = (tool) => {
     if (tool === "tutorial") { setShowTutorial(true); return; }
     if (tool === "home") { goToHub(); return; }
-    const isSemesterTool = tool === "semester" || tool === "semester-create" || tool === "semester-quick-analysis" || tool === "semester-dashboard";
-    if (tool === "semester") setSemesterInitialTab("home");
-    if (tool === "semester-create") setSemesterInitialTab("generate");
-    if (tool === "semester-quick-analysis") setSemesterInitialTab("quick-analysis");
-    if (tool === "semester-dashboard") setSemesterInitialTab("dashboard");
+    if (isSemesterTool(tool)) setSemesterInitialTab(SEMESTER_TAB_BY_TOOL[tool]);
     if (tool === "drive") setError("");
-    setShowHub(false);
-    setShowSurveyManagement(tool === "surveys");
-    setShowSemesterSurveys(isSemesterTool);
-    setShowCourseEval(tool === "courses");
-    setShowExamPaperTool(tool === "exam-paper");
-    setShowDriveLibrary(tool === "drive");
-    setShowSurveySummary(tool === "summary");
-    setShowSettings(tool === "settings");
+    setActiveView(isSemesterTool(tool) ? "semester" : tool);
     if (tool === "analytics") reset();
     if (window.innerWidth <= 760) setSidebarOpen(false);
   };
@@ -3821,47 +3958,104 @@ export default function App() {
 
   const openSemesterAnalysis = () => {
     openHubTool("analytics");
-    setMode("annual");
-    setStep(1);
-    setUploadTab("drive");
-    setDriveViewMode("semester");
+    setAnalysisEntry("semester");
+    setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.SEMESTER, returnView: "semester" }));
   };
+
+  const prepareDriveBatchReview = useCallback((files, source = ANALYSIS_SOURCES.DRIVE, returnView = "drive") => {
+    const selectedFiles = (files || []).filter(Boolean);
+    if (!selectedFiles.length) return;
+    if (selectedFiles.length === 1) {
+      setActiveView("analytics");
+      setAnalysisEntry("files");
+      setMode("annual");
+      setUploadTab("drive");
+      handleDriveFileSelect(selectedFiles[0]);
+      return;
+    }
+    setActiveView("analytics");
+    setBatchMode(false);
+    setAnalysisEntry("files");
+    setAnalysisRequest(createAnalysisRequest({
+      source,
+      mode: selectedFiles.length > 1 ? ANALYSIS_MODES.BATCH : ANALYSIS_MODES.SINGLE,
+      items: selectedFiles.map(file => ({ ...file, name: file.name, type: detectTypeHintFromFilename(file.name) || "" })),
+      returnView,
+    }));
+    setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+  }, [handleDriveFileSelect]);
 
   const goToHub = () => {
-    setShowSurveyManagement(false);
-    setShowSemesterSurveys(false);
-    setShowCourseEval(false);
-    setShowExamPaperTool(false);
-    setShowDriveLibrary(false);
-    setShowSurveySummary(false);
-    setShowSettings(false);
-    setShowHub(true);
+    setActiveView("home");
   };
 
-  const activeTool = showHub
-    ? "home"
-    : showSurveySummary
-      ? "summary"
-    : showSurveyManagement
-      ? "surveys"
-    : showDriveLibrary
-      ? "drive"
-    : showSemesterSurveys
-        ? "semester"
-        : showCourseEval
-          ? "courses"
-          : showExamPaperTool
-            ? "exam-paper"
-          : showSettings
-            ? "settings"
-            : "analytics";
-  const activeToolTitle = activeTool === "settings"
-    ? "الإعدادات"
-    : activeTool === "surveys"
-      ? "تصميم الاستبيانات"
-      : SIDEBAR_ITEMS.find(item => item.id === activeTool)?.label ?? "بوابة لجنة القياس والتقويم";
-  const showGoogleConnection = !showHub && (activeTool === "analytics" || activeTool === "drive" || activeTool === "summary" || activeTool === "exam-paper" || activeTool.startsWith("semester"));
-  const showAiChat = showHub || (activeTool === "analytics" && step === 5);
+  const prepareSemesterFormsReview = useCallback((forms, token, context = {}) => {
+    const selectedForms = (forms || []).filter(Boolean);
+    if (!selectedForms.length) return;
+    setActiveView("analytics");
+    setAnalysisEntry("semester");
+    if (context.year) setMeta(current => ({ ...current, year: context.year }));
+    setAnalysisRequest(createAnalysisRequest({
+      source: ANALYSIS_SOURCES.SEMESTER,
+      mode: selectedForms.length > 1 ? ANALYSIS_MODES.BATCH : ANALYSIS_MODES.SINGLE,
+      items: selectedForms.map(form => ({ ...form, name: form.name, type: detectTypeHintFromFilename(form.name) || "" })),
+      detected: { year: context.year || "", semester: context.semester || "" },
+      output: { word: false, pdf: true, destination: "upload" },
+      returnView: context.returnView || "semester",
+      context: { token },
+    }));
+    setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const analysisIssues = validateAnalysisRequest(analysisRequest, meta);
+  const continueUnifiedAnalysis = async () => {
+    if (analysisIssues.length) return;
+    localStorage.setItem("eruQA_report_authors_v1", JSON.stringify({ preparedBy: meta.preparedBy, reviewer: meta.reviewer }));
+    setError("");
+    if (analysisRequest.mode === ANALYSIS_MODES.COMPARISON) {
+      setAnalysisStage(ANALYSIS_STAGES.PROCESSING);
+      handleProcessMulti();
+      return;
+    }
+    if (analysisRequest.source === ANALYSIS_SOURCES.SEMESTER && analysisRequest.items.length) {
+      setAnalysisStage(ANALYSIS_STAGES.PROCESSING);
+      await handleSemesterFormsBatch(analysisRequest.items, analysisRequest.context.token || driveToken, {
+        delivery: analysisRequest.output.destination,
+        reportMeta: { ...meta, semester: analysisRequest.detected.semester || "" },
+      });
+      setAnalysisStage(ANALYSIS_STAGES.RESULTS);
+      return;
+    }
+    if (analysisRequest.mode === ANALYSIS_MODES.BATCH && analysisRequest.source === ANALYSIS_SOURCES.DRIVE) {
+      setAnalysisStage(ANALYSIS_STAGES.PROCESSING);
+      await handleDriveBatchReports(analysisRequest.items, { delivery: analysisRequest.output.destination, reportMeta: meta });
+      setAnalysisStage(ANALYSIS_STAGES.RESULTS);
+      return;
+    }
+    if (analysisRequest.mode === ANALYSIS_MODES.BATCH) {
+      setBatchFiles(analysisRequest.items.map(item => item.file).filter(Boolean));
+      setBatchMode(true);
+      setAnalysisStage(ANALYSIS_STAGES.PROCESSING);
+      return;
+    }
+    handleValidationConfirm();
+  };
+
+  const returnToAnalysisSource = () => {
+    const target = analysisRequest.returnView;
+    if (target && target !== "analytics") setActiveView(target);
+    else {
+      reset();
+      setActiveView("analytics");
+    }
+  };
+
+  const activeTool = canonicalToolId(activeView);
+  const activeToolTitle = getToolLabel(activeView);
+  const activeToolKicker = getToolTag(activeView);
+  const showGoogleConnection = activeView !== "home" && needsGoogleConnection(activeTool);
+  const showAiChat = activeView === "home" || (activeTool === "analytics" && step === 5);
 
   return (
     <div className="quality-app" style={{
@@ -3877,7 +4071,10 @@ export default function App() {
           <button type="button" className="sidebar-toggle mobile-nav-toggle" onClick={() => setSidebarOpen(v => !v)} aria-label={sidebarOpen ? "طي القائمة الجانبية" : "فتح القائمة الجانبية"} title={sidebarOpen ? "طي القائمة" : "فتح القائمة"}>
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-          <span>{activeToolTitle}</span>
+          <span className="active-tool-copy">
+            <span className="active-tool-title">{activeToolTitle}</span>
+            <span className="active-tool-kicker">{activeToolKicker}</span>
+          </span>
         </div>
         {showGoogleConnection && (driveConnection === "connected" ? (
           <button type="button" className="google-global-btn connected" onClick={connectDrive} title="متصل لكل أدوات Drive وForms — اضغط لتحديث الاتصال أو تغيير الحساب"><GoogleDriveIcon size={20} /><span className="google-status-dot" /><span className="google-global-label">{driveAccount || "Google Drive متصل"}</span></button>
@@ -3890,14 +4087,15 @@ export default function App() {
       </header>
 
       <div className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+        {sidebarOpen && <button type="button" className="sidebar-backdrop" aria-label="إغلاق القائمة الجانبية" onClick={() => setSidebarOpen(false)} />}
         <ToolSidebar open={sidebarOpen} active={activeTool} onNavigate={openHubTool} onTutorial={() => setShowTutorial(true)} onToggle={() => setSidebarOpen(v => !v)} />
         <div className="app-content">
           <div className="app-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
 
         {/* ── Survey Management view (new, independent of the existing wizard/engine) ── */}
-        {showHub ? (
+        {activeView === "home" ? (
           <QualityHub onOpen={openHubTool} />
-        ) : showSurveySummary ? (
+        ) : activeView === "summary" ? (
           <SurveySummary
             connected={driveConnection === "connected"}
             connecting={driveConnecting || driveConnection === "checking"}
@@ -3907,19 +4105,23 @@ export default function App() {
             onAnalyzeSurvey={analyzeSummarySurvey}
             schemas={allSchemas()}
           />
-        ) : showDriveLibrary ? (
+        ) : activeView === "drive" ? (
           <DriveLibrary
             connected={driveConnection === "connected"}
             connecting={driveConnecting || driveConnection === "checking"}
             account={driveAccount}
             files={driveLibraryFiles}
+            pairCandidates={driveLibraryPairCandidates}
+            folders={driveLibraryFolders}
             loading={driveLibraryLoading}
+            foldersLoading={driveLibraryFoldersLoading}
             loadingMore={driveLibraryLoadingMore}
             hasMore={Boolean(driveLibraryNextPageToken)}
             error={driveLibraryError || error}
             onConnect={connectDrive}
             onRefresh={() => fetchDriveLibraryFiles(driveToken)}
             onLoadMore={() => fetchDriveLibraryFiles(driveToken, { append: true, pageToken: driveLibraryNextPageToken })}
+            onLoadFolders={() => fetchDriveLibraryFolders(driveToken)}
             onOpenFile={openDriveLibraryFile}
             onAnalyzeSurvey={analyzeDriveLibrarySurvey}
             detectYear={detectYearFromFilename}
@@ -3927,29 +4129,88 @@ export default function App() {
             detectType={detectTypeHintFromFilename}
             schemas={allSchemas()}
           />
-        ) : showSurveyManagement ? (
+        ) : activeView === "surveys" ? (
           <SurveyManagement />
-        ) : showSemesterSurveys ? (
-          <SemesterSurveys key={semesterInitialTab} initialTab={semesterInitialTab} onOpenAnalysis={openSemesterAnalysis} onAnalyzeForms={handleSemesterFormsBatch} onSectionChange={setSemesterInitialTab} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
-        ) : showCourseEval ? (
+        ) : activeView === "semester" ? (
+          <SemesterSurveys key={semesterInitialTab} initialTab={semesterInitialTab} onOpenAnalysis={openSemesterAnalysis} onAnalyzeForms={handleSemesterFormsBatch} onPrepareForms={prepareSemesterFormsReview} onSectionChange={setSemesterInitialTab} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
+        ) : activeView === "courses" ? (
           <CourseEvaluationHub />
-        ) : showExamPaperTool ? (
+        ) : activeView === "exam-paper" ? (
           <ExamPaperEvaluationTool
             googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }}
             reportSettings={settings}
           />
-        ) : showSettings ? (
+        ) : activeView === "settings" ? (
           <div className="card" style={{ padding: 32 }}>
             <SettingsPanel
               settings={settings} onChange={setSettings}
               aiSettings={aiSettings} onAiChange={setAiSettings}
             />
             <div style={{ textAlign: "center", marginTop: 24 }}>
-              <button className="btn btn-primary" onClick={() => setShowSettings(false)}>
+              <button className="btn btn-primary" onClick={goToHub}>
                 ✓ حفظ والعودة
               </button>
             </div>
           </div>
+        ) : analysisStage === ANALYSIS_STAGES.SELECTING && !analysisEntry ? (
+          <>
+            <AnalysisJourneyHeader stage={ANALYSIS_STAGES.SELECTING} request={analysisRequest} nextLabel="مراجعة الإعدادات" />
+            <AnalysisStart
+              onFiles={() => { setAnalysisEntry("files"); setMode("annual"); setStep(1); setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.LOCAL })); }}
+              onComparison={() => { setAnalysisEntry("comparison"); setMode("compare2"); setStep(0); setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.LOCAL, mode: ANALYSIS_MODES.COMPARISON })); }}
+              onSemester={() => { setAnalysisEntry("semester"); setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.SEMESTER, returnView: "semester" })); }}
+            />
+          </>
+        ) : analysisStage === ANALYSIS_STAGES.SELECTING && analysisEntry === "semester" ? (
+          <>
+            <AnalysisJourneyHeader stage={ANALYSIS_STAGES.SELECTING} request={analysisRequest} nextLabel="مراجعة الإعدادات" />
+            <div className="card" style={{ padding: 28 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                <div><div style={{ color: "#fff", fontWeight: 900, fontSize: 18 }}>اختر استبيانات الفصل</div><div style={{ color: "rgba(255,255,255,.48)", fontSize: 12, marginTop: 4 }}>حدد السنة والفصل ثم استبيانًا واحدًا أو مجموعة.</div></div>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setAnalysisEntry(null); setAnalysisRequest(createAnalysisRequest()); }}>→ رجوع</button>
+              </div>
+              <SemesterFormPicker onFormSelected={handleDriveFormSelect} onPrepareForms={prepareSemesterFormsReview} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
+            </div>
+          </>
+        ) : analysisStage === ANALYSIS_STAGES.REVIEWING ? (
+          <>
+            <AnalysisJourneyHeader stage={ANALYSIS_STAGES.REVIEWING} request={analysisRequest} nextLabel={analysisRequest.mode === ANALYSIS_MODES.SINGLE ? "مراجعة البيانات" : "تشغيل التحليل"} />
+            <AnalysisReview
+              request={analysisRequest}
+              meta={meta}
+              onMetaChange={setMeta}
+              issues={analysisIssues}
+              busy={processing || driveProcessing}
+              onBack={() => {
+                setError("");
+                if ([ANALYSIS_SOURCES.SUMMARY, ANALYSIS_SOURCES.DRIVE, ANALYSIS_SOURCES.FORMS, ANALYSIS_SOURCES.SEMESTER].includes(analysisRequest.source) && analysisRequest.returnView !== "analytics") returnToAnalysisSource();
+                else { setAnalysisStage(ANALYSIS_STAGES.SELECTING); setAnalysisEntry(analysisRequest.source === ANALYSIS_SOURCES.SEMESTER ? "semester" : "files"); setBatchMode(false); }
+              }}
+              onContinue={continueUnifiedAnalysis}
+            >
+              {!detectedAutoType && analysisRequest.mode === ANALYSIS_MODES.SINGLE && rawRows && <label style={{ display: "block", marginTop: 12 }}><span style={{ display: "block", color: "rgba(255,255,255,.56)", fontSize: 10.5, marginBottom: 5 }}>نوع الاستبيان</span><select className="input" value={surveyType} onChange={event => setSurveyType(event.target.value)}>{Object.values(allSchemas()).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
+              {(analysisRequest.source === ANALYSIS_SOURCES.DRIVE || analysisRequest.source === ANALYSIS_SOURCES.SEMESTER) && analysisRequest.mode !== ANALYSIS_MODES.SINGLE && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+                {[["download", "تنزيل PDF على الجهاز"], ["upload", "رفع PDF على Drive"]].map(([value, label]) => <label key={value} style={{ display: "flex", alignItems: "center", gap: 7, padding: 9, borderRadius: 9, border: `1px solid ${analysisRequest.output.destination === value ? "rgba(94,234,212,.45)" : "rgba(255,255,255,.1)"}`, color: "#e8f0fe", fontSize: 11, cursor: "pointer" }}><input type="radio" checked={analysisRequest.output.destination === value} onChange={() => setAnalysisRequest(current => ({ ...current, output: { ...current.output, destination: value } }))} />{label}</label>)}
+              </div>}
+            </AnalysisReview>
+          </>
+        ) : analysisStage === ANALYSIS_STAGES.RESULTS && driveBatchState?.done ? (
+          <>
+            <AnalysisJourneyHeader stage={ANALYSIS_STAGES.RESULTS} request={analysisRequest} nextLabel="تنزيل التقارير أو العودة إلى المصدر" />
+            <DriveBatchOverlay
+              inline
+              state={driveBatchState}
+              onCancel={cancelDriveBatch}
+              onClose={() => { setDriveBatchState(null); returnToAnalysisSource(); }}
+              onRetry={id => {
+                const failedItem = analysisRequest.items.find(item => item.id === id);
+                if (!failedItem) return;
+                setDriveBatchState(null);
+                setAnalysisRequest(current => ({ ...current, mode: ANALYSIS_MODES.BATCH, items: [failedItem] }));
+                setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+              }}
+            />
+          </>
         ) : batchMode ? (
           <BatchProcessor
             files={batchFiles}
@@ -3958,16 +4219,19 @@ export default function App() {
             settings={settings}
             reportMeta={meta}
             onReportMetaChange={setMeta}
-            onBack={() => { setBatchMode(false); setBatchFiles([]); setError(""); }}
+            request={analysisRequest}
+            autoStart={analysisStage === ANALYSIS_STAGES.PROCESSING}
+            onStageChange={setAnalysisStage}
+            onBack={() => { setBatchMode(false); setBatchFiles([]); setError(""); setAnalysisStage(ANALYSIS_STAGES.SELECTING); setAnalysisEntry(null); setAnalysisRequest(createAnalysisRequest()); }}
           />
         ) : (
           <>
-            {step > 0 && <StepBar step={step} />}
+            {analysisEntry && <AnalysisJourneyHeader stage={analysisStage} request={analysisRequest} nextLabel={analysisStage === ANALYSIS_STAGES.CLEANING ? "مركز النتائج" : undefined} />}
 
             {/* ══ STEP 0 — Choose report mode ══ */}
             {step === 0 && (
               <div>
-                <ReportModePicker value={mode} onChange={setMode} />
+                <ReportModePicker value={mode} onChange={setMode} comparisonOnly={analysisEntry === "comparison"} />
                 <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
                   <button className="btn btn-primary" style={{ fontSize: 16, padding: "13px 36px" }}
                     onClick={() => { setError(""); setStep(1); }}>
@@ -4025,7 +4289,12 @@ export default function App() {
                         const files = [...e.target.files];
                         if (!files.length) return;
                         if (files.length === 1) { handleFileSelected(files[0]); }
-                        else                    { setBatchFiles(files); setBatchMode(true); }
+                        else {
+                          setBatchFiles(files);
+                          setBatchMode(true);
+                          setAnalysisRequest(createAnalysisRequest({ source: ANALYSIS_SOURCES.LOCAL, mode: ANALYSIS_MODES.BATCH, items: files.map(file => ({ file, name: file.name })) }));
+                          setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+                        }
                       }} />
                   </div>
                 )}
@@ -4084,16 +4353,7 @@ export default function App() {
                         <div className="drive-control-bar">
                           <span style={{ color: "#dce8f7", fontWeight: 800, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 8 }}><GoogleDriveIcon size={21} /> Google Drive متصل <span className="google-status-dot" aria-hidden="true" /></span>
                           <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: "100%" }}>
-                            {/* View toggle */}
-                            <div className="drive-view-switch">
-                              {[
-                                { id: "list", label: "الملفات" },
-                                { id: "dashboard", label: "لوحة التحكم" },
-                                { id: "semester", label: "استبيانات الفصل" },
-                              ].map(v => (
-                                <button key={v.id} className={`drive-view-btn ${driveViewMode === v.id ? "active" : ""}`} onClick={() => setDriveViewMode(v.id)}>{v.label}</button>
-                              ))}
-                            </div>
+                            <span style={{ color: "rgba(255,255,255,.5)", fontSize: 11.5 }}>ملفات Excel وCSV المتاحة للتحليل</span>
                             <button onClick={() => fetchDriveFiles(driveToken)} style={{
                               background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)",
                               borderRadius: 8, padding: "5px 11px", color: "rgba(255,255,255,.6)",
@@ -4115,7 +4375,7 @@ export default function App() {
                             onSelectFile={(f) => { setDriveViewMode("list"); handleDriveFileSelect(f); }}
                           />
                         ) : driveViewMode === "semester" ? (
-                          <SemesterFormPicker onFormSelected={handleDriveFormSelect} onAnalyzeForms={handleSemesterFormsBatch} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
+                          <SemesterFormPicker onFormSelected={handleDriveFormSelect} onAnalyzeForms={handleSemesterFormsBatch} onPrepareForms={prepareSemesterFormsReview} googleAuth={{ token: driveConnection === "connected" ? driveToken : null, connecting: driveConnecting || driveConnection === "checking", connect: connectDrive, authError: error }} />
                         ) : (<>
                         {/* Filters row */}
                         {(() => {
@@ -4198,11 +4458,11 @@ export default function App() {
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                     <button className="btn btn-primary btn-sm" disabled={!selectedFiles.length || driveProcessing}
                                       style={{ opacity: selectedFiles.length && !driveProcessing ? 1 : .45 }}
-                                      onClick={() => setAnalysisPrompt({ kind: "drive", items: selectedFiles })}>
+                                      onClick={() => prepareDriveBatchReview(selectedFiles)}>
                                       تحليل المحدد ({selectedFiles.length})
                                     </button>
                                     <button className="btn btn-primary btn-sm" disabled={driveProcessing}
-                                      onClick={() => setAnalysisPrompt({ kind: "drive", items: filtered })}>
+                                      onClick={() => prepareDriveBatchReview(filtered)}>
                                       تحليل الظاهر ({filtered.length})
                                     </button>
                                   </div>
@@ -4247,7 +4507,7 @@ export default function App() {
                                         {!!tags.length && <div className="drive-file-meta">{tags.map((tag, i) => <span className="drive-file-tag" key={`${tag}-${i}`}>{tag}</span>)}</div>}
                                         <div className="drive-file-foot">
                                           <span className="drive-file-date">{f.modifiedTime?.slice(0, 10) ?? ""}</span>
-                                          <button className="drive-file-analyze" onClick={e => { e.stopPropagation(); handleDriveFileSelect(f); }}>تحليل الملف</button>
+                                          <button className="drive-file-analyze" onClick={e => { e.stopPropagation(); handleDriveFileSelect(f); }}>تحليل الآن</button>
                                         </div>
                                       </article>
                                     );
@@ -4329,7 +4589,16 @@ export default function App() {
                     className="btn btn-primary"
                     disabled={!slots.slice(0, slotCount).every(s => s._file) || processing}
                     style={{ opacity: (!slots.slice(0, slotCount).every(s => s._file) || processing) ? 0.5 : 1 }}
-                    onClick={handleProcessMulti}
+                    onClick={() => {
+                      const activeSlots = slots.slice(0, slotCount);
+                      setAnalysisRequest(createAnalysisRequest({
+                        source: ANALYSIS_SOURCES.LOCAL,
+                        mode: ANALYSIS_MODES.COMPARISON,
+                        items: activeSlots.map(slot => ({ file: slot._file, name: slot.fileName || slot._file?.name, year: slot.year, type: slot._type || "", program: slot._program || "" })),
+                        detected: { type: activeSlots[0]?._type || "", program: activeSlots[0]?._program || "" },
+                      }));
+                      setAnalysisStage(ANALYSIS_STAGES.REVIEWING);
+                    }}
                   >
                     {processing
                       ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="white" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري التحليل…</>
@@ -4505,12 +4774,12 @@ export default function App() {
                     )}
 
                     <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 26 }}>
-                      <button className="btn btn-ghost" onClick={() => setStep(2)}>→ السابق</button>
+                      <button className="btn btn-ghost" onClick={() => setAnalysisStage(ANALYSIS_STAGES.REVIEWING)}>→ السابق</button>
                       <button className="btn btn-primary"
                         disabled={!liveResult}
                         style={{ opacity: liveResult ? 1 : 0.5 }}
-                        onClick={() => { setSingleResult(liveResult); setStep(4); }}>
-                        متابعة ←
+                        onClick={() => { setSingleResult(liveResult); setAnalysisStage(ANALYSIS_STAGES.RESULTS); setStep(5); }}>
+                        عرض مركز النتائج ←
                       </button>
                     </div>
                   </div>
@@ -4559,7 +4828,10 @@ export default function App() {
             {/* ══ STEP 5 — Results ══ */}
             {step === 5 && (
               <div>
-                <WorkflowHeader step="6" icon="chart" title="النتائج والتصدير" description="راجع الملخص ثم نزّل التقرير بصيغة Word أو PDF." />
+                <WorkflowHeader step="6" icon="chart" title="مركز النتائج" description="اكتمل التحليل. راجع النتيجة واختر Word أو PDF أو ارجع إلى مصدر البيانات." />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10, marginBottom: 18 }}>
+                  {[{ label: "تم بنجاح", value: 1, color: "#5eead4" }, { label: "متعذر", value: 0, color: "#ff9d96" }, { label: "متخطى", value: 0, color: "#fbbf24" }].map(item => <div key={item.label} className="stat-chip"><div className="stat-chip-value" style={{ color: item.color }}>{item.value}</div><div className="stat-chip-label">{item.label}</div></div>)}
+                </div>
                 {isAnnual && singleResult && (
                   <div>
                     <div style={{ color: "rgba(255,255,255,.6)", fontSize: 14, marginBottom: 18, textAlign: "center" }}>
@@ -4613,11 +4885,12 @@ export default function App() {
                     {isAnnual && singleResult && (
                       <>
                         <button className="btn btn-primary" style={{ fontSize: 16, padding: "14px 36px" }}
-                          disabled={pdfGenerating} onClick={() => setAnalysisPrompt({ kind: "single", items: [singleFile] })}>
+                          disabled={pdfGenerating} onClick={downloadAnnualPdf}>
                           {pdfGenerating
                             ? <><svg className="spin" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#e8f0fe" strokeWidth="2" strokeDasharray="28 10"/></svg> جاري إنشاء PDF…</>
-                            : "تحليل PDF"}
+                            : "إنشاء تقرير PDF"}
                         </button>
+                        {driveSelected && driveToken && <button className="btn btn-ghost" style={{ fontSize: 16, padding: "14px 36px" }} disabled={pdfGenerating} onClick={uploadAnnualPdf}>رفع تقرير PDF على Drive</button>}
                       </>
                     )}
                   </div>
@@ -4645,6 +4918,7 @@ export default function App() {
                     >
                       ↻ قم بتحليل جديد
                     </button>
+                    {analysisRequest.returnView && analysisRequest.returnView !== "analytics" && <button type="button" className="btn btn-ghost" onClick={returnToAnalysisSource} style={{ width: "100%", marginTop: 8 }}>العودة إلى المصدر</button>}
                     <div style={{ color: "rgba(255,255,255,.38)", fontSize: 11.5, marginTop: 8 }}>
                       الرجوع إلى البداية لاختيار ملف أو استبيان آخر، مع الاحتفاظ بإعدادات التقرير وبيانات القائمين عليه.
                     </div>
@@ -4661,27 +4935,13 @@ export default function App() {
       {/* ── Tutorial overlay ── */}
       {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
 
-      {analysisPrompt && <AnalysisActionDialog
-        count={analysisPrompt.items?.length || 1}
-        meta={meta}
-        onMetaChange={setMeta}
-        onClose={() => setAnalysisPrompt(null)}
-        onConfirm={delivery => {
-          const request = analysisPrompt;
-          setAnalysisPrompt(null);
-          if (request.kind === "drive") handleDriveBatchReports(request.items, { delivery, reportMeta: meta });
-          else if (delivery === "upload") uploadAnnualPdf();
-          else downloadAnnualPdf();
-        }}
-      />}
-
       {completionMessage && <div role="status" aria-live="polite" style={{ position: "fixed", left: 24, bottom: 24, zIndex: 10030, padding: "12px 18px", borderRadius: 8, color: "#fff", background: "#168f78", boxShadow: "0 12px 34px rgba(0,0,0,.35)", fontSize: 13, fontWeight: 800 }}>{completionMessage}</div>}
 
       {/* ── Processing steps overlay ── */}
       {procSteps && <ProcessingOverlay steps={procSteps} filename={procFile} />}
 
       {/* ── Drive multi-report progress ── */}
-      {driveBatchState && <DriveBatchOverlay state={driveBatchState} onClose={() => setDriveBatchState(null)} onCancel={cancelDriveBatch} />}
+      {driveBatchState && !driveBatchState.done && <DriveBatchOverlay state={driveBatchState} onClose={() => setDriveBatchState(null)} onCancel={cancelDriveBatch} />}
 
       {/* ── Branded PDF generation overlay ── */}
       {pdfGenerating && <LoadingOverlay message="جاري إنشاء تقرير PDF…" progress={pdfProgress} cancelling={pdfCancelRequested}

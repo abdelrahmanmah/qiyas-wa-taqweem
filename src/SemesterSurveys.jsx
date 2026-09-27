@@ -764,7 +764,7 @@ function AnalysisDialog({ count, authors, delivery, error, onAuthorsChange, onDe
 }
 
 // ---------- Dashboard ----------
-function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) {
+function DashboardView({ token, pushToast, onAnalyzeForms, onPrepareForms }) {
   const [years, setYears] = useState(null);
   const [year, setYear] = useState("");
   const [semesters, setSemesters] = useState(null);
@@ -945,6 +945,10 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
 
   function openAnalysisDialog(items) {
     if (!items?.length || analyzing) return;
+    if (onPrepareForms) {
+      onPrepareForms(items, token, { year, semester, returnView: "semester" });
+      return;
+    }
     setAnalysisRequest(items);
     setAnalysisDialogError("");
   }
@@ -965,20 +969,6 @@ function DashboardView({ token, pushToast, onAnalyzeForms, quickMode = false }) 
   return (
     <div className="ssg-dashboard-page">
       {analysisRequest && <AnalysisDialog count={analysisRequest.length} authors={reportAuthors} delivery={analysisDelivery} error={analysisDialogError} onAuthorsChange={setReportAuthors} onDeliveryChange={setAnalysisDelivery} onClose={() => setAnalysisRequest(null)} onSubmit={submitAnalysisDialog} />}
-      {quickMode && (
-        <div className="ssg-create-hero" style={{ marginBottom: 14 }}>
-          <div>
-            <div className="ssg-create-kicker">تحليل سريع</div>
-            <h2>اختر السنة والفصل ثم شغّل التحليل</h2>
-            <p>حلّل كل استبيانات الفصل دفعة واحدة، أو حدّد الاستبيانات المطلوبة فقط. سيتم إنشاء ملفات PDF ورفعها تلقائياً على Google Drive.</p>
-          </div>
-          <div className="ssg-step-pills">
-            <span className="ssg-step-pill"><b>١</b> السنة والفصل</span>
-            <span className="ssg-step-pill"><b>٢</b> الكل أو المحدد</span>
-            <span className="ssg-step-pill"><b>٣</b> رفع PDF</span>
-          </div>
-        </div>
-      )}
       <div className="ssg-dashboard-toolbar">
           <div style={{ flex: "1 1 180px" }}>
             <label className="ssg-field-label">السنة الدراسية</label>
@@ -1255,11 +1245,6 @@ const SEMESTER_ACTIONS = [
     copy: "اختر القوالب والسنة والفصل، ثم أنشئ النماذج منظمةً تلقائياً على Google Drive.",
   },
   {
-    id: "quick-analysis", icon: "analysis", accent: "#60a5fa", glow: "rgba(59,130,246,.16)",
-    title: "تحليل سريع",
-    copy: "حدّد السنة والفصل، ثم حلّل كل الاستبيانات أو اختر بعضها، وارفع تقارير PDF على Drive تلقائياً.",
-  },
-  {
     id: "dashboard", icon: "dashboard", accent: "#c4b5fd", glow: "rgba(139,92,246,.15)",
     title: "لوحة التحكم",
     copy: "استعرض كل الاستبيانات، وعدد الردود، والحالة والروابط من شاشة واحدة سهلة.",
@@ -1303,12 +1288,11 @@ function SemesterHome({ onSelect }) {
 
 const TAB_TITLES = {
   generate: "إنشاء استبيانات فصل دراسي جديد",
-  "quick-analysis": "تحليل سريع",
   dashboard: "لوحة تحكم الاستبيانات",
   departments: "إدارة الأقسام والبرامج",
 };
 
-export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onSectionChange, googleAuth, initialTab = "home" }) {
+export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onPrepareForms, onSectionChange, googleAuth, initialTab = "home" }) {
   const [tab, setTab] = useState(initialTab);
   const localAuth = useSemesterAuth(!googleAuth);
   const auth = googleAuth ?? localAuth;
@@ -1327,7 +1311,7 @@ export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onSect
           <div className="ssg-subnav">
             <div className="ssg-subnav-title">
               <span className="ssg-action-icon" style={{ width: 36, height: 36, borderRadius: 11, margin: 0 }}>
-                <SemesterIcon name={tab === "generate" ? "create" : tab === "dashboard" ? "dashboard" : tab === "quick-analysis" ? "analysis" : "settings"} size={19} />
+                <SemesterIcon name={tab === "generate" ? "create" : tab === "dashboard" ? "dashboard" : "settings"} size={19} />
               </span>
               {TAB_TITLES[tab]}
             </div>
@@ -1355,7 +1339,7 @@ export default function SemesterSurveys({ onOpenAnalysis, onAnalyzeForms, onSect
           ) : tab === "generate" ? (
             <GenerateSurveysView token={auth.token} pushToast={push} onReconnect={auth.connect} onGoDashboard={() => { setTab("dashboard"); onSectionChange?.("dashboard"); }} />
           ) : (
-            <DashboardView token={auth.token} pushToast={push} onAnalyzeForms={onAnalyzeForms} quickMode={tab === "quick-analysis"} />
+            <DashboardView token={auth.token} pushToast={push} onAnalyzeForms={onAnalyzeForms} onPrepareForms={onPrepareForms} />
           )}
         </>
       )}

@@ -3,7 +3,7 @@
 // OAuth is client-side only (Google Identity Services token client), same pattern
 // as the existing Drive integration in App.jsx, just with broader scopes.
 
-const envValue = (key, fallback = "") => String(import.meta.env[key] ?? fallback).trim();
+const envValue = (key, fallback = "") => String(import.meta.env?.[key] ?? fallback).trim();
 
 const GOOGLE_CLIENT_ID = envValue("VITE_GOOGLE_CLIENT_ID");
 export const TEMPLATE_FOLDER_ID = envValue("VITE_GOOGLE_TEMPLATE_FOLDER_ID", "15aHectdjYJP1To6V3uLR2ZlBJUtzuqi0");
@@ -151,25 +151,45 @@ function escapeDriveQueryValue(v) {
 export async function listFormsInFolder(token, folderId) {
   if (!folderId) return [];
   const q = `'${escapeDriveQueryValue(folderId)}' in parents and mimeType='${FORM_MIME}' and trashed=false`;
-  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&pageSize=200&orderBy=name`);
+  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,parents,webViewLink)&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true`);
   return data?.files ?? [];
+}
+
+export async function listAllDriveForms(token) {
+  const forms = [];
+  let pageToken = "";
+  do {
+    const params = new URLSearchParams({
+      q: `mimeType='${FORM_MIME}' and trashed=false`,
+      fields: "nextPageToken,files(id,name,modifiedTime,parents,webViewLink)",
+      pageSize: "1000",
+      orderBy: "modifiedTime desc",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await driveFetch(token, `/files?${params.toString()}`);
+    forms.push(...(data?.files || []));
+    pageToken = data?.nextPageToken || "";
+  } while (pageToken);
+  return forms;
 }
 
 export async function listSubfolders(token, parentId) {
   if (!parentId) return [];
   const q = `'${escapeDriveQueryValue(parentId)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`;
-  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=200&orderBy=name`);
+  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true`);
   return data?.files ?? [];
 }
 
 export async function findFolderByName(token, parentId, name) {
   const q = `'${escapeDriveQueryValue(parentId)}' in parents and mimeType='${FOLDER_MIME}' and name='${escapeDriveQueryValue(name)}' and trashed=false`;
-  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1`);
+  const data = await driveFetch(token, `/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`);
   return data?.files?.[0] ?? null;
 }
 
 export async function createFolder(token, parentId, name) {
-  return driveFetch(token, `/files?fields=id,name`, {
+  return driveFetch(token, `/files?fields=id,name&supportsAllDrives=true`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
@@ -191,7 +211,7 @@ export async function copyFile(token, fileId, newName) {
 }
 
 export async function moveFile(token, fileId, newParentId, oldParentIds) {
-  const params = new URLSearchParams({ addParents: newParentId, fields: "id,parents" });
+  const params = new URLSearchParams({ addParents: newParentId, fields: "id,parents", supportsAllDrives: "true" });
   if (oldParentIds?.length) params.set("removeParents", oldParentIds.join(","));
   return driveFetch(token, `/files/${fileId}?${params.toString()}`, { method: "PATCH" });
 }

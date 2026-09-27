@@ -18,6 +18,16 @@ export function GoogleDriveIcon({ size = 22, className = "" }) {
 
 const QUALITY_ICON_PATHS = {
   home: <><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
+  analytics: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 7 6-4 6 5 4-3"/></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
+  drive: <><path d="M8 3h8l5 8-4 7H7l-4-7 5-8Z"/><path d="m8 3 5 8-3 7M21 11h-8M3 11h10"/></>,
+  cap: <><path d="m3 6 9-4 9 4-9 4-9-4Z"/><path d="M7 8.2v5.3c0 1.7 2.2 3 5 3s5-1.3 5-3V8.2M21 6v7"/></>,
+  exam: <><path d="M5 3h14v18H5z"/><path d="M8 8h8M8 12h5M8 16h4"/><path d="m14.5 16 1.4 1.4 2.8-3"/></>,
+  surveys: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6M9 8h6M9 12h6M9 16h4"/></>,
+  help: <><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.4 2c-.8.45-1.2.9-1.2 2M12 17h.01"/></>,
+  compass: <><circle cx="12" cy="12" r="9"/><path d="m15 9-2 4-4 2 2-4 4-2Z"/></>,
+  route: <><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a3 3 0 0 0 3-3V9a3 3 0 0 1 3-3"/></>,
+  arrowForward: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19 15.2a1.8 1.8 0 0 0 .4 2l.1.1-2.2 2.2-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1.1 1.7v.2H11v-.2A1.8 1.8 0 0 0 9.8 19a1.8 1.8 0 0 0-2 .4l-.1.1-2.2-2.2.1-.1a1.8 1.8 0 0 0 .4-2A1.8 1.8 0 0 0 4.3 14H4v-3h.3A1.8 1.8 0 0 0 6 9.8a1.8 1.8 0 0 0-.4-2l-.1-.1 2.2-2.2.1.1a1.8 1.8 0 0 0 2 .4A1.8 1.8 0 0 0 11 4.3V4h3v.3A1.8 1.8 0 0 0 15.2 6a1.8 1.8 0 0 0 2-.4l.1-.1 2.2 2.2-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.7 1.2h.3v3h-.3a1.8 1.8 0 0 0-1.7 1.2Z"/></>,
   footer: <><path d="M5 3h14v18H5z"/><path d="M8 7h8M8 11h8M8 17h8"/></>,
   report: <><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></>,

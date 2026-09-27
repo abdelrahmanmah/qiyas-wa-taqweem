@@ -3,6 +3,7 @@ import CourseTemplateTool from "./CourseTemplateTool.jsx";
 import SurveyParticipationTool from "./SurveyParticipationTool.jsx";
 import CourseSplitter from "./CourseSplitter.jsx";
 import PdfRecommendationReviewer from "./PdfRecommendationReviewer.jsx";
+import { QualityIcon } from "./UiElements.jsx";
 
 const TABS = [
   { key: "guide", label: "نظرة عامة", hint: "ابدأ من هنا", icon: "compass" },
@@ -13,17 +14,8 @@ const TABS = [
 ];
 
 function HubIcon({ name, size = 20 }) {
-  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
-  const paths = {
-    compass: <><circle cx="12" cy="12" r="9"/><path d="m15 9-2 4-4 2 2-4 4-2Z"/></>,
-    sheet: <><path d="M6 2h9l3 3v17H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></>,
-    chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
-    split: <><path d="M8 4H4v4M4 4l6 6M16 20h4v-4M20 20l-6-6M16 4h4v4M20 4l-5 5M8 20H4v-4M4 20l5-5"/></>,
-    document: <><path d="M6 2h9l3 3v17H6z"/><path d="M9 11h6M9 15h6"/></>,
-    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
-    route: <><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a3 3 0 0 0 3-3V9a3 3 0 0 1 3-3"/></>,
-  };
-  return <svg {...props}>{paths[name]}</svg>;
+  const iconName = name === "document" ? "report" : name === "arrow" ? "arrowForward" : name;
+  return <QualityIcon name={iconName} size={size} />;
 }
 
 export default function CourseEvaluationHub() {

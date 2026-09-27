@@ -16,12 +16,14 @@ const REPORT_MIMES = new Set([
 ]);
 
 const FORM_MIME = "application/vnd.google-apps.form";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 function Icon({ name, size = 20 }) {
   return <QualityIcon name={name} size={size} />;
 }
 
 function getFileKind(file) {
+  if (file.mimeType === FOLDER_MIME) return "folder";
   if (SHEET_MIMES.has(file.mimeType) || file.mimeType === FORM_MIME) return "survey";
   if (REPORT_MIMES.has(file.mimeType)) return "report";
   return "other";
@@ -34,6 +36,7 @@ function getFormat(file) {
     "application/vnd.ms-excel": "Excel",
     "text/csv": "CSV",
     "application/vnd.google-apps.form": "Google Form",
+    "application/vnd.google-apps.folder": "مجلد Drive",
     "application/pdf": "PDF",
     "application/vnd.google-apps.document": "Google Docs",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
@@ -44,6 +47,7 @@ function getFormat(file) {
 
 function fileAccent(file) {
   const format = getFormat(file);
+  if (format === "مجلد Drive") return { color: "#fbbf24", bg: "rgba(251,191,36,.12)" };
   if (format === "PDF") return { color: "#fb7185", bg: "rgba(251,113,133,.12)" };
   if (format === "Word" || format === "Google Docs") return { color: "#60a5fa", bg: "rgba(96,165,250,.12)" };
   if (format === "Google Form") return { color: "#c084fc", bg: "rgba(192,132,252,.12)" };
@@ -66,6 +70,24 @@ function normalize(value) {
     .trim();
 }
 
+function surveyPairKey(name) {
+  return normalize(name)
+    .replace(/\.(xlsx?|csv)$/i, "")
+    .replace(/\s*[\[(](?:responses?|form responses?\s*\d*|الردود|الاستجابات)[\])]\s*$/i, "")
+    .replace(/\s*[-–—:]?\s*(?:responses?|form responses?\s*\d*|الردود|الاستجابات)\s*$/i, "")
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+}
+
+function linkedCounterpart(file, candidates) {
+  const key = surveyPairKey(file.name);
+  if (!key) return null;
+  const matches = candidates.filter(candidate => candidate.id !== file.id && surveyPairKey(candidate.name) === key);
+  if (!matches.length) return null;
+  const parentId = file.parents?.[0];
+  return matches.find(candidate => parentId && candidate.parents?.includes(parentId)) || matches[0];
+}
+
 function StatCard({ label, value, icon, tone }) {
   return (
     <div className="drive-library-stat" style={{ "--stat-tone": tone }}>
@@ -80,13 +102,17 @@ export default function DriveLibrary({
   connecting,
   account,
   files,
+  pairCandidates = [],
+  folders = [],
   loading,
+  foldersLoading = false,
   loadingMore,
   hasMore,
   error,
   onConnect,
   onRefresh,
   onLoadMore,
+  onLoadFolders,
   onOpenFile,
   onAnalyzeSurvey,
   detectYear,
@@ -102,11 +128,19 @@ export default function DriveLibrary({
   const [format, setFormat] = useState("");
   const [sort, setSort] = useState("newest");
   const [view, setView] = useState("grid");
+  const [showFolders, setShowFolders] = useState(false);
 
-  const enriched = useMemo(() => files.map(file => {
-    const fileKind = getFileKind(file);
-    const typeId = fileKind === "survey" ? detectType?.(file.name) : null;
-    return {
+  const enriched = useMemo(() => {
+    const relationPool = pairCandidates.length ? pairCandidates : files;
+    const forms = relationPool.filter(file => file.mimeType === FORM_MIME);
+    const sheets = relationPool.filter(file => SHEET_MIMES.has(file.mimeType));
+    const enrichedFiles = files.map(file => {
+      const fileKind = getFileKind(file);
+      const typeId = fileKind === "survey" ? detectType?.(file.name) : null;
+      const linkedFile = file.mimeType === FORM_MIME
+        ? linkedCounterpart(file, sheets)
+        : (SHEET_MIMES.has(file.mimeType) ? linkedCounterpart(file, forms) : null);
+      return {
       ...file,
       kind: fileKind,
       format: getFormat(file),
@@ -114,9 +148,23 @@ export default function DriveLibrary({
       program: detectProgram?.(file.name) ?? "",
       typeId: typeId ?? "",
       typeLabel: typeId ? (schemas?.[typeId]?.label ?? typeId) : "",
-      analyzable: SHEET_MIMES.has(file.mimeType),
+      analyzable: SHEET_MIMES.has(file.mimeType) || file.mimeType === FORM_MIME,
+      linkedFile,
     };
-  }), [files, detectYear, detectProgram, detectType, schemas]);
+    });
+    if (!showFolders) return enrichedFiles;
+    return [...enrichedFiles, ...folders.map(folder => ({
+      ...folder,
+      kind: "folder",
+      format: "مجلد Drive",
+      year: "",
+      program: "",
+      typeId: "",
+      typeLabel: "",
+      analyzable: false,
+      linkedFile: null,
+    }))];
+  }, [files, pairCandidates, folders, showFolders, detectYear, detectProgram, detectType, schemas]);
 
   const options = useMemo(() => ({
     years: [...new Set(enriched.map(file => file.year).filter(Boolean))].sort().reverse(),
@@ -148,9 +196,17 @@ export default function DriveLibrary({
       total: enriched.length,
       surveys: enriched.filter(file => file.kind === "survey").length,
       reports: enriched.filter(file => file.kind === "report").length,
+      folders: enriched.filter(file => file.kind === "folder").length,
       recent: enriched.filter(file => new Date(file.modifiedTime || 0).getTime() >= recentLimit).length,
     };
   }, [enriched]);
+
+  const toggleFolders = () => {
+    const next = !showFolders;
+    setShowFolders(next);
+    if (!next && kind === "folder") setKind("all");
+    if (next && folders.length === 0) onLoadFolders?.();
+  };
 
 
   const hasFilters = Boolean(query || kind !== "all" || year || program || surveyType || format || sort !== "newest");
@@ -190,7 +246,11 @@ export default function DriveLibrary({
           {account && <span className="drive-library-account"><i /> {account}</span>}
         </div>
         <div className="drive-library-hero-actions">
-          <button className="drive-library-refresh" type="button" onClick={onRefresh} disabled={loading || loadingMore}>
+          <button className={`drive-library-folder-toggle ${showFolders ? "active" : ""}`} type="button" onClick={toggleFolders} disabled={foldersLoading}>
+            <span className={foldersLoading ? "drive-library-spin" : ""}><Icon name="folder" size={18} /></span>
+            {foldersLoading ? "جاري تحميل المجلدات" : showFolders ? "إخفاء المجلدات" : "عرض المجلدات"}
+          </button>
+          <button className="drive-library-refresh" type="button" onClick={() => { onRefresh?.(); if (showFolders) onLoadFolders?.(); }} disabled={loading || loadingMore || foldersLoading}>
             <span className={loading ? "drive-library-spin" : ""}><Icon name="refresh" size={18} /></span>
             {loading ? "جاري التحديث" : "تحديث المكتبة"}
           </button>
@@ -204,7 +264,7 @@ export default function DriveLibrary({
       )}
 
       <div className="drive-library-stats" aria-label="ملخص الملفات">
-        <StatCard label={hasMore ? "الملفات المحملة" : "إجمالي الملفات"} value={counts.total} icon="folder" tone="#60a5fa" />
+        <StatCard label={showFolders ? "إجمالي العناصر" : hasMore ? "الملفات المحملة" : "إجمالي الملفات"} value={counts.total} icon="folder" tone="#60a5fa" />
         <StatCard label={hasMore ? "استبيانات محملة" : "الاستبيانات"} value={counts.surveys} icon="chart" tone="#34d399" />
         <StatCard label={hasMore ? "تقارير محملة" : "التقارير"} value={counts.reports} icon="file" tone="#fb7185" />
         <StatCard label="معدلة آخر 30 يومًا" value={counts.recent} icon="refresh" tone="#c084fc" />
@@ -221,6 +281,7 @@ export default function DriveLibrary({
             <button className={kind === "all" ? "active" : ""} onClick={() => setKind("all")}>الكل <b>{counts.total}</b></button>
             <button className={kind === "survey" ? "active" : ""} onClick={() => setKind("survey")}>استبيانات <b>{counts.surveys}</b></button>
             <button className={kind === "report" ? "active" : ""} onClick={() => setKind("report")}>تقارير <b>{counts.reports}</b></button>
+            {showFolders && <button className={kind === "folder" ? "active" : ""} onClick={() => setKind("folder")}>مجلدات <b>{counts.folders}</b></button>}
           </div>
         </div>
 
@@ -251,7 +312,7 @@ export default function DriveLibrary({
       </div>
 
       <div className="drive-library-results-head">
-        <div><b>{filtered.length.toLocaleString("ar-EG")}</b> ملف مطابق <small>من {counts.total.toLocaleString("ar-EG")} ملف محمل</small></div>
+        <div><b>{filtered.length.toLocaleString("ar-EG")}</b> عنصر مطابق <small>من {counts.total.toLocaleString("ar-EG")} عنصر محمل</small></div>
         <div className="drive-library-view-toggle" aria-label="طريقة العرض">
           <button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")} aria-label="عرض شبكي"><Icon name="grid" size={17} /></button>
           <button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-label="عرض قائمة"><Icon name="list" size={18} /></button>
@@ -282,8 +343,8 @@ export default function DriveLibrary({
               return (
                 <article className="drive-library-file" key={file.id} style={{ "--file-color": accent.color, "--file-bg": accent.bg }}>
                   <div className="drive-library-file-top">
-                    <span className="drive-library-file-icon"><Icon name={file.kind === "survey" ? "chart" : "file"} size={24} /></span>
-                    <span className={`drive-library-kind ${file.kind}`}>{file.kind === "survey" ? "استبيان" : "تقرير"}</span>
+                    <span className="drive-library-file-icon"><Icon name={file.kind === "folder" ? "folder" : file.kind === "survey" ? "chart" : "file"} size={24} /></span>
+                    <span className={`drive-library-kind ${file.kind}`}>{file.kind === "folder" ? "مجلد" : file.kind === "survey" ? "استبيان" : "تقرير"}</span>
                   </div>
                   <div className="drive-library-file-copy">
                     <h2 title={file.name}>{file.name}</h2>
@@ -294,6 +355,12 @@ export default function DriveLibrary({
                       {file.program && <span>{file.program}</span>}
                       {file.typeLabel && <span title={file.typeLabel}>{file.typeLabel}</span>}
                     </div>
+                    {file.linkedFile && (
+                      <button type="button" className="drive-library-linked" onClick={() => onOpenFile(file.linkedFile)} title={file.linkedFile.name}>
+                        <Icon name="open" size={14} />
+                        {file.mimeType === FORM_MIME ? "مرتبط بـ Google Sheet" : "مرتبط بـ Google Form"}
+                      </button>
+                    )}
                   </div>
                   <div className="drive-library-file-actions">
                     <button type="button" className="drive-library-open" onClick={() => onOpenFile(file)}><Icon name="open" size={16} /> فتح في Drive</button>
@@ -326,8 +393,9 @@ export const DRIVE_LIBRARY_CSS = `
 .drive-library-hero-copy{position:relative;z-index:1}.drive-library-kicker{display:inline-flex;align-items:center;gap:8px;color:#93c5fd;font-size:12px;font-weight:800;letter-spacing:.02em}
 .drive-library-hero h1{margin:9px 0 6px;color:#fff;font-size:clamp(25px,3vw,36px);line-height:1.35}.drive-library-hero p{margin:0;color:rgba(232,240,254,.66);font-size:14px}
 .drive-library-account{display:inline-flex;align-items:center;gap:7px;margin-top:14px;padding:6px 11px;border:1px solid rgba(52,211,153,.15);border-radius:999px;background:rgba(52,211,153,.07);color:#a7f3d0;font-size:11px;font-weight:700;direction:ltr}.drive-library-account i{width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.12)}
-.drive-library-hero-actions{position:relative;z-index:1;display:flex;align-items:center;gap:8px}.drive-library-refresh,.drive-library-primary,.drive-library-quick-button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:9px;border:0;border-radius:12px;font-family:'Cairo',sans-serif;font-weight:800;cursor:pointer;transition:.2s ease}
+.drive-library-hero-actions{position:relative;z-index:1;display:flex;align-items:center;gap:8px}.drive-library-refresh,.drive-library-folder-toggle,.drive-library-primary,.drive-library-quick-button{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:9px;border:0;border-radius:12px;font-family:'Cairo',sans-serif;font-weight:800;cursor:pointer;transition:.2s ease}
 .drive-library-refresh{padding:11px 16px;color:#dbeafe;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)}.drive-library-refresh:hover:not(:disabled){background:rgba(255,255,255,.14);transform:translateY(-1px)}.drive-library-refresh:disabled{opacity:.6;cursor:wait}
+.drive-library-folder-toggle{padding:11px 16px;color:#fde68a;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.16)}.drive-library-folder-toggle:hover:not(:disabled),.drive-library-folder-toggle.active{background:rgba(251,191,36,.16);border-color:rgba(251,191,36,.3)}.drive-library-folder-toggle:disabled{opacity:.6;cursor:wait}
 .drive-library-quick-button{padding:11px 17px;color:#06291f;background:linear-gradient(135deg,#6ee7b7,#34d399);box-shadow:0 9px 24px rgba(52,211,153,.19)}.drive-library-quick-button:hover{transform:translateY(-2px);box-shadow:0 13px 30px rgba(52,211,153,.28)}
 .drive-library-spin{display:flex;animation:driveLibrarySpin 1s linear infinite}@keyframes driveLibrarySpin{to{transform:rotate(-360deg)}}
 .drive-library-error{display:flex;align-items:center;gap:10px;margin:13px 0;padding:11px 13px;border:1px solid rgba(251,113,133,.2);border-radius:12px;background:rgba(251,113,133,.08);color:#fecdd3;font-size:11.5px}.drive-library-error>span{width:23px;height:23px;display:grid;place-items:center;flex:0 0 auto;border-radius:7px;background:rgba(251,113,133,.14);font-weight:900}.drive-library-error p{flex:1;margin:0}.drive-library-error button{padding:6px 10px;border:1px solid rgba(251,113,133,.22);border-radius:8px;background:rgba(251,113,133,.09);color:#fecdd3;font-family:'Cairo',sans-serif;font-size:10.5px;font-weight:800;cursor:pointer}
@@ -345,8 +413,9 @@ export const DRIVE_LIBRARY_CSS = `
 .drive-library-kind-tabs{display:flex;gap:5px;padding:4px;border-radius:12px;background:rgba(255,255,255,.055)}.drive-library-kind-tabs button{display:flex;align-items:center;gap:7px;padding:8px 12px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.56);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:.2s}.drive-library-kind-tabs button b{min-width:20px;padding:1px 5px;border-radius:99px;background:rgba(255,255,255,.07);font-size:10px}.drive-library-kind-tabs button.active{color:#fff;background:rgba(52,211,153,.16);box-shadow:inset 0 0 0 1px rgba(52,211,153,.2)}
 .drive-library-filter-row{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr)) auto;gap:9px;margin-top:11px}.drive-library-filter-row select{min-width:0;height:39px;padding:0 11px;border:1px solid rgba(255,255,255,.1);border-radius:10px;outline:0;background:#102940;color:#dce8f7;font-family:'Cairo',sans-serif;font-size:11.5px;cursor:pointer}.drive-library-filter-row select:focus{border-color:#34d399}.drive-library-clear{padding:0 12px;border:1px solid rgba(251,113,133,.2);border-radius:10px;background:rgba(251,113,133,.08);color:#fda4af;font-family:'Cairo',sans-serif;font-size:11.5px;font-weight:700;cursor:pointer}
 .drive-library-results-head{display:flex;align-items:center;justify-content:space-between;margin:19px 2px 11px;color:rgba(255,255,255,.52);font-size:12px}.drive-library-results-head b{color:#fff;font-size:14px}.drive-library-results-head small{margin-right:6px;color:rgba(255,255,255,.3);font-size:10px}.drive-library-view-toggle{display:flex;padding:3px;border-radius:9px;background:rgba(255,255,255,.06)}.drive-library-view-toggle button{width:34px;height:30px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.45);cursor:pointer}.drive-library-view-toggle button.active{background:rgba(96,165,250,.16);color:#bfdbfe}
-.drive-library-files.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.drive-library-file{position:relative;display:flex;flex-direction:column;min-width:0;padding:17px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:linear-gradient(145deg,rgba(255,255,255,.068),rgba(255,255,255,.035));transition:transform .2s,border-color .2s,box-shadow .2s}.drive-library-file:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--file-color) 42%,transparent);box-shadow:0 15px 38px rgba(1,10,20,.22)}.drive-library-file-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.drive-library-file-icon{width:45px;height:45px;display:grid;place-items:center;border-radius:13px;background:var(--file-bg);color:var(--file-color)}.drive-library-kind{padding:4px 9px;border-radius:99px;font-size:10px;font-weight:800}.drive-library-kind.survey{color:#6ee7b7;background:rgba(52,211,153,.1)}.drive-library-kind.report{color:#fda4af;background:rgba(251,113,133,.1)}
+.drive-library-files.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.drive-library-file{position:relative;display:flex;flex-direction:column;min-width:0;padding:17px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:linear-gradient(145deg,rgba(255,255,255,.068),rgba(255,255,255,.035));transition:transform .2s,border-color .2s,box-shadow .2s}.drive-library-file:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--file-color) 42%,transparent);box-shadow:0 15px 38px rgba(1,10,20,.22)}.drive-library-file-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.drive-library-file-icon{width:45px;height:45px;display:grid;place-items:center;border-radius:13px;background:var(--file-bg);color:var(--file-color)}.drive-library-kind{padding:4px 9px;border-radius:99px;font-size:10px;font-weight:800}.drive-library-kind.survey{color:#6ee7b7;background:rgba(52,211,153,.1)}.drive-library-kind.report{color:#fda4af;background:rgba(251,113,133,.1)}.drive-library-kind.folder{color:#fde68a;background:rgba(251,191,36,.1)}
 .drive-library-file-copy{min-width:0;flex:1}.drive-library-file h2{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;min-height:49px;margin:15px 0 6px;color:#f8fbff;font-size:14px;line-height:1.75}.drive-library-file p{color:rgba(255,255,255,.38);font-size:10.5px}.drive-library-file-tags{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}.drive-library-file-tags span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 8px;border:1px solid rgba(255,255,255,.07);border-radius:7px;background:rgba(255,255,255,.035);color:rgba(255,255,255,.58);font-size:9.5px}
+.drive-library-linked{display:inline-flex;align-items:center;gap:6px;margin:-7px 0 13px;padding:5px 8px;border:1px solid rgba(192,132,252,.2);border-radius:8px;background:rgba(192,132,252,.09);color:#d8b4fe;font-family:'Cairo',sans-serif;font-size:9.5px;font-weight:800;cursor:pointer}.drive-library-linked:hover{background:rgba(192,132,252,.16);border-color:rgba(192,132,252,.34)}
 .drive-library-file-actions{display:flex;gap:7px;margin-top:auto;padding-top:12px;border-top:1px solid rgba(255,255,255,.065)}.drive-library-file-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 10px;border-radius:9px;font-family:'Cairo',sans-serif;font-size:10.5px;font-weight:800;cursor:pointer;transition:.18s}.drive-library-open{flex:1;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.055);color:#dbeafe}.drive-library-open:hover{background:rgba(255,255,255,.1)}.drive-library-analyze{flex:1;border:1px solid rgba(52,211,153,.19);background:rgba(52,211,153,.1);color:#6ee7b7}.drive-library-analyze:hover{background:rgba(52,211,153,.18)}
 .drive-library-files.list{display:flex;flex-direction:column;gap:8px}.drive-library-files.list .drive-library-file{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(190px,auto);align-items:center;gap:15px;padding:12px 14px}.drive-library-files.list .drive-library-file-top{flex-direction:column;gap:5px}.drive-library-files.list .drive-library-file-icon{width:39px;height:39px}.drive-library-files.list .drive-library-kind{padding:2px 7px}.drive-library-files.list .drive-library-file h2{min-height:auto;margin:0 0 3px;-webkit-line-clamp:1}.drive-library-files.list .drive-library-file-tags{margin:7px 0 0}.drive-library-files.list .drive-library-file-actions{margin:0;padding:0;border:0;min-width:190px}
 .drive-library-loading,.drive-library-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px dashed rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.025)}.drive-library-loading b,.drive-library-empty h2{margin:14px 0 4px;color:#fff;font-size:15px}.drive-library-loading small,.drive-library-empty p{color:rgba(255,255,255,.45);font-size:11.5px}.drive-library-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.09);border-top-color:#34d399;border-radius:50%;animation:driveLibrarySpin .85s linear infinite}.drive-library-empty>span{width:56px;height:56px;display:grid;place-items:center;border-radius:17px;color:#93c5fd;background:rgba(96,165,250,.1)}.drive-library-empty-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.drive-library-empty button{margin-top:14px;padding:8px 15px;border:1px solid rgba(96,165,250,.2);border-radius:9px;background:rgba(96,165,250,.1);color:#bfdbfe;font-family:'Cairo',sans-serif;font-weight:700;cursor:pointer}.drive-library-empty button:disabled{opacity:.55;cursor:wait}
@@ -354,5 +423,6 @@ export const DRIVE_LIBRARY_CSS = `
 .drive-library-disconnected{min-height:calc(100vh - 150px);display:grid;place-items:center}.drive-library-connect-card{position:relative;overflow:hidden;max-width:670px;padding:48px 42px;border:1px solid rgba(96,165,250,.17);border-radius:28px;background:radial-gradient(circle at 50% 0,rgba(96,165,250,.17),transparent 36%),rgba(8,29,47,.72);text-align:center;box-shadow:0 25px 70px rgba(0,0,0,.22)}.drive-library-drive-mark{width:86px;height:86px;display:grid;place-items:center;margin:0 auto 17px;border:1px solid rgba(255,255,255,.1);border-radius:25px;background:rgba(255,255,255,.07)}.drive-library-connect-card h1{margin:10px 0;color:#fff;font-size:30px}.drive-library-connect-card p{max-width:530px;margin:0 auto;color:rgba(255,255,255,.57);font-size:14px;line-height:1.9}.drive-library-primary{margin:24px auto 13px;padding:12px 22px;background:linear-gradient(135deg,#34d399,#168f78);color:#fff;box-shadow:0 12px 28px rgba(22,143,120,.23)}.drive-library-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 15px 32px rgba(22,143,120,.35)}.drive-library-primary:disabled{opacity:.6}.drive-library-connect-card>small{display:block;color:rgba(255,255,255,.32);font-size:10.5px}
 @media(max-width:1080px){.drive-library-stats,.drive-quick-stats{grid-template-columns:repeat(2,1fr)}.drive-library-files.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.drive-library-filter-row{grid-template-columns:repeat(3,1fr)}.drive-library-clear{min-height:39px}.drive-library-files.list .drive-library-file{grid-template-columns:auto minmax(180px,1fr)}.drive-library-files.list .drive-library-file-actions{grid-column:2;min-width:0}.drive-quick-toolbar{align-items:stretch;flex-direction:column}.drive-quick-filter-tools{width:100%}.drive-quick-filter-tools>*{flex:1}.drive-quick-list{overflow:auto}.drive-quick-list-head,.drive-quick-row{min-width:920px}}
 @media(max-width:720px){.drive-library-hero{align-items:flex-start;flex-direction:column;padding:22px}.drive-library-hero-actions{width:100%;flex-direction:column}.drive-library-refresh,.drive-library-quick-button{width:100%}.drive-library-stats{grid-template-columns:1fr 1fr;gap:8px}.drive-library-stat{padding:13px}.drive-library-stat-icon{width:38px;height:38px}.drive-library-stat b{font-size:18px}.drive-library-search-row{grid-template-columns:1fr}.drive-library-kind-tabs{overflow-x:auto}.drive-library-kind-tabs button{flex:1;justify-content:center;white-space:nowrap}.drive-library-filter-row{grid-template-columns:1fr 1fr}.drive-library-files.grid{grid-template-columns:1fr}.drive-library-files.list .drive-library-file{display:flex;align-items:stretch}.drive-library-files.list .drive-library-file-top{flex-direction:row}.drive-library-files.list .drive-library-file-actions{min-width:0}.drive-library-connect-card{padding:36px 22px}.drive-library-connect-card h1{font-size:25px}.drive-quick-summary{padding:15px}.drive-quick-head{gap:10px}.drive-quick-head h2{font-size:17px}.drive-quick-controls{align-items:stretch;flex-direction:column}.drive-quick-controls select,.drive-quick-controls>button{width:100%}.drive-quick-toolbar{align-items:stretch;flex-direction:column}.drive-quick-status-tabs{overflow-x:auto}.drive-quick-status-tabs button{flex:1;justify-content:center;white-space:nowrap}.drive-quick-filter-tools{align-items:stretch;flex-direction:column}.drive-quick-type-filter,.drive-quick-search{min-width:0;width:100%}}
+@media(max-width:720px){.drive-library-folder-toggle{width:100%}}
 @media(max-width:460px){.drive-library-stats{grid-template-columns:1fr}.drive-library-filter-row{grid-template-columns:1fr}.drive-library-file-actions{flex-direction:column}}
 `;
